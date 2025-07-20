@@ -1,96 +1,75 @@
-# Memora - Project Specifications & Requirements
+# Memora - Complete Project Roadmap & Specifications
 
 ## Project Overview
-**Project Name:** Memora  
-**Objective:** Commercial software product for monetization  
-**Status:** Specification & Planning Phase  
+**Project Name:** Memora
+**Slogan:** "Sets Your Memory in Motion"
+**Objective:** Commercial spaced repetition app for monetization
+**Status:** Specification & Planning Phase
 **Date Created:** 2025-07-19
 
 ---
 
-## Vision & Core Concept
-*[To be filled as requirements are shared]*
+## 📦 Technology Stack
+
+### Frontend
+- **Framework:** React.js
+- **Styling:** TailwindCSS (primary choice) or Chakra UI (alternative)
+- **Animations:** Framer Motion
+- **State Management:** Redux or React Context API
+
+### Backend
+- **Runtime:** Node.js
+- **Framework:** Express.js
+- **Authentication:** JWT + bcrypt
+
+### Database
+- **Primary:** MongoDB
+
+### Hosting Strategy
+- **Development:** localhost
+- **Production Phase 1:**
+  - Frontend: Vercel
+  - Backend: Render or Railway
+- **Scalable:** Cloud deployment ready
 
 ---
 
-## Target Market & Monetization
-*[To be filled with business model details]*
+## 🧠 Core Concept & Vision
+
+Memora is a **spaced repetition application** that leverages the **forgetting curve model** to optimize revision scheduling. The app uses:
+
+- **Personalized retention scores** (MemScore system)
+- **Time-based predictions** via Neuro Engine
+- **Intelligent scheduling** for maximum memory efficiency
+- **Deadline-aware planning** with ReviseBy feature
+
+**Target Market:** Students, professionals, lifelong learners who need efficient memory retention
+**Monetization Potential:** Subscription model, premium features, enterprise licenses
 
 ---
 
-## Functional Requirements
+## 🎨 Design Philosophy & Aesthetic
 
-### Core Features
-*[To be documented as features are specified]*
+### Visual Identity
+- **Inspiration:** Vercel.com design language
+- **Theme:** Cyber Grid UI with futuristic vector lines
+- **Color Scheme:**
+  - Base: Monochrome (dark theme ONLY)
+  - Accents: Neon blue or neon green
+  - NO light theme option
 
-### User Stories
-*[To be added as user requirements are defined]*
+### Design Principles
+- **Minimalist components** with geometric spacing
+- **Sharp lines and grids** - no rounded bubbles
+- **Technical neural interface** aesthetic
+- **2D effects only** - no shadows or lift effects
+- **Glassmorphism panels** with cyber terminal fonts
+- **Micro-animations** for interactions
+- **Clean and cut** visual approach
 
----
-
-## Technical Requirements
-
-### Architecture
-*[To be specified]*
-
-### Technology Stack
-*[To be determined based on requirements]*
-
-### Performance Requirements
-*[To be defined]*
-
-### Security Requirements
-*[To be specified]*
-
----
-
-## User Experience (UX) Requirements
-*[To be documented]*
-
----
-
-## Integration Requirements
-*[External services, APIs, etc. - to be specified]*
-
----
-
-## Deployment & Infrastructure
-*[To be planned]*
-
----
-
-## Timeline & Milestones
-*[To be established]*
-
----
-
-## Business Requirements
-
-### Revenue Model
-*[To be defined]*
-
-### Target Audience
-*[To be specified]*
-
-### Competitive Analysis
-*[To be conducted]*
-
----
-
-## Risk Assessment
-*[To be evaluated]*
-
----
-
-## Success Metrics
-*[To be defined]*
-
----
-
-## Notes & Ideas
-*[Running log of concepts and brainstorming]*
-
----
-
-## Change Log
-- 2025-07-19: Initial specification document created
+### UI Components Style
+- Terminal-like aesthetics
+- Animated "+" elements
+- Grid nodes that light up on interaction
+- Progress bars with neural sparks
+- Hover effects like Vercel's "exploding card" style
