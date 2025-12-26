@@ -1,53 +1,85 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap');
+@import "tailwindcss";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-:root {
-  font-family: 'Inter', system-ui, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color-scheme: dark;
-  color: #ffffff;
-  background-color: #000000;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
+/* Hide all scrollbars globally but keep scrolling functionality */
 * {
-  box-sizing: border-box;
+  -ms-overflow-style: none;  /* Internet Explorer 10+ */
+  scrollbar-width: none;  /* Firefox */
 }
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  background: #000000;
-  overflow-x: hidden;
+*::-webkit-scrollbar {
+  display: none;  /* Safari and Chrome */
 }
 
-/* Smooth scrolling */
-html {
-  scroll-behavior: smooth;
+html, body {
+  overflow-x: hidden; /* Only hide horizontal scroll */
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
+/* Specific class for elements that need scrollbar hiding */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* Internet Explorer 10+ */
+  scrollbar-width: none;  /* Firefox */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Safari and Chrome */
 }
 
-::-webkit-scrollbar-track {
-  background: #000;
+/* Journal content styling */
+.journal-content h1 {
+  @apply text-2xl font-bold text-white mb-6 mt-8 border-b border-white/20 pb-2;
 }
 
-::-webkit-scrollbar-thumb {
-  background: #333;
-  border-radius: 3px;
+.journal-content h2 {
+  @apply text-xl font-semibold text-white mb-4 mt-8 border-b border-white/10 pb-2;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #555;
+.journal-content h3 {
+  @apply text-lg font-semibold text-white mb-3 mt-6;
+}
+
+.journal-content p {
+  @apply text-gray-300 mb-4 leading-relaxed;
+}
+
+.journal-content ul {
+  @apply list-disc list-inside space-y-1 mb-4 text-gray-300;
+}
+
+.journal-content ol {
+  @apply list-decimal list-inside space-y-1 mb-4 text-gray-300;
+}
+
+.journal-content li {
+  @apply text-gray-300 mb-1;
+}
+
+.journal-content strong {
+  @apply font-semibold text-white;
+}
+
+.journal-content em {
+  @apply italic text-gray-300;
+}
+
+.journal-content code {
+  @apply bg-gray-800 text-green-400 px-2 py-1 rounded text-sm;
+}
+
+.journal-content pre {
+  @apply bg-gray-900 border border-white/10 rounded-lg p-4 my-4 overflow-x-auto;
+}
+
+.journal-content pre code {
+  @apply text-green-400 text-sm bg-transparent p-0;
+}
+
+.journal-content a {
+  @apply text-blue-400 hover:text-blue-300 underline;
+}
+
+.journal-content hr {
+  @apply border-white/20 my-6;
+}
+
+.journal-content blockquote {
+  @apply border-l-4 border-blue-500 pl-4 italic text-gray-400 my-4;
 }

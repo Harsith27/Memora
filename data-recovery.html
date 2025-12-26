@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Data Recovery Tool</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #1a1a1a; color: white; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #333; border-radius: 8px; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .danger { background: #dc3545; }
+        .danger:hover { background: #c82333; }
+        .success { background: #28a745; }
+        .success:hover { background: #218838; }
+        pre { background: #2a2a2a; padding: 10px; border-radius: 4px; overflow-x: auto; }
+        .key-item { margin: 5px 0; padding: 5px; background: #333; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Memora Data Recovery Tool</h1>
+        
+        <div class="section">
+            <h2>Step 1: Find Your Data</h2>
+            <button onclick="findAllData()">Scan All localStorage Data</button>
+            <div id="dataList"></div>
+        </div>
+        
+        <div class="section">
+            <h2>Step 2: Migrate Data to Harsith Account</h2>
+            <button onclick="migrateToHarsith()" class="success">Migrate All Data to Harsith</button>
+            <div id="migrationResult"></div>
+        </div>
+        
+        <div class="section">
+            <h2>Step 3: Clean Up</h2>
+            <button onclick="cleanOldData()" class="danger">Remove Old Data (After Migration)</button>
+        </div>
+    </div>
+
+    <script>
+        function findAllData() {
+            const dataList = document.getElementById('dataList');
+            const allKeys = Object.keys(localStorage);
+            
+            let html = '<h3>Found localStorage Keys:</h3>';
+            
+            const relevantKeys = allKeys.filter(key => 
+                key.includes('topics') || 
+                key.includes('focus') || 
+                key.includes('preset') || 
+                key.includes('settings') ||
+                key.includes('session') ||
+                key.includes('memora') ||
+                key.includes('user') ||
+                /\d+/.test(key) // Contains numbers (likely user IDs)
+            );
+            
+            if (relevantKeys.length === 0) {
+                html += '<p>No relevant data found in localStorage.</p>';
+            } else {
+                relevantKeys.forEach(key => {
+                    const value = localStorage.getItem(key);
+                    let preview = value;
+                    if (value.length > 100) {
+                        preview = value.substring(0, 100) + '...';
+                    }
+                    
+                    html += `
+                        <div class="key-item">
+                            <strong>${key}</strong><br>
+                            <small>${preview}</small>
+                        </div>
+                    `;
+                });
+            }
+            
+            dataList.innerHTML = html;
+        }
+        
+        function migrateToHarsith() {
+            const result = document.getElementById('migrationResult');
+            const allKeys = Object.keys(localStorage);
+            let migrated = 0;
+            
+            // Find keys that might contain user-specific data
+            const userDataKeys = allKeys.filter(key => {
+                // Look for keys with user IDs (numbers) or old user patterns
+                return /_([\d]+)$/.test(key) || 
+                       /_veeracharan99$/.test(key) ||
+                       /_user_/.test(key) ||
+                       key.includes('topics_') ||
+                       key.includes('focus_sessions_') ||
+                       key.includes('focusModePresets_') ||
+                       key.includes('focusModeSettings_');
+            });
+            
+            userDataKeys.forEach(oldKey => {
+                const data = localStorage.getItem(oldKey);
+                if (data) {
+                    // Create new key for Harsith
+                    let newKey = oldKey;
+                    
+                    // Replace user ID patterns with 'harsith'
+                    newKey = newKey.replace(/_([\d]+)$/, '_harsith');
+                    newKey = newKey.replace(/_veeracharan99$/, '_harsith');
+                    newKey = newKey.replace(/_user_[\w]+/, '_harsith');
+                    
+                    // Set the data under the new key
+                    localStorage.setItem(newKey, data);
+                    migrated++;
+                    
+                    console.log(`Migrated: ${oldKey} -> ${newKey}`);
+                }
+            });
+            
+            result.innerHTML = `<p style="color: #28a745;">✅ Migrated ${migrated} data items to Harsith account!</p>`;
+            
+            if (migrated > 0) {
+                result.innerHTML += '<p>Please refresh the Memora app to see your data.</p>';
+            }
+        }
+        
+        function cleanOldData() {
+            const allKeys = Object.keys(localStorage);
+            let cleaned = 0;
+            
+            // Remove old user data keys (but keep the new Harsith ones)
+            const oldKeys = allKeys.filter(key => {
+                return (/_([\d]+)$/.test(key) || 
+                        /_veeracharan99$/.test(key) ||
+                        /_user_(?!harsith)/.test(key)) &&
+                       !key.includes('_harsith');
+            });
+            
+            oldKeys.forEach(key => {
+                localStorage.removeItem(key);
+                cleaned++;
+                console.log(`Removed old key: ${key}`);
+            });
+            
+            alert(`Cleaned up ${cleaned} old data keys.`);
+        }
+        
+        // Auto-scan on page load
+        window.onload = function() {
+            findAllData();
+        };
+    </script>
+</body>
+</html>
