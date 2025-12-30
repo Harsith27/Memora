@@ -15,8 +15,8 @@ import ProgressRing from '../components/ProgressRing';
 import Dialog from '../components/Dialog';
 import MinimalistTimer from '../components/MinimalistTimer';
 import UserProfileDropdown from '../components/UserProfileDropdown';
+import GraphModeView from '../components/GraphModeView';
 import logoImg from '../assets/logo.jpg';
-import logoWhiteOutline from '../assets/logowhiteoutline.png';
 import { useAuth } from '../contexts/AuthContext';
 import { useTopics } from '../hooks/useTopics';
 import apiService from '../services/api';
@@ -121,8 +121,6 @@ const Dashboard = () => {
     try {
       const response = await apiService.verifyToken();
       if (response.success) {
-        console.log('Refreshed user data from backend:', response.user);
-        console.log('New memScore:', response.user.memScore);
         // Update user with fresh data from backend
         updateUser({
           ...response.user
@@ -201,10 +199,6 @@ const Dashboard = () => {
       // No deduplication needed - backend queries are now separate
       const allTopics = [...dueTopicsData, ...upcomingTopicsData];
 
-      console.log('Due topics (today + overdue):', dueTopicsData.length);
-      console.log('Upcoming topics (tomorrow onwards):', upcomingTopicsData.length);
-      console.log('Total topics for 7-day calculation:', allTopics.length);
-
       // Calculate with combined data
       calculateNextSevenDays(allTopics, workloadData);
     } catch (error) {
@@ -216,14 +210,6 @@ const Dashboard = () => {
   const calculateNextSevenDays = (topics, workloadData = []) => {
     const today = new Date();
     const next7Days = [];
-
-    console.log('Calculating Next 7 Days with topics:', topics.length);
-    console.log('Today is:', today.toDateString());
-    console.log('All topics for 7-day calculation:', topics.map(t => ({
-      title: t.title,
-      nextReviewDate: t.nextReviewDate,
-      dateStr: new Date(t.nextReviewDate).toISOString().split('T')[0]
-    })));
 
     for (let i = 0; i < 7; i++) {
       const date = new Date(today);
@@ -246,11 +232,6 @@ const Dashboard = () => {
           return topicDateStr === dateStr;
         }
       });
-
-      console.log(`Day ${i} (${dayName} ${dateStr}): ${topicsOnDay.length} topics`);
-      if (topicsOnDay.length > 0) {
-        console.log('Topics on this day:', topicsOnDay.map(t => ({ title: t.title, nextReviewDate: t.nextReviewDate })));
-      }
 
       // Check workload data for more accurate count and difficulty analysis
       const workloadDay = workloadData.find(day =>
@@ -306,11 +287,9 @@ const Dashboard = () => {
   // Handle crowding prevention
   const handlePreventCrowding = async (targetDate) => {
     try {
-      console.log('🔧 Preventing crowding for date:', targetDate);
       showToast('Analyzing topic distribution...', 'info');
 
       const response = await apiService.preventCrowding(targetDate);
-      console.log('🔧 Crowding prevention response:', response);
 
       if (response.success && response.redistributed) {
         showToast(`${response.count} topics redistributed based on difficulty levels`, 'success');
@@ -328,11 +307,9 @@ const Dashboard = () => {
   // Handle moving overdue topics to today
   const handleMoveOverdueTopics = async (silent = false) => {
     try {
-      console.log('🔧 Moving overdue topics to today');
       if (!silent) showToast('Moving overdue topics...', 'info');
 
       const response = await apiService.moveOverdueTopics();
-      console.log('🔧 Move overdue response:', response);
 
       if (response.success && response.moved > 0) {
         if (!silent) showToast(`${response.moved} overdue topics moved to today`, 'success');
@@ -351,17 +328,12 @@ const Dashboard = () => {
   const handleTopicReview = async (topicId, quality = 3) => {
     if (processingTopics.has(topicId)) return; // Prevent double-clicks
 
-    console.log('🎯 Marking topic as done:', topicId, 'with quality:', quality);
     setProcessingTopics(prev => new Set(prev).add(topicId));
 
     try {
-      console.log('📡 Making API call to review topic...');
       const response = await apiService.reviewTopic(topicId, quality);
-      console.log('📊 Review Response:', response);
 
       if (response && response.success) {
-        console.log('✅ Topic marked as done successfully:', response);
-
         // Find the topic from current topics list
         const reviewedTopic = dueTopics.find(t => t._id === topicId) ||
                              upcomingTopics.find(t => t._id === topicId) ||
@@ -396,7 +368,7 @@ const Dashboard = () => {
       console.error('💥 Failed to review topic:', error);
       setToast({
         show: true,
-        message: `❌ Network error: ${error.message}. Please try again.`,
+        message: `❌ Failed to mark topic as done: ${error.message || 'Please try again.'}`,
         type: 'error'
       });
     } finally {
@@ -412,17 +384,12 @@ const Dashboard = () => {
   const handleTopicSkip = async (topicId) => {
     if (processingTopics.has(topicId)) return; // Prevent double-clicks
 
-    console.log('⏭️ Skipping topic:', topicId);
     setProcessingTopics(prev => new Set(prev).add(topicId));
 
     try {
-      console.log('📡 Making API call to skip topic...');
       const response = await apiService.skipTopic(topicId);
-      console.log('📊 Skip Response:', response);
 
       if (response && response.success) {
-        console.log('✅ Topic skipped successfully:', response);
-
         // Find the topic from current topics list
         const skippedTopic = dueTopics.find(t => t._id === topicId) ||
                             upcomingTopics.find(t => t._id === topicId) ||
@@ -513,8 +480,6 @@ const Dashboard = () => {
     if (!editingTopic) return;
 
     try {
-      console.log('✏️ Updating topic:', editingTopic._id, 'New data:', formData);
-
       await updateTopic(editingTopic._id, formData);
 
       // Log to journal
@@ -640,7 +605,6 @@ const Dashboard = () => {
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!isLoading && !user) {
-      console.log('User not authenticated, redirecting to login');
       navigate('/login');
     }
   }, [user, isLoading, navigate]);
@@ -665,10 +629,6 @@ const Dashboard = () => {
   // Fetch topics when user is available
   useEffect(() => {
     if (user) {
-      console.log('Dashboard - Current user object:', user);
-      console.log('Dashboard - Current user memScore:', user.memScore);
-      console.log('Dashboard - Has completed evaluation:', user.hasCompletedEvaluation);
-
       // Initialize journal service
       journalService.init();
 
@@ -727,8 +687,8 @@ const Dashboard = () => {
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
     { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
     { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
-    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
-    { icon: Settings, label: "Settings", active: location.pathname === "/settings", path: "/settings" }
+    { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
+    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" }
   ];
 
   const quickActions = [
@@ -744,7 +704,10 @@ const Dashboard = () => {
   // Real data for Next 7 Days is now calculated from upcoming topics
 
   const handleSidebarClick = (item) => {
-    if (item.label === "Dashboard") return;
+    if (item.label === "Dashboard") {
+      navigate('/dashboard');
+      return;
+    }
 
     if (item.label === "DocTags") {
       navigate('/doctags');
@@ -763,6 +726,11 @@ const Dashboard = () => {
 
     if (item.label === "Analytics") {
       navigate('/analytics');
+      return;
+    }
+
+    if (item.label === "Graph Mode") {
+      navigate('/graph');
       return;
     }
 
@@ -810,6 +778,8 @@ const Dashboard = () => {
       day: 'numeric'
     });
   };
+
+  const isGraphMode = location.pathname === '/graph';
 
   return (
     <div className="bg-black text-white min-h-screen flex">
@@ -895,8 +865,10 @@ const Dashboard = () => {
                 )}
               </button>
               <div>
-                <h1 className="text-xl sm:text-2xl font-semibold text-white">Dashboard</h1>
-                <p className="text-xs sm:text-sm text-gray-400">{formatDate(new Date())}</p>
+                <h1 className="text-xl sm:text-2xl font-semibold text-white">{isGraphMode ? 'Graph Mode' : 'Dashboard'}</h1>
+                <p className="text-xs sm:text-sm text-gray-400">
+                  {isGraphMode ? 'Explore your topic network and connected knowledge clusters' : formatDate(new Date())}
+                </p>
               </div>
             </div>
 
@@ -937,6 +909,13 @@ const Dashboard = () => {
 
         {/* Content Grid */}
         <div className="flex-1 p-3 sm:p-6 transition-all duration-300">
+          {isGraphMode ? (
+            <GraphModeView
+              topics={topics}
+              loading={topicsLoading}
+              onAddTopic={() => setShowAddTopicModal(true)}
+            />
+          ) : (
           <div className={`grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-4 ${sidebarCollapsed ? 'mx-24' : ''}`}>
           {/* Split into 2 panels: Today's Revision and Upcoming Revision */}
           <div className="xl:col-span-3">
@@ -1406,6 +1385,7 @@ const Dashboard = () => {
             <MemScoreChart currentScore={user?.memScore} />
           </div>
         </div>
+          )}
         </div>
 
         {/* Footer */}
