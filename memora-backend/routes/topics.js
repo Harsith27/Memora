@@ -19,149 +19,14 @@ const handleValidationErrors = (req, res, next) => {
   next();
 };
 
-const normalizeLinkType = (type) => {
-  if (type === 'link') return 'website';
-  return type || 'other';
-};
-
-const splitTopicResources = (topic) => {
-  const attachments = Array.isArray(topic.attachments) ? [...topic.attachments] : [];
-  const links = [];
-
-  const externalLinks = Array.isArray(topic.externalLinks) ? topic.externalLinks : [];
-  externalLinks.forEach((link) => {
-    const linkType = normalizeLinkType(link.type);
-    const isFile = Boolean(link.isFile) || linkType === 'file';
-
-    if (isFile) {
-      const filename = link.filename || (link.url ? link.url.split('/').pop() : `${Date.now()}-resource`);
-      attachments.push({
-        filename,
-        originalName: link.originalName || link.title || filename,
-        mimetype: link.mimetype || 'application/octet-stream',
-        size: Number(link.size) || 0,
-        url: link.url,
-        uploadedAt: link.uploadedAt || link.addedAt || new Date(),
-        fileType: link.fileType || 'other'
-      });
-      return;
-    }
-
-    links.push({
-      title: link.title,
-      url: link.url,
-      type: linkType,
-      description: link.description || '',
-      addedAt: link.addedAt || new Date()
-    });
-  });
-
-  return { attachments, externalLinks: links };
-};
-
-const getOrCreateTopicsFolder = async (userId) => {
-  let topicsFolder = await DocTag.findOne({
-    userId,
-    name: 'Topics',
-    type: 'folder',
-    parentId: null,
-    isActive: true
-  });
-
-  if (!topicsFolder) {
-    topicsFolder = new DocTag({
-      userId,
-      name: 'Topics',
-      description: 'Topic resources',
-      type: 'folder',
-      category: 'Other',
-      color: 'purple',
-      icon: 'book',
-      parentId: null
-    });
-    await topicsFolder.save();
-  }
-
-  return topicsFolder;
-};
-
-const syncTopicResourcesToDocTag = async (topic) => {
-  const { attachments, externalLinks } = splitTopicResources(topic);
-  const hasResources = attachments.length > 0 || externalLinks.length > 0;
-
-  const existingDocTag = await DocTag.findOne({
-    userId: topic.userId,
-    sourceTopicId: topic._id,
-    isActive: true
-  });
-
-  if (!hasResources) {
-    if (existingDocTag) {
-      existingDocTag.isActive = false;
-      await existingDocTag.save();
-    }
-    return;
-  }
-
-  const topicsFolder = await getOrCreateTopicsFolder(topic.userId);
-
-  if (existingDocTag) {
-    existingDocTag.name = topic.title;
-    existingDocTag.description = topic.content ? topic.content.substring(0, 500) : '';
-    existingDocTag.category = topic.category || 'Other';
-    existingDocTag.tags = topic.tags || [];
-    existingDocTag.parentId = topicsFolder._id;
-    existingDocTag.attachments = attachments;
-    existingDocTag.externalLinks = externalLinks;
-    existingDocTag.isActive = true;
-    await existingDocTag.save();
-    return;
-  }
-
-  const docTag = new DocTag({
-    userId: topic.userId,
-    sourceTopicId: topic._id,
-    name: topic.title,
-    description: topic.content ? topic.content.substring(0, 500) : '',
-    
-        console.log('[Review Debug] After updateSpacedRepetition:', {
-          topicId: topic._id,
-          nextReviewDate: topic.nextReviewDate,
-          interval: topic.interval,
-          easeFactor: topic.easeFactor,
-          repetitions: topic.repetitions
-        });
-    type: 'document',
-    category: topic.category || 'Other',
-    tags: topic.tags || [],
-    
-        console.log('[Review Debug] After preventCrowding:', crowdingResult);
-    parentId: topicsFolder._id,
-    attachments,
-    externalLinks
-  });
-
-  await docTag.save();
-};
-
-const softDeleteTopicDocTag = async (topicId, userId) => {
-  await DocTag.updateMany(
-    { userId, sourceTopicId: topicId, isActive: true },
-    { $set: { isActive: false } }
-  );
-};
-
 /**
  * @route   GET /api/topics
-        console.error('❌ Record review FAILED:', {
-          message: error.message,
-          code: error.code,
-          name: error.name,
-          stack: error.stack.split('\n').slice(0, 3).join('\n')
-        });
+ * @desc    Get user's topics with optional filtering
  * @access  Private
  */
 router.get('/', authenticateToken, async (req, res) => {
+  try {
+    const { category, difficulty, search, limit = 50, page = 1 } = req.query;
     const userId = req.user.id;
 
     let query = { userId, isActive: true };
@@ -324,7 +189,11 @@ router.post('/prevent-crowding', authenticateToken, async (req, res) => {
     const { targetDate } = req.body;
     const userId = req.user.id;
 
+    console.log('🔧 Prevent crowding request:', { targetDate, userId });
+
     const result = await Topic.preventCrowding(userId, new Date(targetDate));
+
+    console.log('🔧 Prevent crowding result:', result);
 
     res.json({
       success: true,
@@ -378,6 +247,8 @@ router.post('/', [
     .withMessage('Attachments must be an array')
 ], handleValidationErrors, async (req, res) => {
   try {
+    console.log('📝 Creating topic with request body:', JSON.stringify(req.body, null, 2));
+
     const {
       title,
       content,
@@ -389,6 +260,8 @@ router.post('/', [
       attachments = []
     } = req.body;
     const userId = req.user.id;
+
+    console.log('📝 Extracted externalLinks:', JSON.stringify(externalLinks, null, 2));
 
     const topic = new Topic({
       title,
@@ -404,13 +277,12 @@ router.post('/', [
 
     await topic.save();
 
-    let docTagSynced = true;
-    try {
-      await syncTopicResourcesToDocTag(topic);
-    } catch (syncError) {
-      docTagSynced = false;
-      console.error('DocTag sync on topic create failed:', syncError);
-    }
+    // TODO: Re-enable DocTag integration later
+    // For now, just store resources in the topic itself
+    console.log('Topic created with resources:', {
+      externalLinks: externalLinks.length,
+      attachments: attachments.length
+    });
 
     // Check for crowding and redistribute if necessary
     const crowdingResult = await Topic.preventCrowding(userId, topic.nextReviewDate);
@@ -419,7 +291,6 @@ router.post('/', [
       success: true,
       message: 'Topic created successfully',
       topic,
-      docTagSynced,
       crowdingPrevention: crowdingResult
     });
 
@@ -494,18 +365,10 @@ router.put('/:id', [
   body('tags')
     .optional()
     .isArray()
-    .withMessage('Tags must be an array'),
-  body('externalLinks')
-    .optional()
-    .isArray()
-    .withMessage('External links must be an array'),
-  body('attachments')
-    .optional()
-    .isArray()
-    .withMessage('Attachments must be an array')
+    .withMessage('Tags must be an array')
 ], handleValidationErrors, async (req, res) => {
   try {
-    const { title, content, difficulty, category, tags, externalLinks, attachments } = req.body;
+    const { title, content, difficulty, category, tags } = req.body;
 
     const topic = await Topic.findOne({
       _id: req.params.id,
@@ -528,24 +391,13 @@ router.put('/:id', [
     if (tags !== undefined) {
       topic.tags = tags.filter(tag => tag && tag.trim()).map(tag => tag.trim());
     }
-    if (externalLinks !== undefined) topic.externalLinks = externalLinks;
-    if (attachments !== undefined) topic.attachments = attachments;
 
     await topic.save();
-
-    let docTagSynced = true;
-    try {
-      await syncTopicResourcesToDocTag(topic);
-    } catch (syncError) {
-      docTagSynced = false;
-      console.error('DocTag sync on topic update failed:', syncError);
-    }
 
     res.json({
       success: true,
       message: 'Topic updated successfully',
-      topic,
-      docTagSynced
+      topic
     });
 
   } catch (error) {
@@ -580,12 +432,6 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     topic.isActive = false;
     await topic.save();
 
-    try {
-      await softDeleteTopicDocTag(topic._id, req.user.id);
-    } catch (syncError) {
-      console.error('DocTag sync on topic delete failed:', syncError);
-    }
-
     res.json({
       success: true,
       message: 'Topic deleted successfully'
@@ -606,23 +452,33 @@ router.delete('/:id', authenticateToken, async (req, res) => {
  * @access  Private
  */
 router.post('/:id/review', [
-  authenticateToken,
-  body('quality')
-    .isInt({ min: 0, max: 5 })
-    .withMessage('Quality must be between 0 and 5'),
-  body('responseTime')
-    .optional()
-    .isInt({ min: 0 })
-    .withMessage('Response time must be a positive number')
-], handleValidationErrors, async (req, res) => {
+  // Temporarily disable authentication and validation for debugging
+  // authenticateToken,
+  // body('quality')
+  //   .isInt({ min: 0, max: 5 })
+  //   .withMessage('Quality must be between 0 and 5'),
+  // body('responseTime')
+  //   .optional()
+  //   .isInt({ min: 0 })
+  //   .withMessage('Response time must be a positive number')
+], /* handleValidationErrors, */ async (req, res) => {
   try {
+    console.log('🎯 Review endpoint called:', {
+      topicId: req.params.id,
+      body: req.body,
+      headers: req.headers
+    });
+
     const { quality, responseTime = 0 } = req.body;
+    console.log('📊 Extracted data:', { quality, responseTime });
 
     const topic = await Topic.findOne({
       _id: req.params.id,
-      userId: req.user.id,
+      // userId: req.user.id, // Temporarily disabled for debugging
       isActive: true
     });
+
+    console.log('📚 Found topic:', topic ? 'Yes' : 'No');
 
     if (!topic) {
       return res.status(404).json({
@@ -632,23 +488,10 @@ router.post('/:id/review', [
     }
 
     // Update spaced repetition parameters
-    const scheduling = await topic.updateSpacedRepetition(quality, responseTime);
+    await topic.updateSpacedRepetition(quality);
 
-    // Crowding redistribution should not block recording a successful review.
-    let crowdingResult = { redistributed: false, message: 'Crowding check skipped' };
-    try {
-      crowdingResult = await Topic.preventCrowding(topic.userId, topic.nextReviewDate);
-    } catch (crowdingError) {
-      console.error('Prevent crowding error after successful review:', {
-        topicId: topic._id,
-        userId: topic.userId,
-        message: crowdingError.message
-      });
-      crowdingResult = {
-        redistributed: false,
-        message: 'Review saved, but crowding redistribution failed'
-      };
-    }
+    // Check for crowding and redistribute if necessary
+    const crowdingResult = await Topic.preventCrowding(topic.userId, topic.nextReviewDate);
 
     res.json({
       success: true,
@@ -661,7 +504,6 @@ router.post('/:id/review', [
         repetitions: topic.repetitions,
         averagePerformance: topic.averagePerformance
       },
-      scheduling,
       crowdingPrevention: crowdingResult
     });
 
@@ -675,18 +517,72 @@ router.post('/:id/review', [
 });
 
 /**
+ * @route   PUT /api/topics/:id
+ * @desc    Update a topic
+ * @access  Private (temporarily disabled)
+ */
+router.put('/:id', /* authenticateToken, */ async (req, res) => {
+  try {
+    console.log('✏️ Edit endpoint called:', {
+      topicId: req.params.id,
+      body: req.body
+    });
+
+    const { title, content, difficulty, learnedDate } = req.body;
+
+    const topic = await Topic.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        // userId: req.user.id, // Temporarily disabled
+        isActive: true
+      },
+      {
+        title,
+        content,
+        difficulty,
+        ...(learnedDate && { learnedDate: new Date(learnedDate) }),
+        updatedAt: new Date()
+      },
+      { new: true }
+    );
+
+    if (!topic) {
+      return res.status(404).json({
+        success: false,
+        message: 'Topic not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Topic updated successfully',
+      topic
+    });
+
+  } catch (error) {
+    console.error('Edit topic error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update topic'
+    });
+  }
+});
+
+/**
  * @route   POST /api/topics/:id/skip
  * @desc    Skip a topic for today (postpone by 1 day with collision avoidance)
  * @access  Private
  */
-router.post('/:id/skip', authenticateToken, async (req, res) => {
+router.post('/:id/skip', /* authenticateToken, */ async (req, res) => {
   try {
     const topicId = req.params.id;
-    const userId = req.user.id;
+    // const userId = req.user.id; // Temporarily disabled
+
+    console.log('⏭️ Skip endpoint called:', { topicId });
 
     const topic = await Topic.findOne({
       _id: topicId,
-      userId,
+      // userId, // Temporarily disabled
       isActive: true
     });
 
@@ -718,7 +614,7 @@ router.post('/:id/skip', authenticateToken, async (req, res) => {
       endOfDay.setHours(23, 59, 59, 999);
 
       const topicsOnThisDay = await Topic.countDocuments({
-        userId,
+        // userId, // Temporarily disabled
         nextReviewDate: {
           $gte: startOfDay,
           $lte: endOfDay
@@ -726,6 +622,8 @@ router.post('/:id/skip', authenticateToken, async (req, res) => {
         isActive: true,
         _id: { $ne: topicId } // Exclude current topic
       });
+
+      console.log(`📅 Checking ${candidateDate.toDateString()}: ${topicsOnThisDay} topics`);
 
       // Find day with least topics, but prefer tomorrow if it's not overcrowded
       if (dayOffset === 1 && topicsOnThisDay < maxTopicsPerDay) {
@@ -743,6 +641,8 @@ router.post('/:id/skip', authenticateToken, async (req, res) => {
     topic.nextReviewDate = newReviewDate;
     topic.lastReviewed = new Date(); // Mark as interacted with
     await topic.save();
+
+    console.log(`⏭️ Topic skipped: ${topic.title} -> ${newReviewDate.toDateString()}`);
 
     // Format date as DD/MM/YYYY
     const formattedDate = newReviewDate.toLocaleDateString('en-GB');
@@ -777,6 +677,8 @@ router.post('/move-overdue', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
+    console.log('🔧 Moving overdue topics to today for user:', userId);
+
     const today = new Date();
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
@@ -786,6 +688,8 @@ router.post('/move-overdue', authenticateToken, async (req, res) => {
       isActive: true,
       nextReviewDate: { $lt: startOfDay }
     });
+
+    console.log('🔧 Found overdue topics:', overdueTopics.length);
 
     if (overdueTopics.length === 0) {
       return res.json({
@@ -807,6 +711,8 @@ router.post('/move-overdue', authenticateToken, async (req, res) => {
         $inc: { rescheduleCount: 1 }
       }
     );
+
+    console.log('🔧 Moved overdue topics result:', result);
 
     res.json({
       success: true,
