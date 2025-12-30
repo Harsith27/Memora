@@ -1,10 +1,147 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Square, RotateCcw, Settings, Maximize, Minimize, History, Clock, ChevronUp, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Square, RotateCcw, Settings, Maximize, Minimize, History, Clock, ChevronUp, ChevronDown, Palette, Sparkles } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTimer } from '../contexts/TimerContext';
 import Toast from '../components/Toast';
 import journalService from '../services/journalService';
+
+const focusThemes = [
+  {
+    id: 'default',
+    name: 'Default',
+    description: 'Clean and simple focus environment.',
+    fontFamily: '"Inter", "Segoe UI", sans-serif',
+    clockFont: '"JetBrains Mono", "Fira Code", monospace',
+    pattern: 'grid',
+    backgroundImage: 'linear-gradient(135deg, #0f172a 0%, #1a1f3a 50%, #0f172a 100%)',
+    gridColor: 'rgba(148, 163, 184, 0.06)',
+    blobA: 'rgba(15, 23, 42, 0.5)',
+    blobB: 'rgba(30, 41, 59, 0.4)'
+  },
+  {
+    id: 'noir-grid',
+    name: 'Noir Grid',
+    description: 'High-contrast dark grid with electric cyan.',
+    fontFamily: '"Geist", "Inter", "Segoe UI", sans-serif',
+    clockFont: '"JetBrains Mono", "Fira Code", monospace',
+    pattern: 'grid',
+    backgroundImage: 'conic-gradient(from 45deg at 50% 50%, transparent 0deg, rgba(34, 211, 238, 0.08) 90deg, transparent 180deg), radial-gradient(circle at 15% 30%, rgba(6, 182, 212, 0.12), transparent 40%), linear-gradient(165deg, #000000 0%, #0f172a 50%, #000000 100%)',
+    gridColor: 'rgba(34, 211, 238, 0.12)',
+    blobA: 'rgba(34, 211, 238, 0.25)',
+    blobB: 'rgba(6, 182, 212, 0.20)'
+  },
+  {
+    id: 'aurora-slate',
+    name: 'Aurora Slate',
+    description: 'Northern lights with flowing gradients.',
+    fontFamily: '"Sora", "Inter", "Segoe UI", sans-serif',
+    clockFont: '"Sora", "Inter", sans-serif',
+    pattern: 'dots',
+    backgroundImage: 'radial-gradient(circle at 0% 50%, rgba(20, 184, 166, 0.15), transparent 35%), radial-gradient(circle at 100% 50%, rgba(34, 211, 238, 0.12), transparent 35%), radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.08), transparent 50%), linear-gradient(180deg, #020617 0%, #0a3436 50%, #020617 100%)',
+    gridColor: 'rgba(16, 185, 129, 0.08)',
+    blobA: 'rgba(20, 184, 166, 0.22)',
+    blobB: 'rgba(34, 211, 238, 0.18)'
+  },
+  {
+    id: 'carbon-steel',
+    name: 'Carbon Steel',
+    description: 'Industrial metallic with angular accents.',
+    fontFamily: '"IBM Plex Sans", "Inter", "Segoe UI", sans-serif',
+    clockFont: '"IBM Plex Mono", "JetBrains Mono", monospace',
+    pattern: 'grid',
+    backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(71, 85, 105, 0.05) 10px, rgba(71, 85, 105, 0.05) 20px), radial-gradient(circle at 25% 75%, rgba(100, 116, 139, 0.15), transparent 40%), linear-gradient(110deg, #0f0f0f 0%, #1a1f2e 50%, #0f0f0f 100%)',
+    gridColor: 'rgba(71, 85, 105, 0.10)',
+    blobA: 'rgba(100, 116, 139, 0.28)',
+    blobB: 'rgba(71, 85, 105, 0.22)'
+  },
+  {
+    id: 'ivory-night',
+    name: 'Ivory Night',
+    description: 'Warm editorial with golden accents.',
+    fontFamily: '"Cormorant Garamond", "Times New Roman", serif',
+    clockFont: '"Bodoni Moda", "Cormorant Garamond", serif',
+    pattern: 'dots',
+    backgroundImage: 'radial-gradient(circle at 80% 20%, rgba(245, 158, 11, 0.18), transparent 40%), radial-gradient(ellipse 800px 600px at 20% 80%, rgba(217, 119, 6, 0.10), transparent 50%), linear-gradient(145deg, #0a0805 0%, #1a1410 50%, #0a0805 100%)',
+    gridColor: 'rgba(217, 119, 6, 0.08)',
+    blobA: 'rgba(245, 158, 11, 0.26)',
+    blobB: 'rgba(217, 119, 6, 0.20)'
+  },
+  {
+    id: 'nordic-mist',
+    name: 'Nordic Mist',
+    description: 'Minimalist frozen atmosphere.',
+    fontFamily: '"Manrope", "Inter", "Segoe UI", sans-serif',
+    clockFont: '"Manrope", "Inter", sans-serif',
+    pattern: 'dots',
+    backgroundImage: 'radial-gradient(circle at 5% 5%, rgba(191, 219, 254, 0.14), transparent 25%), radial-gradient(circle at 95% 95%, rgba(165, 180, 252, 0.12), transparent 28%), radial-gradient(ellipse 1000px 400px at 50% 30%, rgba(147, 197, 253, 0.06), transparent 60%), linear-gradient(160deg, #020617 0%, #0d2638 50%, #020617 100%)',
+    gridColor: 'rgba(147, 197, 253, 0.08)',
+    blobA: 'rgba(191, 219, 254, 0.24)',
+    blobB: 'rgba(147, 197, 253, 0.18)'
+  },
+  {
+    id: 'cobalt-noise',
+    name: 'Cobalt Noise',
+    description: 'Electric energy with pulsing depth.',
+    fontFamily: '"Space Grotesk", "Inter", "Segoe UI", sans-serif',
+    clockFont: '"Space Grotesk", "Inter", sans-serif',
+    pattern: 'grid',
+    backgroundImage: 'conic-gradient(from 30deg at 60% 40%, rgba(99, 102, 241, 0.12), transparent 90deg), radial-gradient(circle at 30% 20%, rgba(79, 70, 229, 0.18), transparent 35%), radial-gradient(circle at 70% 80%, rgba(59, 130, 246, 0.14), transparent 40%), linear-gradient(135deg, #030712 0%, #0b0f2e 50%, #030712 100%)',
+    gridColor: 'rgba(99, 102, 241, 0.10)',
+    blobA: 'rgba(99, 102, 241, 0.28)',
+    blobB: 'rgba(79, 70, 229, 0.22)'
+  },
+  {
+    id: 'forest-vector',
+    name: 'Forest Vector',
+    description: 'Organic emerald with natural flow.',
+    fontFamily: '"General Sans", "Inter", "Segoe UI", sans-serif',
+    clockFont: '"General Sans", "Inter", sans-serif',
+    pattern: 'dots',
+    backgroundImage: 'radial-gradient(circle at 15% 60%, rgba(52, 211, 153, 0.16), transparent 35%), radial-gradient(circle at 85% 30%, rgba(34, 197, 94, 0.12), transparent 38%), radial-gradient(ellipse 900px 500px at 70% 70%, rgba(16, 185, 129, 0.08), transparent 60%), linear-gradient(155deg, #051513 0%, #0a3836 50%, #051513 100%)',
+    gridColor: 'rgba(52, 211, 153, 0.09)',
+    blobA: 'rgba(52, 211, 153, 0.26)',
+    blobB: 'rgba(16, 185, 129, 0.20)'
+  },
+  {
+    id: 'ember-signal',
+    name: 'Ember Signal',
+    description: 'Warm fire with glowing warmth.',
+    fontFamily: '"Outfit", "Inter", "Segoe UI", sans-serif',
+    clockFont: '"Outfit", "Inter", sans-serif',
+    pattern: 'grid',
+    backgroundImage: 'radial-gradient(circle at 75% 25%, rgba(239, 68, 68, 0.18), transparent 40%), radial-gradient(circle at 20% 70%, rgba(251, 146, 60, 0.14), transparent 38%), radial-gradient(ellipse 800px 600px at 50% 50%, rgba(249, 115, 22, 0.06), transparent 70%), linear-gradient(140deg, #0b0505 0%, #2a0f0a 50%, #0b0505 100%)',
+    gridColor: 'rgba(251, 146, 60, 0.09)',
+    blobA: 'rgba(248, 113, 113, 0.26)',
+    blobB: 'rgba(251, 146, 60, 0.20)'
+  },
+  {
+    id: 'midnight-paper',
+    name: 'Midnight Paper',
+    description: 'Pure monochrome editorial elegance.',
+    fontFamily: '"DM Sans", "Inter", "Segoe UI", sans-serif',
+    clockFont: '"DM Serif Display", "DM Sans", serif',
+    pattern: 'grid',
+    backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 80px, rgba(102, 102, 102, 0.03) 80px, rgba(102, 102, 102, 0.03) 81px), linear-gradient(180deg, #080808 0%, #1a1a1a 50%, #080808 100%)',
+    gridColor: 'rgba(161, 161, 170, 0.07)',
+    blobA: 'rgba(161, 161, 170, 0.18)',
+    blobB: 'rgba(113, 113, 122, 0.14)'
+  }
+];
+
+const getPatternLayer = (pattern, color, spacing = 42) => {
+  if (pattern === 'dots') {
+    return {
+      backgroundImage: `radial-gradient(circle, ${color} 1.2px, transparent 1.2px)`,
+      backgroundSize: `${spacing}px ${spacing}px`
+    };
+  }
+
+  return {
+    backgroundImage: `linear-gradient(${color} 1px, transparent 1px), linear-gradient(90deg, ${color} 1px, transparent 1px)`,
+    backgroundSize: `${spacing}px ${spacing}px`
+  };
+};
 
 const FocusMode = () => {
   const navigate = useNavigate();
@@ -58,6 +195,130 @@ const FocusMode = () => {
     return [];
   };
 
+  // Load saved session history from localStorage (user-specific)
+  const loadSessionHistory = () => {
+    const saved = localStorage.getItem(getUserStorageKey('focus_sessions'));
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    return [];
+  };
+
+  // Seed realistic subject-based presets and sessions for demo/testing when user has no data.
+  const seedFocusDemoData = () => {
+    const now = Date.now();
+
+    const presets = [
+      {
+        id: now + 1,
+        name: 'Mathematics Problem Sprint',
+        timerMode: 'countdown',
+        studyMethod: 'pomodoro',
+        customMinutes: 25,
+        pomodoroSessions: 4,
+        createdAt: new Date(now - 28 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: now + 2,
+        name: 'Physics Concept Block',
+        timerMode: 'countdown',
+        studyMethod: 'continuous',
+        customMinutes: 45,
+        pomodoroSessions: 4,
+        createdAt: new Date(now - 24 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: now + 3,
+        name: 'Organic Chemistry Revision',
+        timerMode: 'countdown',
+        studyMethod: 'pomodoro',
+        customMinutes: 25,
+        pomodoroSessions: 5,
+        createdAt: new Date(now - 21 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: now + 4,
+        name: 'History Timeline Mapping',
+        timerMode: 'countdown',
+        studyMethod: 'continuous',
+        customMinutes: 35,
+        pomodoroSessions: 4,
+        createdAt: new Date(now - 18 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: now + 5,
+        name: 'Biology Diagrams Drill',
+        timerMode: 'countdown',
+        studyMethod: 'pomodoro',
+        customMinutes: 25,
+        pomodoroSessions: 3,
+        createdAt: new Date(now - 14 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: now + 6,
+        name: 'English Essay Practice',
+        timerMode: 'countdown',
+        studyMethod: 'continuous',
+        customMinutes: 30,
+        pomodoroSessions: 4,
+        createdAt: new Date(now - 10 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    ];
+
+    const generatedSessions = [];
+    for (let i = 0; i < 40; i += 1) {
+      const daysAgo = Math.floor((i / 39) * 29);
+      const dayTimestamp = now - daysAgo * 24 * 60 * 60 * 1000;
+
+      const startHour = 7 + (i % 10);
+      const startMinute = (i % 4) * 15;
+      const startTime = new Date(dayTimestamp);
+      startTime.setHours(startHour, startMinute, 0, 0);
+
+      const mode = i % 3 === 0 ? 'stopwatch' : 'countdown';
+      const method = i % 2 === 0 ? 'pomodoro' : 'continuous';
+      const preset = presets[i % presets.length];
+
+      const durationMinutes = mode === 'countdown'
+        ? Math.max(20, Math.min(60, preset.customMinutes + ((i % 5) - 2) * 5))
+        : Math.max(18, Math.min(75, 30 + (i % 6) * 8));
+
+      const durationMs = durationMinutes * 60 * 1000;
+      const endTime = new Date(startTime.getTime() + durationMs);
+
+      const initialSeconds = mode === 'countdown' ? durationMinutes * 60 : 0;
+
+      generatedSessions.push({
+        id: now + 100 + i,
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+        method,
+        mode,
+        preset: preset.name,
+        phase: 'study',
+        session: method === 'pomodoro' ? 1 + (i % Math.max(1, preset.pomodoroSessions || 4)) : null,
+        initialTime: initialSeconds,
+        finalTime: mode === 'countdown' ? 0 : durationMinutes * 60,
+        events: [
+          {
+            timestamp: new Date(startTime.getTime() + Math.min(10 * 60 * 1000, durationMs / 2)).toISOString(),
+            type: 'checkpoint',
+          },
+        ],
+        completed: true,
+        duration: durationMs,
+        date: endTime.toISOString(),
+      });
+    }
+
+    generatedSessions.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+
+    return {
+      presets,
+      sessions: generatedSessions,
+    };
+  };
+
   // Initialize state with saved settings
   const [savedPresets, setSavedPresets] = useState([]);
 
@@ -75,7 +336,9 @@ const FocusMode = () => {
   const [customMinutes, setCustomMinutes] = useState(defaultSettings.customMinutes);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showThemes, setShowThemes] = useState(false);
   const [pomodoroSessions, setPomodoroSessions] = useState(defaultSettings.pomodoroSessions);
+  const [activeThemeId, setActiveThemeId] = useState('default');
 
   // Load settings when user changes (but don't reset running timer)
   useEffect(() => {
@@ -101,12 +364,44 @@ const FocusMode = () => {
 
     // Always reload presets
     setSavedPresets(loadPresets());
+    const savedTheme = localStorage.getItem(getUserStorageKey('focusModeTheme'));
+    setActiveThemeId(
+      savedTheme && focusThemes.some((theme) => theme.id === savedTheme)
+        ? savedTheme
+        : 'default'
+    );
   }, [user?.id]); // Only reload when user changes, not when timer state changes
+
+  // Load or seed focus history and presets for the active user.
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const sessionsKey = getUserStorageKey('focus_sessions');
+    const presetsKey = getUserStorageKey('focusModePresets');
+    const seededFlagKey = getUserStorageKey('focusModeDemoSeeded');
+
+    const existingSessions = loadSessionHistory();
+    const existingPresets = loadPresets();
+    const alreadySeeded = localStorage.getItem(seededFlagKey) === 'true';
+
+    if (!alreadySeeded && existingSessions.length === 0 && existingPresets.length === 0) {
+      const demoData = seedFocusDemoData();
+      localStorage.setItem(sessionsKey, JSON.stringify(demoData.sessions));
+      localStorage.setItem(presetsKey, JSON.stringify(demoData.presets));
+      localStorage.setItem(seededFlagKey, 'true');
+
+      setSessionHistory(demoData.sessions);
+      setSavedPresets(demoData.presets);
+      return;
+    }
+
+    setSessionHistory(existingSessions);
+    setSavedPresets(existingPresets);
+  }, [user?.id]);
 
   // Handle timer completion
   useEffect(() => {
     if (isCompleted && currentSessionData) {
-      console.log('Timer completed! Ending session...');
       // Use setTimeout to avoid potential infinite loops
       setTimeout(() => {
         endSession(true); // Mark as completed
@@ -218,6 +513,13 @@ const FocusMode = () => {
     setToast({ show: true, message, type });
   };
 
+  const applyTheme = (themeId) => {
+    setActiveThemeId(themeId);
+    localStorage.setItem(getUserStorageKey('focusModeTheme'), themeId);
+  };
+
+  const activeTheme = focusThemes.find((theme) => theme.id === activeThemeId) || focusThemes[0];
+
   // Study method configurations
   const studyMethods = {
     pomodoro: {
@@ -278,7 +580,7 @@ const FocusMode = () => {
 
       // Save to localStorage for Analytics
       try {
-        localStorage.setItem('focus_sessions_harsith', JSON.stringify(updatedHistory));
+        localStorage.setItem(getUserStorageKey('focus_sessions'), JSON.stringify(updatedHistory));
       } catch (error) {
         console.warn('Failed to save session history:', error);
       }
@@ -475,13 +777,13 @@ const FocusMode = () => {
       document.documentElement.requestFullscreen().then(() => {
         setIsFullscreen(true);
       }).catch(err => {
-        console.log('Error attempting to enable fullscreen:', err);
+        console.error('Error attempting to enable fullscreen:', err);
       });
     } else {
       document.exitFullscreen().then(() => {
         setIsFullscreen(false);
       }).catch(err => {
-        console.log('Error attempting to exit fullscreen:', err);
+        console.error('Error attempting to exit fullscreen:', err);
       });
     }
   };
@@ -499,6 +801,9 @@ const FocusMode = () => {
           // Close preset dialog first
           setShowPresetDialog(false);
           setPresetName('');
+        } else if (showThemes) {
+          // Close themes dialog
+          setShowThemes(false);
         } else if (showPresetsManager) {
           // Close presets manager dialog
           setShowPresetsManager(false);
@@ -516,7 +821,7 @@ const FocusMode = () => {
       }
 
       // F11 or Ctrl+F for fullscreen toggle (only if no dialogs open)
-      if (!showSettings && !showHistory && !showPresetDialog && !showPresetsManager && (event.key === 'F11' || (event.key === 'f' && event.ctrlKey))) {
+      if (!showSettings && !showHistory && !showPresetDialog && !showPresetsManager && !showThemes && (event.key === 'F11' || (event.key === 'f' && event.ctrlKey))) {
         event.preventDefault();
         toggleFullscreen();
       }
@@ -529,10 +834,49 @@ const FocusMode = () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('keydown', handleKeyPress);
     };
-  }, [isFullscreen]);
+  }, [isFullscreen, showPresetDialog, showThemes, showPresetsManager, showSettings, showHistory]);
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col">
+    <div
+      className="min-h-screen text-white flex flex-col relative overflow-hidden"
+      style={{
+        backgroundImage: activeTheme.backgroundImage,
+        backgroundColor: '#000000',
+        fontFamily: activeTheme.fontFamily
+      }}
+    >
+      <style>{`
+        @keyframes focusThemeFloatA {
+          0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.68; }
+          50% { transform: translate3d(28px, -24px, 0) scale(1.08); opacity: 1; }
+          100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.68; }
+        }
+        @keyframes focusThemeFloatB {
+          0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.58; }
+          50% { transform: translate3d(-30px, 22px, 0) scale(1.06); opacity: 0.95; }
+          100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.58; }
+        }
+      `}</style>
+      <div className="pointer-events-none absolute inset-0">
+        <div
+          className="absolute -top-24 -left-20 w-[34rem] h-[34rem] rounded-full blur-3xl"
+          style={{
+            backgroundColor: activeTheme.blobA,
+            animation: 'focusThemeFloatA 18s ease-in-out infinite'
+          }}
+        />
+        <div
+          className="absolute -bottom-28 -right-20 w-[36rem] h-[36rem] rounded-full blur-3xl"
+          style={{
+            backgroundColor: activeTheme.blobB,
+            animation: 'focusThemeFloatB 22s ease-in-out infinite'
+          }}
+        />
+        <div
+          className="absolute inset-0"
+          style={getPatternLayer(activeTheme.pattern, activeTheme.gridColor, 42)}
+        />
+      </div>
       {/* Landscape orientation prompt for mobile */}
       <div className="sm:hidden portrait:flex hidden fixed inset-0 bg-black z-50 items-center justify-center p-6">
         <div className="text-center">
@@ -546,7 +890,7 @@ const FocusMode = () => {
 
       {/* Header - Hidden in fullscreen */}
       {!isFullscreen && (
-        <div className="flex items-center justify-between p-3 sm:p-6">
+        <div className="relative z-10 flex items-center justify-between p-3 sm:p-6">
         <button
           onClick={() => navigate('/dashboard')}
           className="flex items-center space-x-1 sm:space-x-2 text-gray-400 hover:text-white transition-colors"
@@ -556,7 +900,20 @@ const FocusMode = () => {
         </button>
 
         <div className="flex items-center space-x-2 sm:space-x-4">
-          <span className="text-xs sm:text-sm text-gray-400 hidden md:inline">Focus Mode</span>
+          <div className="hidden md:flex items-center space-x-3">
+            <span className="text-xs sm:text-sm text-gray-300">Focus Mode</span>
+            <button
+              onClick={() => setShowThemes(!showThemes)}
+              className={`p-1.5 rounded-lg transition-colors ${
+                showThemes
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-gray-300 hover:text-white hover:bg-white/10'
+              }`}
+              title={showThemes ? 'Hide Themes' : 'Show Themes'}
+            >
+              <Palette className="w-4 h-4" />
+            </button>
+          </div>
           <button
             onClick={() => setShowPresetsManager(!showPresetsManager)}
             className={`p-1.5 sm:p-2 rounded-lg transition-colors ${
@@ -598,6 +955,85 @@ const FocusMode = () => {
             <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         </div>
+        </div>
+      )}
+
+      {/* Themes Dialog */}
+      {showThemes && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-2 sm:p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowThemes(false);
+            }
+          }}
+        >
+          <div className="bg-black border border-white/20 rounded-xl p-4 sm:p-6 max-w-6xl w-full mx-2 sm:mx-4 shadow-2xl max-h-[88vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between mb-4 sm:mb-5">
+              <div>
+                <h2 className="text-base sm:text-lg font-semibold text-white">Focus Themes</h2>
+                <p className="text-xs sm:text-sm text-gray-400 mt-1">Pick a modern look for your deep-work screen.</p>
+              </div>
+              <button
+                onClick={() => setShowThemes(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <Palette className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 overflow-y-auto scrollbar-hide pr-1">
+              {focusThemes.map((theme) => {
+                const isActive = activeThemeId === theme.id;
+
+                return (
+                  <button
+                    key={theme.id}
+                    onClick={() => {
+                      applyTheme(theme.id);
+                      setShowThemes(false);
+                    }}
+                    className={`text-left rounded-xl border p-3 transition-all ${
+                      isActive
+                        ? 'border-white/60 bg-white/10'
+                        : 'border-white/20 bg-white/5 hover:border-white/40'
+                    }`}
+                  >
+                    <div
+                      className="h-20 rounded-lg border border-white/20 mb-3 relative overflow-hidden"
+                      style={{ backgroundImage: theme.backgroundImage }}
+                    >
+                      <div
+                        className="absolute inset-0"
+                        style={getPatternLayer(theme.pattern, theme.gridColor, 24)}
+                      />
+                      <div
+                        className="absolute -top-4 -left-3 w-14 h-14 rounded-full blur-xl"
+                        style={{ backgroundColor: theme.blobA }}
+                      />
+                      <div
+                        className="absolute -bottom-5 -right-3 w-16 h-16 rounded-full blur-xl"
+                        style={{ backgroundColor: theme.blobB }}
+                      />
+                      {isActive && (
+                        <div className="absolute top-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-white/90 text-black font-medium">Active</div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-white truncate">{theme.name}</p>
+                      <Sparkles className="w-3.5 h-3.5 text-gray-400" />
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1 leading-relaxed">{theme.description}</p>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <p className="text-xs text-gray-400">Click a theme to apply instantly.</p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1089,7 +1525,10 @@ const FocusMode = () => {
             {sessionHistory.length > 0 && (
               <div className="flex justify-between mt-6 pt-4 border-t border-white/10">
                 <button
-                  onClick={() => setSessionHistory([])}
+                  onClick={() => {
+                    setSessionHistory([]);
+                    localStorage.removeItem(getUserStorageKey('focus_sessions'));
+                  }}
                   className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
                 >
                   Clear History
@@ -1122,7 +1561,7 @@ const FocusMode = () => {
       )}
 
       {/* Main Timer Display */}
-      <div className={`flex-1 flex flex-col items-center px-3 sm:px-6 ${
+      <div className={`relative z-10 flex-1 flex flex-col items-center px-3 sm:px-6 ${
         isFullscreen ? 'justify-center pt-8 sm:pt-16' : 'justify-center'
       }`}>
 
@@ -1153,11 +1592,11 @@ const FocusMode = () => {
         {/* Digital Clock Display - Massive in Fullscreen */}
         <div className={`${isFullscreen ? 'mb-4 sm:mb-8 px-2 sm:px-4' : 'mb-6 sm:mb-12'}`}>
           <div className="text-center">
-            <div className={`font-mono font-bold text-white leading-none select-none ${
+            <div className={`font-bold text-white leading-none select-none ${
               isFullscreen
                 ? 'text-[6rem] sm:text-[8rem] md:text-[12rem] lg:text-[16rem] xl:text-[20rem] tracking-tight'
                 : 'text-[3rem] sm:text-[4rem] md:text-[6rem] lg:text-[8rem] xl:text-[10rem] tracking-wider'
-            }`}>
+            }`} style={{ fontFamily: activeTheme.clockFont || activeTheme.fontFamily }}>
               {formatTime(getCurrentTime())}
             </div>
             {!isFullscreen && (
@@ -1177,7 +1616,11 @@ const FocusMode = () => {
             <button
               onClick={handleStartTimer}
               disabled={timerMode === 'countdown' && timeLeft === 0}
-              className={`flex items-center justify-center bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-full transition-colors shadow-lg ${
+              className={`flex items-center justify-center rounded-full transition-colors shadow-lg border border-white/20 backdrop-blur-md ${
+                timerMode === 'countdown' && timeLeft === 0
+                  ? 'bg-gray-700/50 text-gray-400 cursor-not-allowed'
+                  : 'bg-sky-300/20 text-sky-100 hover:bg-sky-300/30'
+              } ${
                 isFullscreen ? 'w-12 h-12 sm:w-14 sm:h-14' : 'w-12 h-12 sm:w-16 sm:h-16'
               }`}
             >
@@ -1186,7 +1629,7 @@ const FocusMode = () => {
           ) : (
             <button
               onClick={handlePauseTimer}
-              className={`flex items-center justify-center bg-yellow-600 hover:bg-yellow-700 rounded-full transition-colors shadow-lg ${
+              className={`flex items-center justify-center rounded-full transition-colors shadow-lg border border-white/20 backdrop-blur-md bg-amber-200/20 text-amber-100 hover:bg-amber-200/30 ${
                 isFullscreen ? 'w-12 h-12 sm:w-14 sm:h-14' : 'w-12 h-12 sm:w-16 sm:h-16'
               }`}
             >
@@ -1196,7 +1639,7 @@ const FocusMode = () => {
 
           <button
             onClick={handleStopTimer}
-            className={`flex items-center justify-center bg-red-600 hover:bg-red-700 rounded-full transition-colors shadow-lg ${
+            className={`flex items-center justify-center rounded-full transition-colors shadow-lg border border-white/20 backdrop-blur-md bg-rose-300/20 text-rose-100 hover:bg-rose-300/30 ${
               isFullscreen ? 'w-12 h-12 sm:w-14 sm:h-14' : 'w-12 h-12 sm:w-16 sm:h-16'
             }`}
           >
@@ -1205,12 +1648,12 @@ const FocusMode = () => {
 
           {/* Time Adjustment Control - Single Circle with Split Functionality */}
           <div
-            className={`relative rounded-full transition-colors shadow-lg ${
+            className={`relative rounded-full transition-colors shadow-lg border border-white/20 backdrop-blur-md ${
               isFullscreen ? 'w-12 h-12 sm:w-14 sm:h-14' : 'w-12 h-12 sm:w-16 sm:h-16'
             } ${
               isRunning || timerMode !== 'countdown'
-                ? 'bg-gray-600 cursor-not-allowed opacity-50'
-                : 'bg-gradient-to-b from-purple-500 to-purple-800 hover:from-purple-400 hover:to-purple-900'
+                ? 'bg-gray-700/50 cursor-not-allowed opacity-50'
+                : 'bg-violet-300/18 hover:bg-violet-300/28'
             }`}
             title={isRunning || timerMode !== 'countdown' ? 'Time adjustment disabled' : 'Click top: +1 min, Click bottom: -1 min'}
           >
@@ -1218,7 +1661,7 @@ const FocusMode = () => {
             <button
               onClick={increaseTime}
               disabled={isRunning || timerMode !== 'countdown'}
-              className="absolute top-0 left-0 w-full h-1/2 flex items-center justify-center rounded-t-full hover:bg-purple-300/20 transition-colors"
+              className="absolute top-0 left-0 w-full h-1/2 flex items-center justify-center rounded-t-full hover:bg-white/10 transition-colors"
               style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 0 100%)' }}
             >
               <ChevronUp className={`${isFullscreen ? 'w-4 h-4 sm:w-5 sm:h-5' : 'w-4 h-4 sm:w-6 sm:h-6'} text-white`} />
@@ -1228,7 +1671,7 @@ const FocusMode = () => {
             <button
               onClick={decreaseTime}
               disabled={isRunning || timerMode !== 'countdown'}
-              className="absolute bottom-0 left-0 w-full h-1/2 flex items-center justify-center rounded-b-full hover:bg-purple-900/30 transition-colors"
+              className="absolute bottom-0 left-0 w-full h-1/2 flex items-center justify-center rounded-b-full hover:bg-black/20 transition-colors"
               style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 0 100%)' }}
             >
               <ChevronDown className={`${isFullscreen ? 'w-4 h-4 sm:w-5 sm:h-5' : 'w-4 h-4 sm:w-6 sm:h-6'} text-white`} />
