@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Brain, Calendar, BarChart3, Settings, FileText, BookOpen,
-  Plus, Flame, Zap, ArrowLeft, CheckCircle, Target, Clock, Edit3, Trash2, SkipForward,
+  Plus, Flame, Zap, ArrowLeft, CheckCircle, Target, Clock, Edit3, Trash2, SkipForward, Loader,
   Twitter, Github, Mail, Globe, Heart, Linkedin, Instagram, Menu, PanelLeftClose, PanelLeft,
   Save, X
 } from 'lucide-react';
@@ -1008,28 +1008,40 @@ const Dashboard = () => {
                               <button
                                 onClick={() => handleTopicReview(topic._id, 3)}
                                 disabled={processingTopics.has(topic._id)}
-                                className={`text-white text-xs px-2.5 py-1 rounded transition-colors flex items-center ${
+                                className={`text-white text-xs px-2.5 py-1 rounded transition-colors flex items-center justify-center min-w-[70px] ${
                                   processingTopics.has(topic._id)
                                     ? 'bg-green-400 cursor-not-allowed'
                                     : 'bg-green-600 hover:bg-green-700'
                                 }`}
                                 title="Mark as completed"
                               >
-                                <CheckCircle className="w-3 h-3 mr-1" />
-                                {processingTopics.has(topic._id) ? 'Processing...' : 'Done'}
+                                {processingTopics.has(topic._id) ? (
+                                  <Loader className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <>
+                                    <CheckCircle className="w-3 h-3 mr-1" />
+                                    Done
+                                  </>
+                                )}
                               </button>
                               <button
                                 onClick={() => handleTopicSkip(topic._id)}
                                 disabled={processingTopics.has(topic._id)}
-                                className={`border text-xs px-2.5 py-1 rounded transition-colors flex items-center ${
+                                className={`border text-xs px-2.5 py-1 rounded transition-colors flex items-center justify-center min-w-[60px] ${
                                   processingTopics.has(topic._id)
                                     ? 'border-yellow-300 text-yellow-300 cursor-not-allowed'
                                     : 'border-white/20 hover:border-yellow-400 text-yellow-400 hover:text-yellow-300'
                                 }`}
                                 title="Skip for today"
                               >
-                                <SkipForward className="w-3 h-3 mr-1" />
-                                {processingTopics.has(topic._id) ? 'Skipping...' : 'Skip'}
+                                {processingTopics.has(topic._id) ? (
+                                  <Loader className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <>
+                                    <SkipForward className="w-3 h-3 mr-1" />
+                                    Skip
+                                  </>
+                                )}
                               </button>
                               <button
                                 onClick={() => handleTopicEdit(topic._id)}
