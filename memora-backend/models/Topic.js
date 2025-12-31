@@ -338,8 +338,8 @@ topicSchema.methods.updateSpacedRepetition = async function(quality, responseTim
       0.65,
       1.35
     );
-    const absoluteRevisionCap = Math.max(1, Math.round(baseRevisionCap * adaptiveCapMultiplier));
-    const effectiveCap = Math.min(maxByGrowthCap, absoluteRevisionCap);
+    absoluteRevisionCap = Math.max(1, Math.round(baseRevisionCap * adaptiveCapMultiplier));
+    effectiveCap = Math.min(maxByGrowthCap, absoluteRevisionCap);
 
     nextIntervalDays = Math.max(
       1,
