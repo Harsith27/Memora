@@ -1,10 +1,16 @@
 // API service for Memora frontend
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+// Prefer explicit env URL, otherwise use same-origin /api so Vite proxy handles dev routing.
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const IS_DEV = import.meta.env.DEV;
 
 class ApiService {
   constructor() {
     this.baseURL = API_BASE_URL;
     this.token = localStorage.getItem('accessToken');
+
+    if (IS_DEV) {
+      console.log('API Base URL:', this.baseURL);
+    }
   }
 
   // Set authentication token
@@ -38,26 +44,33 @@ class ApiService {
       ...options,
     };
 
-    console.log('API Request:', {
-      url,
-      method: config.method || 'GET',
-      headers: config.headers,
-      body: config.body
-    });
+    if (IS_DEV) {
+      console.log('API Request:', {
+        url,
+        method: config.method || 'GET'
+      });
+    }
 
     try {
       const response = await fetch(url, config);
 
-      console.log('API Response Status:', {
-        status: response.status,
-        ok: response.ok,
-        statusText: response.statusText,
-        url: response.url
-      });
+      if (IS_DEV) {
+        console.log('API Response Status:', {
+          status: response.status,
+          ok: response.ok,
+          statusText: response.statusText,
+          url: response.url
+        });
+      }
 
       const data = await response.json();
 
-      console.log('API Response Data:', data);
+      if (IS_DEV) {
+        console.log('API Response Data:', {
+          success: data?.success,
+          message: data?.message
+        });
+      }
 
       if (!response.ok) {
         throw new Error(data.message || `HTTP error! status: ${response.status}`);
@@ -68,7 +81,7 @@ class ApiService {
       console.error('API request failed:', {
         error: error.message,
         url,
-        config
+        method: config.method || 'GET'
       });
 
       // More specific error messages
@@ -211,8 +224,8 @@ class ApiService {
     return this.get('/user/memscore');
   }
 
-  async getMemScoreHistory() {
-    return this.get('/user/memscore/history');
+  async getMemScoreHistory(days = 30) {
+    return this.get(`/user/memscore/history?days=${days}`);
   }
 
   async recordStudySession() {
@@ -238,10 +251,7 @@ class ApiService {
   }
 
   async createTopic(topicData) {
-    console.log('API Service: Creating topic with data:', topicData);
-    const response = await this.post('/topics', topicData);
-    console.log('API Service: Create topic response:', response);
-    return response;
+    return this.post('/topics', topicData);
   }
 
   async getTopic(id) {
@@ -257,10 +267,11 @@ class ApiService {
   }
 
   async reviewTopic(id, quality, responseTime = null) {
-    return this.post(`/topics/${id}/review`, {
-      quality,
-      responseTime
-    });
+    const payload = { quality };
+    if (responseTime !== null && responseTime !== undefined) {
+      payload.responseTime = responseTime;
+    }
+    return this.post(`/topics/${id}/review`, payload);
   }
 
   async skipTopic(id) {
