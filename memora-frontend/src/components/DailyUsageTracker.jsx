@@ -1,50 +1,109 @@
 import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Globe, TrendingUp, Eye, Timer } from 'lucide-react';
+import { Globe, TrendingUp, Timer } from 'lucide-react';
 
-const DailyUsageTracker = () => {
+const SESSION_GAP_MS = 20 * 60 * 1000;
+const MAX_TICK_SECONDS = 20;
+
+const toLocalDateKey = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const DailyUsageTracker = ({ userStorageKey = 'guest' }) => {
   const [hoveredDay, setHoveredDay] = useState(null);
-  const [websiteUsage, setWebsiteUsage] = useState([]);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  // Track website usage time
+  const storageKey = `memora_daily_usage_${userStorageKey}`;
+
+  const readUsage = () => {
+    try {
+      return JSON.parse(localStorage.getItem(storageKey) || '{}');
+    } catch {
+      return {};
+    }
+  };
+
+  const normalizeDayUsage = (raw = {}) => {
+    const seconds = Number.isFinite(raw.seconds)
+      ? raw.seconds
+      : Math.max(0, Math.round((raw.minutes || 0) * 60));
+
+    return {
+      seconds,
+      minutes: seconds / 60,
+      sessions: Math.max(0, Number(raw.sessions) || 0),
+      lastActive: Number(raw.lastActive) || Date.now(),
+    };
+  };
+
+  // Track website usage time with second-level accuracy.
   useEffect(() => {
-    const trackUsage = () => {
-      const today = new Date().toISOString().split('T')[0];
-      const stored = localStorage.getItem('memora_daily_usage') || '{}';
-      const usage = JSON.parse(stored);
+    const tick = () => {
+      if (document.hidden) return;
 
-      // Initialize today's data if it doesn't exist
-      if (!usage[today]) {
-        usage[today] = { minutes: 0, sessions: 1, lastActive: Date.now() };
-        localStorage.setItem('memora_daily_usage', JSON.stringify(usage));
+      const now = Date.now();
+      const today = toLocalDateKey(new Date());
+      const usage = readUsage();
+      const existing = normalizeDayUsage(usage[today]);
+      const hadRecord = Boolean(usage[today]);
+
+      if (!hadRecord) {
+        usage[today] = {
+          seconds: 0,
+          minutes: 0,
+          sessions: 1,
+          lastActive: now,
+        };
+        localStorage.setItem(storageKey, JSON.stringify(usage));
+        setRefreshKey((prev) => prev + 1);
+        return;
       }
 
-      // Track time every 10 seconds for more accurate tracking
-      const interval = setInterval(() => {
-        if (!document.hidden) {
-          const currentUsage = JSON.parse(localStorage.getItem('memora_daily_usage') || '{}');
-          if (!currentUsage[today]) {
-            currentUsage[today] = { minutes: 0, sessions: 1, lastActive: Date.now() };
-          }
+      let sessions = existing.sessions;
+      if (now - existing.lastActive > SESSION_GAP_MS) {
+        sessions += 1;
+      }
 
-          // Increment by 1/6 minute (10 seconds)
-          currentUsage[today].minutes += 1/6;
-          currentUsage[today].lastActive = Date.now();
-          localStorage.setItem('memora_daily_usage', JSON.stringify(currentUsage));
-        }
-      }, 10000); // Every 10 seconds
+      const deltaSeconds = Math.max(
+        0,
+        Math.min(MAX_TICK_SECONDS, Math.round((now - existing.lastActive) / 1000))
+      );
+      const totalSeconds = existing.seconds + deltaSeconds;
 
-      return () => clearInterval(interval);
+      usage[today] = {
+        seconds: totalSeconds,
+        minutes: totalSeconds / 60,
+        sessions,
+        lastActive: now,
+      };
+
+      localStorage.setItem(storageKey, JSON.stringify(usage));
+      setRefreshKey((prev) => prev + 1);
     };
 
-    const cleanup = trackUsage();
-    return cleanup;
-  }, []);
+    tick();
+    const interval = setInterval(tick, 10000);
 
-  // Get real usage data only
+    const handleVisibility = () => {
+      if (!document.hidden) tick();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', tick);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', tick);
+    };
+  }, [storageKey]);
+
+  // Get real usage data only.
   const usageData = useMemo(() => {
-    const stored = localStorage.getItem('memora_daily_usage') || '{}';
-    const usage = JSON.parse(stored);
+    const usage = readUsage();
 
     const realData = [];
     const today = new Date();
@@ -52,10 +111,9 @@ const DailyUsageTracker = () => {
     for (let i = 6; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split('T')[0];
+      const dateStr = toLocalDateKey(date);
 
-      // Only use real data, no fake/sample data
-      const dayUsage = usage[dateStr] || { minutes: 0, sessions: 0 };
+      const dayUsage = normalizeDayUsage(usage[dateStr] || {});
 
       realData.push({
         date: dateStr,
@@ -67,12 +125,18 @@ const DailyUsageTracker = () => {
     }
 
     return realData;
-  }, []);
+  }, [refreshKey, storageKey]);
 
   const totalMinutes = usageData.reduce((sum, d) => sum + d.minutes, 0);
   const activeDays = usageData.filter(d => d.minutes >= 1).length; // Only days with at least 1 minute
   const avgMinutes = activeDays > 0 ? Math.round(totalMinutes / activeDays) : 0;
   const todayMinutes = usageData[usageData.length - 1]?.minutes || 0;
+
+  const formatMinutes = (value) => {
+    if (!Number.isFinite(value) || value <= 0) return '0m';
+    if (value < 1) return '1m';
+    return `${Math.round(value)}m`;
+  };
 
   return (
     <div className="bg-black border border-white/20 rounded-xl p-6">
@@ -88,7 +152,7 @@ const DailyUsageTracker = () => {
             <Timer className="w-4 h-4 text-emerald-400" />
             <span className="text-xs text-gray-400">Today</span>
           </div>
-          <div className="text-2xl font-bold text-emerald-400">{todayMinutes}m</div>
+          <div className="text-2xl font-bold text-emerald-400">{formatMinutes(todayMinutes)}</div>
         </div>
 
         <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
@@ -104,7 +168,7 @@ const DailyUsageTracker = () => {
       <div className="mb-6">
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm text-gray-400">This Week</span>
-          <span className="text-sm text-emerald-400">{totalMinutes}m total</span>
+          <span className="text-sm text-emerald-400">{formatMinutes(totalMinutes)} total</span>
         </div>
 
         <div className="grid grid-cols-7 gap-3">
@@ -145,7 +209,7 @@ const DailyUsageTracker = () => {
                   )}
                 </div>
 
-                <div className="text-xs text-gray-500 font-medium">{day.minutes}m</div>
+                <div className="text-xs text-gray-500 font-medium">{formatMinutes(day.minutes)}</div>
 
                 {/* Tooltip */}
                 {hoveredDay === index && day.minutes > 0 && (
@@ -156,7 +220,7 @@ const DailyUsageTracker = () => {
                     transition={{ duration: 0.2 }}
                   >
                     <div className="text-xs text-white font-medium">{day.day}</div>
-                    <div className="text-xs text-emerald-400">{day.minutes} minutes</div>
+                    <div className="text-xs text-emerald-400">{formatMinutes(day.minutes)}</div>
                     <div className="text-xs text-gray-400">{day.sessions} sessions</div>
                   </motion.div>
                 )}
