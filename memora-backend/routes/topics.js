@@ -452,33 +452,25 @@ router.delete('/:id', authenticateToken, async (req, res) => {
  * @access  Private
  */
 router.post('/:id/review', [
-  // Temporarily disable authentication and validation for debugging
-  // authenticateToken,
-  // body('quality')
-  //   .isInt({ min: 0, max: 5 })
-  //   .withMessage('Quality must be between 0 and 5'),
-  // body('responseTime')
-  //   .optional()
-  //   .isInt({ min: 0 })
-  //   .withMessage('Response time must be a positive number')
-], /* handleValidationErrors, */ async (req, res) => {
+  authenticateToken,
+  body('quality')
+    .isInt({ min: 0, max: 5 })
+    .withMessage('Quality must be between 0 and 5'),
+  body('responseTime')
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage('Response time must be a positive number')
+], handleValidationErrors, async (req, res) => {
   try {
-    console.log('🎯 Review endpoint called:', {
-      topicId: req.params.id,
-      body: req.body,
-      headers: req.headers
-    });
-
     const { quality, responseTime = 0 } = req.body;
-    console.log('📊 Extracted data:', { quality, responseTime });
+    const userId = req.user.id;
 
+    // Find topic owned by this user
     const topic = await Topic.findOne({
       _id: req.params.id,
-      // userId: req.user.id, // Temporarily disabled for debugging
+      userId: userId,
       isActive: true
     });
-
-    console.log('📚 Found topic:', topic ? 'Yes' : 'No');
 
     if (!topic) {
       return res.status(404).json({
@@ -487,11 +479,23 @@ router.post('/:id/review', [
       });
     }
 
-    // Update spaced repetition parameters
-    await topic.updateSpacedRepetition(quality);
+    // Update spaced repetition parameters with error handling
+    let srResult;
+    try {
+      srResult = await topic.updateSpacedRepetition(quality, responseTime);
+    } catch (srError) {
+      console.error('❌ Spaced repetition error:', srError.message, srError.stack);
+      throw new Error(`Spaced repetition calculation failed: ${srError.message}`);
+    }
 
-    // Check for crowding and redistribute if necessary
-    const crowdingResult = await Topic.preventCrowding(topic.userId, topic.nextReviewDate);
+    // Check for crowding and redistribute if necessary (non-blocking)
+    let crowdingResult = { redistributed: false, topicsRescheduled: 0 };
+    try {
+      crowdingResult = await Topic.preventCrowding(topic.userId, topic.nextReviewDate);
+    } catch (crowdingError) {
+      console.error('⚠️  Crowding prevention error (non-blocking):', crowdingError.message);
+      // Don't fail the review if crowding prevention fails
+    }
 
     res.json({
       success: true,
@@ -504,14 +508,16 @@ router.post('/:id/review', [
         repetitions: topic.repetitions,
         averagePerformance: topic.averagePerformance
       },
+      spacedRepetition: srResult,
       crowdingPrevention: crowdingResult
     });
 
   } catch (error) {
-    console.error('Record review error:', error);
+    console.error('❌ Record review error:', error.message, error.stack);
     res.status(500).json({
       success: false,
-      message: 'Failed to record review'
+      message: error.message || 'Failed to record review',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
