@@ -683,8 +683,6 @@ router.post('/move-overdue', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    console.log('🔧 Moving overdue topics to today for user:', userId);
-
     const today = new Date();
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
@@ -695,7 +693,10 @@ router.post('/move-overdue', authenticateToken, async (req, res) => {
       nextReviewDate: { $lt: startOfDay }
     });
 
-    console.log('🔧 Found overdue topics:', overdueTopics.length);
+    // Only log if there are overdue topics found
+    if (overdueTopics.length > 0) {
+      console.log('🔧 Moving', overdueTopics.length, 'overdue topics for user:', userId);
+    }
 
     if (overdueTopics.length === 0) {
       return res.json({
@@ -717,8 +718,6 @@ router.post('/move-overdue', authenticateToken, async (req, res) => {
         $inc: { rescheduleCount: 1 }
       }
     );
-
-    console.log('🔧 Moved overdue topics result:', result);
 
     res.json({
       success: true,
