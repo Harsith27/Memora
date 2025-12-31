@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const User = require('./User');
 
 const topicSchema = new mongoose.Schema({
   title: {
@@ -166,45 +167,230 @@ topicSchema.virtual('daysUntilReview').get(function() {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 });
 
-// Instance method to update spaced repetition parameters
-topicSchema.methods.updateSpacedRepetition = function(quality) {
-  // Quality: 0-5 (0 = complete blackout, 5 = perfect response)
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const MIN_EASE_FACTOR = 1.3;
+const MAX_EASE_FACTOR = 3.2;
+const MAX_INTERVAL_DAYS = 3650;
+
+const QUALITY_LABELS = {
+  0: 'blackout',
+  1: 'incorrect',
+  2: 'hard',
+  3: 'hesitant',
+  4: 'good',
+  5: 'perfect'
+};
+
+const DIFFICULTY_INTERVAL_MULTIPLIER = {
+  1: 1.32,
+  2: 1.16,
+  3: 1.0,
+  4: 0.82,
+  5: 0.68
+};
+
+const QUALITY_INTERVAL_MULTIPLIER = {
+  3: 1.0,
+  4: 1.08,
+  5: 1.16
+};
+
+const RESPONSE_TIME_MULTIPLIER = {
+  fast: 1.03,
+  normal: 1.0,
+  slow: 0.96,
+  verySlow: 0.9
+};
+
+const RETENTION_SPEED_MULTIPLIER = {
+  fast: 1.05,
+  medium: 1.0,
+  slow: 0.95
+};
+
+const REVISION_BASE_CAP_BY_REPETITION = [
+  1, 3, 6, 10, 16, 24, 35, 50, 70, 95,
+  125, 160, 200, 245, 295, 350, 410, 475, 545, 620, 700
+];
+
+const toSeconds = (responseTime) => {
+  if (!responseTime || responseTime <= 0) return 0;
+  // Frontend sometimes sends ms; normalize when values are large.
+  return responseTime > 1000 ? responseTime / 1000 : responseTime;
+};
+
+const getResponseBucket = (responseTimeInSeconds) => {
+  if (!responseTimeInSeconds || responseTimeInSeconds <= 0) return 'normal';
+  if (responseTimeInSeconds <= 8) return 'fast';
+  if (responseTimeInSeconds <= 25) return 'normal';
+  if (responseTimeInSeconds <= 60) return 'slow';
+  return 'verySlow';
+};
+
+const getOverdueDays = (nextReviewDate) => {
+  if (!nextReviewDate) return 0;
+  const now = Date.now();
+  const diff = now - new Date(nextReviewDate).getTime();
+  if (diff <= 0) return 0;
+  return Math.floor(diff / DAY_IN_MS);
+};
+
+const setPreferredReviewTime = (date) => {
+  const result = new Date(date);
+  result.setHours(8, 0, 0, 0);
+  return result;
+};
+
+const getMemScoreMultiplier = (memScore) => {
+  const safeMemScore = Math.max(0, Math.min(10, Number(memScore) || 0));
+  // MemScore 0 => 0.82, MemScore 10 => 1.18
+  return Number((0.82 + (safeMemScore / 10) * 0.36).toFixed(3));
+};
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const getBaseRevisionCap = (upcomingRepetitions) => {
+  const index = Math.max(0, Math.min(upcomingRepetitions, REVISION_BASE_CAP_BY_REPETITION.length - 1));
+  return REVISION_BASE_CAP_BY_REPETITION[index];
+};
+
+// Instance method to update spaced repetition parameters with adaptive factors.
+topicSchema.methods.updateSpacedRepetition = async function(quality, responseTime = 0) {
+  const safeQuality = Math.max(0, Math.min(5, Number(quality)));
+  const difficulty = Math.max(1, Math.min(5, Number(this.difficulty) || 3));
+  const responseTimeSeconds = toSeconds(Number(responseTime) || 0);
+  const responseBucket = getResponseBucket(responseTimeSeconds);
+  const responseMultiplier = RESPONSE_TIME_MULTIPLIER[responseBucket];
+  const difficultyMultiplier = DIFFICULTY_INTERVAL_MULTIPLIER[difficulty] || 1.0;
+  const overdueDays = getOverdueDays(this.nextReviewDate);
+
+  const user = await User.findById(this.userId).select('memScore preferences.retentionSpeed').lean();
+  const memScore = Number(user?.memScore) || 0;
+  const memScoreMultiplier = getMemScoreMultiplier(memScore);
+  const retentionSpeed = user?.preferences?.retentionSpeed || 'medium';
+  const retentionSpeedMultiplier = RETENTION_SPEED_MULTIPLIER[retentionSpeed] || 1.0;
+
   this.reviewCount += 1;
   this.lastReviewed = new Date();
-  
-  if (quality < 3) {
-    // Reset if quality is poor
-    this.repetitions = 0;
-    this.interval = 1;
+
+  let previousInterval = Math.max(1, Number(this.interval) || 1);
+  let nextIntervalDays = 1;
+  let absoluteRevisionCap = 1; // Initialize for all paths
+  let effectiveCap = 1; // Initialize for all paths
+
+  if (safeQuality < 3) {
+    const easePenalty = safeQuality <= 1 ? 0.22 : 0.12;
+    this.easeFactor = Math.max(MIN_EASE_FACTOR, this.easeFactor - easePenalty);
+
+    // Keep progress partially for "hard" recalls instead of hard reset.
+    this.repetitions = safeQuality === 2 ? Math.max(0, this.repetitions - 1) : 0;
     this.isLearning = true;
+    nextIntervalDays = safeQuality === 2 ? 1 : 1;
   } else {
-    // Update ease factor based on quality
-    this.easeFactor = Math.max(1.3, this.easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)));
-    
+    // SM-2 inspired EF update with bounded range for stability.
+    const efDelta = 0.1 - (5 - safeQuality) * (0.08 + (5 - safeQuality) * 0.02);
+    this.easeFactor = Math.min(
+      MAX_EASE_FACTOR,
+      Math.max(MIN_EASE_FACTOR, this.easeFactor + efDelta)
+    );
+
+    let baseInterval;
     if (this.repetitions === 0) {
-      this.interval = 1;
+      baseInterval = 1;
     } else if (this.repetitions === 1) {
-      this.interval = 6;
+      baseInterval = 3;
+    } else if (this.repetitions === 2) {
+      baseInterval = 6;
     } else {
-      this.interval = Math.round(this.interval * this.easeFactor);
+      // Controlled mature growth to avoid exploding intervals.
+      const matureGrowth = 1.2 + (this.easeFactor - MIN_EASE_FACTOR) * 0.18;
+      baseInterval = previousInterval * matureGrowth;
     }
-    
+
+    const qualityMultiplier = QUALITY_INTERVAL_MULTIPLIER[safeQuality] || 1.0;
+    const overdueBonus = safeQuality >= 4
+      ? Math.min(1.1, 1 + overdueDays * 0.015)
+      : 1.0;
+
+    const combinedLearningMultiplier = qualityMultiplier
+      * difficultyMultiplier
+      * memScoreMultiplier
+      * retentionSpeedMultiplier
+      * responseMultiplier
+      * overdueBonus;
+
+    const qualityGrowthCap = {
+      3: 1.5,
+      4: 1.65,
+      5: 1.85
+    };
+
+    const dynamicCap = qualityGrowthCap[safeQuality] || 1.75;
+    const maxByGrowthCap = Math.max(1, Math.ceil(previousInterval * dynamicCap));
+
+    const upcomingRepetitions = this.repetitions + 1;
+    const baseRevisionCap = getBaseRevisionCap(upcomingRepetitions);
+    const adaptiveCapMultiplier = clamp(
+      0.9
+        + (memScoreMultiplier - 1.0) * 0.9
+        + (difficultyMultiplier - 1.0) * 0.8
+        + (retentionSpeedMultiplier - 1.0) * 0.7,
+      0.65,
+      1.35
+    );
+    const absoluteRevisionCap = Math.max(1, Math.round(baseRevisionCap * adaptiveCapMultiplier));
+    const effectiveCap = Math.min(maxByGrowthCap, absoluteRevisionCap);
+
+    nextIntervalDays = Math.max(
+      1,
+      Math.round(baseInterval * combinedLearningMultiplier)
+    );
+
+    // Keep growth smooth for concept revision; avoid sudden jumps.
+    if (this.repetitions >= 1) {
+      nextIntervalDays = clamp(nextIntervalDays, 1, effectiveCap);
+    }
+
     this.repetitions += 1;
-    
-    // Mark as learned after successful repetitions
-    if (this.repetitions >= 3 && quality >= 4) {
+    if (this.repetitions >= 2 && safeQuality >= 4) {
       this.isLearning = false;
     }
   }
-  
-  // Set next review date
-  this.nextReviewDate = new Date(Date.now() + this.interval * 24 * 60 * 60 * 1000);
-  
-  // Update average performance
-  const totalPerformance = (this.averagePerformance * (this.reviewCount - 1)) + (quality / 5);
+
+  nextIntervalDays = Math.min(MAX_INTERVAL_DAYS, nextIntervalDays);
+  this.interval = nextIntervalDays;
+
+  const rawNextDate = new Date(Date.now() + nextIntervalDays * DAY_IN_MS);
+  this.nextReviewDate = setPreferredReviewTime(rawNextDate);
+
+  // Running average of normalized quality score.
+  const totalPerformance = (this.averagePerformance * (this.reviewCount - 1)) + (safeQuality / 5);
   this.averagePerformance = totalPerformance / this.reviewCount;
-  
-  return this.save();
+
+  await this.save();
+
+  return {
+    quality: safeQuality,
+    qualityLabel: QUALITY_LABELS[safeQuality] || 'unknown',
+    previousInterval,
+    nextIntervalDays,
+    difficulty,
+    difficultyMultiplier,
+    memScore,
+    memScoreMultiplier,
+    retentionSpeed,
+    retentionSpeedMultiplier,
+    responseTimeSeconds,
+    responseBucket,
+    responseMultiplier,
+    absoluteRevisionCap,
+    effectiveCap,
+    overdueDays,
+    easeFactor: this.easeFactor,
+    repetitions: this.repetitions,
+    isLearning: this.isLearning,
+    nextReviewDate: this.nextReviewDate
+  };
 };
 
 // Instance method to check if topic is due for review
@@ -440,27 +626,19 @@ topicSchema.statics.getCrowdingLevel = function(topicCount, averageDifficulty) {
 
 // Static method to prevent topic crowding with difficulty-based thresholds
 topicSchema.statics.preventCrowding = async function(userId, targetDate) {
-  console.log('🔧 preventCrowding called with:', { userId, targetDate });
-
   const startDate = new Date(targetDate);
   startDate.setDate(startDate.getDate() - 3); // Check 3 days before
   const endDate = new Date(targetDate);
   endDate.setDate(endDate.getDate() + 7); // Check 7 days after
 
-  console.log('🔧 Date range:', { startDate, endDate });
-
   // Get daily topic counts with difficulty analysis
   const dailyCounts = await this.getDailyTopicCounts(userId, startDate, endDate);
-  console.log('🔧 Daily counts:', dailyCounts);
 
   // Find crowded days based on difficulty-adjusted thresholds
   const crowdedDays = dailyCounts.filter(day => {
     const crowdingInfo = this.getCrowdingLevel(day.count, day.averageDifficulty);
-    console.log('🔧 Day analysis:', { date: day.date, count: day.count, avgDiff: day.averageDifficulty, crowdingInfo });
     return crowdingInfo.isCrowded;
   });
-
-  console.log('🔧 Crowded days found:', crowdedDays.length);
 
   if (crowdedDays.length === 0) {
     return { redistributed: false, message: 'No crowding detected', totalDays: dailyCounts.length };
@@ -472,14 +650,6 @@ topicSchema.statics.preventCrowding = async function(userId, targetDate) {
     const thresholds = this.getCrowdingThresholds(crowdedDay.averageDifficulty);
     const maxAllowed = thresholds.medium; // More aggressive: Move excess beyond "medium" threshold
     const excessTopics = Math.max(0, crowdedDay.count - maxAllowed);
-
-    console.log('🔧 Processing crowded day:', {
-      date: crowdedDay.date,
-      count: crowdedDay.count,
-      maxAllowed,
-      excessTopics,
-      thresholds
-    });
 
     if (excessTopics === 0) continue;
 
