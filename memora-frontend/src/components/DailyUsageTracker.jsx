@@ -47,8 +47,15 @@ const DailyUsageTracker = ({ userStorageKey = 'guest' }) => {
       const now = Date.now();
       const today = toLocalDateKey(new Date());
       const usage = readUsage();
-      const existing = normalizeDayUsage(usage[today]);
-      const hadRecord = Boolean(usage[today]);
+      const legacyTodayUtcKey = new Date().toISOString().split('T')[0];
+      const existingRaw = usage[today] || usage[legacyTodayUtcKey];
+      const existing = normalizeDayUsage(existingRaw);
+      const hadRecord = Boolean(existingRaw);
+
+      if (!usage[today] && usage[legacyTodayUtcKey]) {
+        usage[today] = usage[legacyTodayUtcKey];
+        delete usage[legacyTodayUtcKey];
+      }
 
       if (!hadRecord) {
         usage[today] = {
@@ -112,8 +119,9 @@ const DailyUsageTracker = ({ userStorageKey = 'guest' }) => {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       const dateStr = toLocalDateKey(date);
+      const legacyUtcDateStr = date.toISOString().split('T')[0];
 
-      const dayUsage = normalizeDayUsage(usage[dateStr] || {});
+      const dayUsage = normalizeDayUsage(usage[dateStr] || usage[legacyUtcDateStr] || {});
 
       realData.push({
         date: dateStr,
