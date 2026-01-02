@@ -5,8 +5,8 @@ import {
   BarChart3, TrendingUp, Clock, Target, Brain, Calendar,
   FileText, BookOpen, Settings, PanelLeft, PanelLeftClose,
   Award, Zap, Activity, Users, ChevronUp, ChevronDown,
-  Eye, CheckCircle, XCircle, RotateCcw, Timer, Flame,
-  Linkedin, Twitter, Instagram
+  Eye, CheckCircle, XCircle, RotateCcw, Timer, Flame, GitBranch,
+  Linkedin, Twitter, Instagram, Globe
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import Logo from '../components/Logo';
@@ -16,6 +16,7 @@ import ProgressRing from '../components/ProgressRing';
 import SimpleBarChart from '../components/SimpleBarChart';
 import DailyUsageTracker from '../components/DailyUsageTracker';
 import apiService from '../services/api';
+import ShadcnSelect from '../components/ShadcnSelect';
 
 const Analytics = () => {
   const navigate = useNavigate();
@@ -52,6 +53,26 @@ const Analytics = () => {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [timeRange, setTimeRange] = useState('7d'); // 7d, 30d, 90d, all
+  const userStorageKey = user?.id || user?._id || user?.email || 'guest';
+
+  const getRangeDays = () => {
+    if (timeRange === '7d') return 7;
+    if (timeRange === '30d') return 30;
+    if (timeRange === '90d') return 90;
+    return 3650; // "all" fallback
+  };
+
+  const getFocusSessions = () => {
+    // Primary key after user-scoped migration.
+    const scoped = JSON.parse(localStorage.getItem(`focus_sessions_${userStorageKey}`) || '[]');
+    if (Array.isArray(scoped) && scoped.length > 0) return scoped;
+
+    // Legacy fallback for older data.
+    const legacy = JSON.parse(localStorage.getItem('focus_sessions_harsith') || '[]');
+    if (Array.isArray(legacy)) return legacy;
+
+    return [];
+  };
 
   // Sidebar navigation items
   const sidebarItems = [
@@ -59,8 +80,9 @@ const Analytics = () => {
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
     { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
     { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
-    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
-    { icon: Settings, label: "Settings", active: location.pathname === "/settings", path: "/settings" }
+    { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
+    { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
+    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" }
   ];
 
   // Quick actions for Analytics
@@ -116,7 +138,7 @@ const Analytics = () => {
       }
 
       try {
-        memScoreResponse = await apiService.getMemScoreHistory();
+        memScoreResponse = await apiService.getMemScoreHistory(getRangeDays());
       } catch (error) {
         console.warn('Failed to load MemScore history:', error);
         // Fallback: try to get current MemScore
@@ -144,7 +166,7 @@ const Analytics = () => {
 
       // Calculate study streak and other metrics
       const studyStreak = calculateStudyStreak();
-      const totalStudyTime = calculateTotalStudyTime();
+      const totalStudyTime = calculateTotalStudyTime(getRangeDays());
       const averageMemScore = calculateAverageMemScore(memScoreResponse.data || []);
       const completionRate = calculateCompletionRate((topicsResponse.success && topicsResponse.topics) ? topicsResponse.topics : []);
 
@@ -195,20 +217,32 @@ const Analytics = () => {
   const calculateStudyStreak = () => {
     try {
       // Get study streak from localStorage or calculate from session history
-      const streak = localStorage.getItem(`study_streak_${user?.id}`);
-      return streak ? parseInt(streak) || 0 : 0;
+      const streak = localStorage.getItem(`study_streak_${userStorageKey}`);
+      if (streak) return parseInt(streak) || 0;
+      return user?.currentStreak || 0;
     } catch (error) {
       console.warn('Failed to calculate study streak:', error);
-      return 0;
+      return user?.currentStreak || 0;
     }
   };
 
-  const calculateTotalStudyTime = () => {
+  const calculateTotalStudyTime = (rangeDays = 7) => {
     try {
       // Get total study time from focus mode sessions
-      const sessions = JSON.parse(localStorage.getItem(`focus_sessions_harsith`) || '[]');
+      const sessions = getFocusSessions();
       if (!Array.isArray(sessions)) return 0;
-      return sessions.reduce((total, session) => total + (session.duration || 0), 0);
+
+      const now = Date.now();
+      const cutoff = now - rangeDays * 24 * 60 * 60 * 1000;
+
+      const inRangeSessions = sessions.filter((session) => {
+        if (!session?.date && !session?.endTime && !session?.startTime) return false;
+        const time = new Date(session.date || session.endTime || session.startTime).getTime();
+        if (Number.isNaN(time)) return false;
+        return time >= cutoff;
+      });
+
+      return inRangeSessions.reduce((total, session) => total + (session.duration || 0), 0);
     } catch (error) {
       console.warn('Failed to calculate total study time:', error);
       return 0;
@@ -270,9 +304,7 @@ const Analytics = () => {
   const processStudyPatterns = () => {
     try {
       // Generate study pattern data from localStorage sessions
-      const sessions = JSON.parse(localStorage.getItem(`focus_sessions_harsith`) || '[]');
-      console.log('DEBUG: Found sessions in localStorage:', sessions);
-      console.log('DEBUG: Sessions length:', sessions.length);
+      const sessions = getFocusSessions();
 
       if (!Array.isArray(sessions)) {
         return {
@@ -283,7 +315,6 @@ const Analytics = () => {
       }
 
       const dailyActivity = generateDailyActivity(sessions);
-      console.log('DEBUG: Generated daily activity:', dailyActivity);
       const weeklyStats = generateWeeklyStats(sessions);
 
       return {
@@ -420,6 +451,67 @@ const Analytics = () => {
     });
   };
 
+  const dailyActivity = analyticsData.studyPatterns?.dailyActivity || [];
+  const totalWeeklyMinutes = dailyActivity.reduce((sum, day) => sum + (day.minutes || 0), 0);
+  const totalWeeklySessions = dailyActivity.reduce((sum, day) => sum + (day.sessions || 0), 0);
+  const activeDays = dailyActivity.filter(day => (day.minutes || 0) > 0).length;
+  const bestDayMinutes = dailyActivity.length > 0
+    ? Math.max(...dailyActivity.map(day => day.minutes || 0))
+    : 0;
+  const avgDailyMinutes = dailyActivity.length > 0
+    ? Math.round(totalWeeklyMinutes / dailyActivity.length)
+    : 0;
+  const avgSessionMinutes = totalWeeklySessions > 0
+    ? Math.round(totalWeeklyMinutes / totalWeeklySessions)
+    : 0;
+  const productivityScore = Math.round(((activeDays / Math.max(dailyActivity.length, 1)) * 100 + Math.min(totalWeeklySessions * 10, 100)) / 2);
+
+  const timeRangeOptions = [
+    { value: '7d', label: 'Last 7 days' },
+    { value: '30d', label: 'Last 30 days' },
+    { value: '90d', label: 'Last 90 days' },
+    { value: 'all', label: 'All time' }
+  ];
+
+  const overviewCards = [
+    {
+      label: 'Total Topics',
+      value: analyticsData.overview.totalTopics,
+      icon: Brain,
+      iconColor: 'text-blue-400'
+    },
+    {
+      label: 'Due Today',
+      value: analyticsData.overview.studiedToday,
+      icon: Target,
+      iconColor: 'text-red-400'
+    },
+    {
+      label: 'Study Streak',
+      value: analyticsData.overview.currentStreak,
+      icon: Flame,
+      iconColor: 'text-orange-400'
+    },
+    {
+      label: 'Study Time (Range)',
+      value: formatTime(analyticsData.overview.totalStudyTime),
+      icon: Clock,
+      iconColor: 'text-green-400'
+    },
+    {
+      label: 'Avg MemScore',
+      value: Number(analyticsData.overview.averageMemScore || 0).toFixed(1),
+      icon: Award,
+      iconColor: 'text-purple-400'
+    },
+    {
+      label: 'Completion',
+      value: `${Number(analyticsData.overview.completionRate || 0).toFixed(0)}%`,
+      icon: CheckCircle,
+      iconColor: 'text-cyan-400'
+    }
+  ];
+
   if (isLoading) {
     return (
       <div className="bg-black text-white min-h-screen flex items-center justify-center">
@@ -526,16 +618,12 @@ const Analytics = () => {
 
             {/* Right: Time range selector */}
             <div className="flex items-center space-x-2 sm:space-x-3">
-              <select
+              <ShadcnSelect
                 value={timeRange}
-                onChange={(e) => setTimeRange(e.target.value)}
-                className="bg-white/5 border border-white/20 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
-              >
-                <option value="7d" className="bg-gray-800">Last 7 days</option>
-                <option value="30d" className="bg-gray-800">Last 30 days</option>
-                <option value="90d" className="bg-gray-800">Last 90 days</option>
-                <option value="all" className="bg-gray-800">All time</option>
-              </select>
+                onChange={setTimeRange}
+                options={timeRangeOptions}
+                className="w-44"
+              />
             </div>
           </div>
         </header>
@@ -553,131 +641,17 @@ const Analytics = () => {
             <div className="space-y-6">
               {/* Overview Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-                <div className="bg-white/5 border border-white/10 rounded-lg p-4 hover:bg-white/10 hover:border-white/20 transition-all duration-300">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-400">Total Topics</p>
-                      <motion.p
-                        className="text-2xl font-bold text-white"
-                        whileHover={{ scale: 1.1 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        {analyticsData.overview.totalTopics}
-                      </motion.p>
+                {overviewCards.map((card) => (
+                  <div key={card.label} className="bg-white/5 border border-white/10 rounded-lg p-4 hover:bg-white/10 hover:border-white/20 transition-all duration-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-400">{card.label}</p>
+                        <p className="text-2xl font-bold text-white">{card.value}</p>
+                      </div>
+                      <card.icon className={`w-8 h-8 ${card.iconColor}`} />
                     </div>
-                    <motion.div
-                      whileHover={{ rotate: 15, scale: 1.1 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <Brain className="w-8 h-8 text-blue-400" />
-                    </motion.div>
                   </div>
-                </div>
-
-                <div className="bg-white/5 border border-white/10 rounded-lg p-4 hover:bg-white/10 hover:border-white/20 transition-all duration-300">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-400">Due Today</p>
-                      <motion.p
-                        className="text-2xl font-bold text-white"
-                        whileHover={{ scale: 1.1 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        {analyticsData.overview.studiedToday}
-                      </motion.p>
-                    </div>
-                    <motion.div
-                      whileHover={{ rotate: 15, scale: 1.1 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <Target className="w-8 h-8 text-red-400" />
-                    </motion.div>
-                  </div>
-                </div>
-
-                <div className="bg-white/5 border border-white/10 rounded-lg p-4 hover:bg-white/10 hover:border-white/20 transition-all duration-300">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-400">Study Streak</p>
-                      <motion.p
-                        className="text-2xl font-bold text-white"
-                        whileHover={{ scale: 1.1 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        {analyticsData.overview.currentStreak}
-                      </motion.p>
-                    </div>
-                    <motion.div
-                      whileHover={{ rotate: 15, scale: 1.1 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <Flame className="w-8 h-8 text-orange-400" />
-                    </motion.div>
-                  </div>
-                </div>
-
-                <div className="bg-white/5 border border-white/10 rounded-lg p-4 hover:bg-white/10 hover:border-white/20 transition-all duration-300">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-400">Study Time</p>
-                      <motion.p
-                        className="text-2xl font-bold text-white"
-                        whileHover={{ scale: 1.1 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        {formatTime(analyticsData.overview.totalStudyTime)}
-                      </motion.p>
-                    </div>
-                    <motion.div
-                      whileHover={{ rotate: 15, scale: 1.1 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <Clock className="w-8 h-8 text-green-400" />
-                    </motion.div>
-                  </div>
-                </div>
-
-                <div className="bg-white/5 border border-white/10 rounded-lg p-4 hover:bg-white/10 hover:border-white/20 transition-all duration-300">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-400">Avg MemScore</p>
-                      <motion.p
-                        className="text-2xl font-bold text-white"
-                        whileHover={{ scale: 1.1 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        {analyticsData.overview.averageMemScore.toFixed(1)}
-                      </motion.p>
-                    </div>
-                    <motion.div
-                      whileHover={{ rotate: 15, scale: 1.1 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <Award className="w-8 h-8 text-purple-400" />
-                    </motion.div>
-                  </div>
-                </div>
-
-                <div className="bg-white/5 border border-white/10 rounded-lg p-4 hover:bg-white/10 hover:border-white/20 transition-all duration-300">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-400">Completion</p>
-                      <motion.p
-                        className="text-2xl font-bold text-white"
-                        whileHover={{ scale: 1.1 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        {analyticsData.overview.completionRate.toFixed(0)}%
-                      </motion.p>
-                    </div>
-                    <motion.div
-                      whileHover={{ rotate: 15, scale: 1.1 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <CheckCircle className="w-8 h-8 text-cyan-400" />
-                    </motion.div>
-                  </div>
-                </div>
+                ))}
               </div>
 
               {/* Charts Row */}
@@ -692,7 +666,7 @@ const Analytics = () => {
                 <div className="bg-black border border-white/20 rounded-xl p-6">
                   <h3 className="text-lg font-semibold text-white mb-6">Daily Study Activity</h3>
                   <div className="space-y-4">
-                    {analyticsData.studyPatterns.dailyActivity.map((day, index) => (
+                    {dailyActivity.map((day, index) => (
                       <div
                         key={index}
                         className="flex items-center justify-between"
@@ -700,11 +674,9 @@ const Analytics = () => {
                         <div className="flex items-center space-x-4 flex-1">
                           <span className="text-sm text-gray-400 w-10 font-medium">{day.day}</span>
                           <div className="flex-1 bg-gray-800 rounded-full h-3 hover:bg-gray-700 transition-colors duration-200">
-                            <motion.div
+                            <div
                               className="bg-blue-500 h-3 rounded-full transition-all duration-300 hover:bg-blue-400"
                               style={{ width: `${Math.min((day.sessions / 5) * 100, 100)}%` }}
-                              whileHover={{ scaleY: 1.3, scaleX: 1.02 }}
-                              transition={{ duration: 0.2 }}
                             />
                           </div>
                         </div>
@@ -736,31 +708,23 @@ const Analytics = () => {
                             <span className="text-sm font-medium text-white truncate">
                               {topic.title}
                             </span>
-                            <motion.span
-                              className={`text-xs px-2 py-1 rounded ${getDifficultyColor(topic.difficulty)} bg-white/10`}
-                              whileHover={{ scale: 1.1 }}
-                              transition={{ duration: 0.2 }}
-                            >
+                            <span className={`text-xs px-2 py-1 rounded ${getDifficultyColor(topic.difficulty)} bg-white/10`}>
                               {getDifficultyLabel(topic.difficulty)}
-                            </motion.span>
+                            </span>
                           </div>
                           <div className="flex items-center space-x-6 mt-2">
                             <span className="text-xs text-gray-400">
                               Reviews: {topic.reviewCount}
                             </span>
                             <span className="text-xs text-gray-400">
-                              Success: {topic.successRate.toFixed(0)}%
+                              Success: {Number(topic.successRate || 0).toFixed(0)}%
                             </span>
                           </div>
                         </div>
                         <div className="text-right ml-4">
-                          <motion.div
-                            className="text-lg font-medium text-blue-400"
-                            whileHover={{ scale: 1.1 }}
-                            transition={{ duration: 0.2 }}
-                          >
-                            {topic.memScore.toFixed(1)}
-                          </motion.div>
+                          <div className="text-lg font-medium text-blue-400">
+                            {Number(topic.memScore || 0).toFixed(1)}
+                          </div>
                           <div className="text-xs text-gray-400">MemScore</div>
                         </div>
                       </div>
@@ -786,7 +750,7 @@ const Analytics = () => {
                           </span>
                         </div>
                         <div className="w-full bg-gray-800 rounded-full h-3 hover:bg-gray-700 transition-colors duration-200">
-                          <motion.div
+                          <div
                             className={`h-3 rounded-full transition-all duration-300 ${
                               item.difficulty === 1 ? 'bg-green-500 hover:bg-green-400' :
                               item.difficulty === 2 ? 'bg-blue-500 hover:bg-blue-400' :
@@ -795,8 +759,6 @@ const Analytics = () => {
                               'bg-red-500 hover:bg-red-400'
                             }`}
                             style={{ width: `${item.percentage}%` }}
-                            whileHover={{ scaleY: 1.3, scaleX: 1.02 }}
-                            transition={{ duration: 0.2 }}
                           />
                         </div>
                         <div className="text-xs text-gray-400">
@@ -811,7 +773,7 @@ const Analytics = () => {
               {/* Recent Activity */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Daily Usage Tracker */}
-                <DailyUsageTracker data={analyticsData.studyPatterns.dailyActivity} />
+                <DailyUsageTracker data={dailyActivity} userStorageKey={userStorageKey} />
 
                 {/* Comprehensive Activity Graph - Full Width */}
                 <div className="bg-black border border-white/20 rounded-xl p-6">
@@ -820,43 +782,27 @@ const Analytics = () => {
                   {/* Activity Metrics Row */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                     <div className="text-center p-3 rounded-lg hover:bg-blue-500/10 transition-colors duration-200">
-                      <motion.div
-                        className="text-2xl font-bold text-blue-400"
-                        whileHover={{ scale: 1.1 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        {analyticsData.studyPatterns.dailyActivity.reduce((sum, day) => sum + day.minutes, 0)}m
-                      </motion.div>
+                      <div className="text-2xl font-bold text-blue-400">
+                        {totalWeeklyMinutes}m
+                      </div>
                       <div className="text-xs text-gray-400">Total This Week</div>
                     </div>
                     <div className="text-center p-3 rounded-lg hover:bg-green-500/10 transition-colors duration-200">
-                      <motion.div
-                        className="text-2xl font-bold text-green-400"
-                        whileHover={{ scale: 1.1 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        {Math.round(analyticsData.studyPatterns.dailyActivity.reduce((sum, day) => sum + day.minutes, 0) / 7)}m
-                      </motion.div>
+                      <div className="text-2xl font-bold text-green-400">
+                        {avgDailyMinutes}m
+                      </div>
                       <div className="text-xs text-gray-400">Daily Average</div>
                     </div>
                     <div className="text-center p-3 rounded-lg hover:bg-purple-500/10 transition-colors duration-200">
-                      <motion.div
-                        className="text-2xl font-bold text-purple-400"
-                        whileHover={{ scale: 1.1 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        {Math.max(...analyticsData.studyPatterns.dailyActivity.map(day => day.minutes))}m
-                      </motion.div>
+                      <div className="text-2xl font-bold text-purple-400">
+                        {bestDayMinutes}m
+                      </div>
                       <div className="text-xs text-gray-400">Best Day</div>
                     </div>
                     <div className="text-center p-3 rounded-lg hover:bg-orange-500/10 transition-colors duration-200">
-                      <motion.div
-                        className="text-2xl font-bold text-orange-400"
-                        whileHover={{ scale: 1.1 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        {analyticsData.studyPatterns.dailyActivity.filter(day => day.minutes > 0).length}
-                      </motion.div>
+                      <div className="text-2xl font-bold text-orange-400">
+                        {activeDays}
+                      </div>
                       <div className="text-xs text-gray-400">Active Days</div>
                     </div>
                   </div>
@@ -865,8 +811,8 @@ const Analytics = () => {
                   <div className="space-y-4">
                     <h4 className="text-sm font-medium text-gray-300">Daily Study Pattern (Last 7 Days)</h4>
                     <div className="grid grid-cols-7 gap-2">
-                      {analyticsData.studyPatterns.dailyActivity.map((day, index) => {
-                        const maxMinutes = Math.max(...analyticsData.studyPatterns.dailyActivity.map(d => d.minutes)) || 60;
+                      {dailyActivity.map((day, index) => {
+                        const maxMinutes = Math.max(bestDayMinutes, 60);
                         const height = day.minutes > 0 ? Math.max((day.minutes / maxMinutes) * 100, 10) : 5;
 
                         return (
@@ -876,13 +822,11 @@ const Analytics = () => {
                           >
                             <div className="text-xs text-gray-400">{day.day}</div>
                             <div className="relative w-full h-24 bg-gray-800 rounded-lg overflow-hidden hover:bg-gray-700 transition-colors duration-200">
-                              <motion.div
+                              <div
                                 className={`absolute bottom-0 w-full rounded-lg transition-all duration-500 ${
                                   day.minutes > 0 ? 'bg-gradient-to-t from-blue-600 to-blue-400 hover:from-blue-500 hover:to-blue-300' : 'bg-gray-700'
                                 }`}
                                 style={{ height: `${height}%` }}
-                                whileHover={{ scaleX: 1.05, scaleY: 1.1 }}
-                                transition={{ duration: 0.2 }}
                               />
                               {day.minutes > 0 && (
                                 <div className="absolute inset-0 flex items-center justify-center">
@@ -905,88 +849,50 @@ const Analytics = () => {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                       <div className="bg-white/5 rounded-lg p-3 hover:bg-white/10 transition-colors duration-200">
                         <div className="flex items-center space-x-2 mb-1">
-                          <motion.div
-                            whileHover={{ rotate: 360 }}
-                            transition={{ duration: 0.5 }}
-                          >
+                          <div>
                             <Timer className="w-4 h-4 text-blue-400" />
-                          </motion.div>
+                          </div>
                           <span className="text-xs text-gray-300">Total Focus</span>
                         </div>
-                        <motion.div
-                          className="text-lg font-bold text-white"
-                          whileHover={{ scale: 1.1 }}
-                          transition={{ duration: 0.2 }}
-                        >
+                        <div className="text-lg font-bold text-white">
                           {formatTime(analyticsData.overview.totalStudyTime)}
-                        </motion.div>
+                        </div>
                         <div className="text-xs text-gray-500">All sessions</div>
                       </div>
                       <div className="bg-white/5 rounded-lg p-3 hover:bg-white/10 transition-colors duration-200">
                         <div className="flex items-center space-x-2 mb-1">
-                          <motion.div
-                            whileHover={{ scale: 1.2 }}
-                            transition={{ duration: 0.2 }}
-                          >
+                          <div>
                             <Zap className="w-4 h-4 text-yellow-400" />
-                          </motion.div>
+                          </div>
                           <span className="text-xs text-gray-300">Sessions</span>
                         </div>
-                        <motion.div
-                          className="text-lg font-bold text-white"
-                          whileHover={{ scale: 1.1 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          {analyticsData.studyPatterns.dailyActivity.reduce((sum, day) => sum + day.sessions, 0)}
-                        </motion.div>
+                        <div className="text-lg font-bold text-white">
+                          {totalWeeklySessions}
+                        </div>
                         <div className="text-xs text-gray-500">This week</div>
                       </div>
                       <div className="bg-white/5 rounded-lg p-3 hover:bg-white/10 transition-colors duration-200">
                         <div className="flex items-center space-x-2 mb-1">
-                          <motion.div
-                            whileHover={{ y: -2 }}
-                            transition={{ duration: 0.2 }}
-                          >
+                          <div>
                             <Activity className="w-4 h-4 text-green-400" />
-                          </motion.div>
+                          </div>
                           <span className="text-xs text-gray-300">Avg Session</span>
                         </div>
-                        <motion.div
-                          className="text-lg font-bold text-white"
-                          whileHover={{ scale: 1.1 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          {analyticsData.studyPatterns.dailyActivity.reduce((sum, day) => sum + day.sessions, 0) > 0
-                            ? Math.round(analyticsData.studyPatterns.dailyActivity.reduce((sum, day) => sum + day.minutes, 0) /
-                              analyticsData.studyPatterns.dailyActivity.reduce((sum, day) => sum + day.sessions, 0))
-                            : 0}m
-                        </motion.div>
+                        <div className="text-lg font-bold text-white">
+                          {avgSessionMinutes}m
+                        </div>
                         <div className="text-xs text-gray-500">Per session</div>
                       </div>
                       <div className="bg-white/5 rounded-lg p-3 hover:bg-white/10 transition-colors duration-200">
                         <div className="flex items-center space-x-2 mb-1">
-                          <motion.div
-                            whileHover={{ rotate: 180 }}
-                            transition={{ duration: 0.3 }}
-                          >
+                          <div>
                             <Target className="w-4 h-4 text-purple-400" />
-                          </motion.div>
+                          </div>
                           <span className="text-xs text-gray-300">Score</span>
                         </div>
-                        <motion.div
-                          className="text-lg font-bold text-white"
-                          whileHover={{ scale: 1.1 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          {(() => {
-                            // Calculate productivity based on focus sessions and consistency
-                            const totalSessions = analyticsData.studyPatterns.dailyActivity.reduce((sum, day) => sum + day.sessions, 0);
-                            const activeDays = analyticsData.studyPatterns.dailyActivity.filter(day => day.sessions > 0).length;
-                            const consistencyScore = activeDays > 0 ? (activeDays / 7) * 100 : 0;
-                            const sessionScore = Math.min(totalSessions * 10, 100); // 10% per session, max 100%
-                            return Math.round((consistencyScore + sessionScore) / 2);
-                          })()}%
-                        </motion.div>
+                        <div className="text-lg font-bold text-white">
+                          {productivityScore}%
+                        </div>
                         <div className="text-xs text-gray-500">Productivity</div>
                       </div>
                     </div>

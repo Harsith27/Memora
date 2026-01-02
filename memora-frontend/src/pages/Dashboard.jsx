@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Brain, Calendar, BarChart3, Settings, FileText, BookOpen,
-  Plus, Flame, Zap, ArrowLeft, CheckCircle, Target, Clock, Edit3, Trash2, SkipForward, Loader,
+  Plus, Flame, Zap, ArrowLeft, CheckCircle, Target, Clock, Edit3, Trash2, SkipForward, Loader, GitBranch,
   Twitter, Github, Mail, Globe, Heart, Linkedin, Instagram, Menu, PanelLeftClose, PanelLeft,
   Save, X
 } from 'lucide-react';
@@ -687,6 +687,7 @@ const Dashboard = () => {
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
     { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
     { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
+    { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
     { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
     { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" }
   ];
@@ -726,6 +727,11 @@ const Dashboard = () => {
 
     if (item.label === "Analytics") {
       navigate('/analytics');
+      return;
+    }
+
+    if (item.label === "Mindmaps") {
+      navigate('/mindmaps');
       return;
     }
 
