@@ -180,6 +180,31 @@ const Mindmaps = () => {
     };
   }, [activeMapId, dragNode, isPanning, pan.x, pan.y, zoom]);
 
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return undefined;
+
+    const blockGesture = (event) => {
+      event.preventDefault();
+    };
+
+    const blockWheel = (event) => {
+      event.preventDefault();
+    };
+
+    el.addEventListener('gesturestart', blockGesture, { passive: false });
+    el.addEventListener('gesturechange', blockGesture, { passive: false });
+    el.addEventListener('gestureend', blockGesture, { passive: false });
+    el.addEventListener('wheel', blockWheel, { passive: false });
+
+    return () => {
+      el.removeEventListener('gesturestart', blockGesture);
+      el.removeEventListener('gesturechange', blockGesture);
+      el.removeEventListener('gestureend', blockGesture);
+      el.removeEventListener('wheel', blockWheel);
+    };
+  }, []);
+
   const activeMap = useMemo(() => maps.find((map) => map.id === activeMapId) || null, [maps, activeMapId]);
   const selectedNode = useMemo(
     () => activeMap?.nodes.find((node) => node.id === selectedNodeId) || null,
@@ -614,6 +639,7 @@ const Mindmaps = () => {
                   const delta = event.deltaY > 0 ? -0.06 : 0.06;
                   setZoom((prev) => clamp(prev + delta, 0.5, 2));
                 }}
+                style={{ touchAction: 'none', overscrollBehavior: 'contain' }}
               >
                 <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.14)_1px,transparent_1.4px)] [background-size:20px_20px] opacity-35" />
 
