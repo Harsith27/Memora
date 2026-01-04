@@ -97,6 +97,7 @@ const Mindmaps = () => {
 
   const viewportRef = useRef(null);
   const fileInputRef = useRef(null);
+  const gestureScaleRef = useRef(1);
 
   const showToast = (message, type = 'success') => {
     setToast({ show: true, message, type });
@@ -184,23 +185,39 @@ const Mindmaps = () => {
     const el = viewportRef.current;
     if (!el) return undefined;
 
-    const blockGesture = (event) => {
+    const onGestureStart = (event) => {
       event.preventDefault();
+      gestureScaleRef.current = event.scale || 1;
+    };
+
+    const onGestureChange = (event) => {
+      event.preventDefault();
+      const currentScale = event.scale || 1;
+      const delta = currentScale / (gestureScaleRef.current || 1);
+      if (Number.isFinite(delta) && delta > 0) {
+        setZoom((prev) => clamp(prev * delta, 0.5, 2));
+      }
+      gestureScaleRef.current = currentScale;
+    };
+
+    const onGestureEnd = (event) => {
+      event.preventDefault();
+      gestureScaleRef.current = 1;
     };
 
     const blockWheel = (event) => {
       event.preventDefault();
     };
 
-    el.addEventListener('gesturestart', blockGesture, { passive: false });
-    el.addEventListener('gesturechange', blockGesture, { passive: false });
-    el.addEventListener('gestureend', blockGesture, { passive: false });
+    el.addEventListener('gesturestart', onGestureStart, { passive: false });
+    el.addEventListener('gesturechange', onGestureChange, { passive: false });
+    el.addEventListener('gestureend', onGestureEnd, { passive: false });
     el.addEventListener('wheel', blockWheel, { passive: false });
 
     return () => {
-      el.removeEventListener('gesturestart', blockGesture);
-      el.removeEventListener('gesturechange', blockGesture);
-      el.removeEventListener('gestureend', blockGesture);
+      el.removeEventListener('gesturestart', onGestureStart);
+      el.removeEventListener('gesturechange', onGestureChange);
+      el.removeEventListener('gestureend', onGestureEnd);
       el.removeEventListener('wheel', blockWheel);
     };
   }, []);
@@ -517,7 +534,7 @@ const Mindmaps = () => {
 
         <div className="flex-1 p-4 overflow-hidden">
           <div className="h-full grid grid-cols-12 gap-4">
-            <div className="col-span-12 lg:col-span-3 bg-[#090c12] border border-white/10 rounded-xl p-4 overflow-y-auto">
+            <div className="col-span-12 lg:col-span-3 bg-black border border-white/10 rounded-xl p-4 overflow-y-auto">
               <div className="space-y-4">
                 <div>
                   <label className="text-xs text-gray-400">Mindmap Title</label>
@@ -620,7 +637,7 @@ const Mindmaps = () => {
               </div>
             </div>
 
-            <div className="col-span-12 lg:col-span-9 bg-[#090c12] border border-white/10 rounded-xl overflow-hidden relative">
+            <div className="col-span-12 lg:col-span-9 bg-black border border-white/10 rounded-xl overflow-hidden relative">
               <div className="absolute top-3 right-3 z-10 px-2.5 py-1 rounded-md text-xs bg-black/70 border border-white/15 text-gray-300">
                 Zoom: {Math.round(zoom * 100)}%
               </div>
