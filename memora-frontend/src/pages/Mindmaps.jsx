@@ -191,22 +191,6 @@ const Mindmaps = () => {
     const el = viewportRef.current;
     if (!el) return undefined;
 
-    const blockBrowserZoom = (event) => {
-      if (event.ctrlKey || event.metaKey) {
-        event.preventDefault();
-      }
-    };
-
-    el.addEventListener('wheel', blockBrowserZoom, { passive: false });
-    return () => {
-      el.removeEventListener('wheel', blockBrowserZoom);
-    };
-  }, []);
-
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return undefined;
-
     const blockGesture = (event) => {
       event.preventDefault();
     };
@@ -220,7 +204,20 @@ const Mindmaps = () => {
       el.removeEventListener('gesturechange', blockGesture);
       el.removeEventListener('gestureend', blockGesture);
     };
-  }, [];
+  }, []);
+
+  useEffect(() => {
+    const preventBrowserZoom = (event) => {
+      if (event.ctrlKey || event.metaKey || event.scale !== 1) {
+        event.preventDefault();
+      }
+    };
+
+    document.addEventListener('wheel', preventBrowserZoom, { passive: false });
+    return () => {
+      document.removeEventListener('wheel', preventBrowserZoom);
+    };
+  }, []);
 
   const activeMap = useMemo(() => maps.find((map) => map.id === activeMapId) || null, [maps, activeMapId]);
   const selectedNode = useMemo(
@@ -675,6 +672,7 @@ const Mindmaps = () => {
                 }}
                 onWheel={(event) => {
                   event.preventDefault();
+                  event.stopPropagation();
 
                   if (event.ctrlKey || event.metaKey) {
                     const direction = event.deltaY > 0 ? -0.08 : 0.08;
