@@ -213,9 +213,20 @@ const Mindmaps = () => {
       }
     };
 
+    const preventGestureZoom = (event) => {
+      event.preventDefault();
+    };
+
     document.addEventListener('wheel', preventBrowserZoom, { passive: false });
+    document.addEventListener('gesturestart', preventGestureZoom, { passive: false });
+    document.addEventListener('gesturechange', preventGestureZoom, { passive: false });
+    document.addEventListener('gestureend', preventGestureZoom, { passive: false });
+
     return () => {
       document.removeEventListener('wheel', preventBrowserZoom);
+      document.removeEventListener('gesturestart', preventGestureZoom);
+      document.removeEventListener('gesturechange', preventGestureZoom);
+      document.removeEventListener('gestureend', preventGestureZoom);
     };
   }, []);
 
@@ -687,7 +698,13 @@ const Mindmaps = () => {
 
                   setPan((prev) => ({ x: prev.x - event.deltaX * 0.35, y: prev.y - event.deltaY * 0.35 }));
                 }}
-                style={{ touchAction: 'none', overscrollBehavior: 'contain' }}
+                style={{
+                  touchAction: 'none',
+                  overscrollBehavior: 'contain',
+                  WebkitTouchCallout: 'none',
+                  WebkitUserSelect: 'none',
+                  userSelect: 'none'
+                }}
               >
                 <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.14)_1px,transparent_1.4px)] [background-size:20px_20px] opacity-35" />
 
