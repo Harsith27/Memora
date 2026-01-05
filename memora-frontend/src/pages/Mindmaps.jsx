@@ -27,14 +27,20 @@ import Toast from '../components/Toast';
 
 const PASTEL_COLORS = [
   '#AECBFA',
+  '#C5E1A5',
   '#D7AEFB',
+  '#FBBC04',
   '#FDCFE8',
   '#FEEFC3',
   '#CCFF90',
+  '#B39DDB',
   '#A7FFEB',
   '#FAD2CF',
   '#C8E6C9',
-  '#FFF9C4'
+  '#FFF9C4',
+  '#F8BBD0',
+  '#FFCCBC',
+  '#B3E5FC'
 ];
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -185,40 +191,18 @@ const Mindmaps = () => {
     const el = viewportRef.current;
     if (!el) return undefined;
 
-    const onGestureStart = (event) => {
-      event.preventDefault();
-      gestureScaleRef.current = event.scale || 1;
-    };
-
-    const onGestureChange = (event) => {
-      event.preventDefault();
-      const currentScale = event.scale || 1;
-      const delta = currentScale / (gestureScaleRef.current || 1);
-      if (Number.isFinite(delta) && delta > 0) {
-        setZoom((prev) => clamp(prev * delta, 0.5, 2));
-      }
-      gestureScaleRef.current = currentScale;
-    };
-
-    const onGestureEnd = (event) => {
-      event.preventDefault();
-      gestureScaleRef.current = 1;
-    };
-
-    const blockWheel = (event) => {
+    const blockGesture = (event) => {
       event.preventDefault();
     };
 
-    el.addEventListener('gesturestart', onGestureStart, { passive: false });
-    el.addEventListener('gesturechange', onGestureChange, { passive: false });
-    el.addEventListener('gestureend', onGestureEnd, { passive: false });
-    el.addEventListener('wheel', blockWheel, { passive: false });
+    el.addEventListener('gesturestart', blockGesture, { passive: false });
+    el.addEventListener('gesturechange', blockGesture, { passive: false });
+    el.addEventListener('gestureend', blockGesture, { passive: false });
 
     return () => {
-      el.removeEventListener('gesturestart', onGestureStart);
-      el.removeEventListener('gesturechange', onGestureChange);
-      el.removeEventListener('gestureend', onGestureEnd);
-      el.removeEventListener('wheel', blockWheel);
+      el.removeEventListener('gesturestart', blockGesture);
+      el.removeEventListener('gesturechange', blockGesture);
+      el.removeEventListener('gestureend', blockGesture);
     };
   }, []);
 
@@ -363,6 +347,28 @@ const Mindmaps = () => {
     ];
 
     updateActiveMap((map) => ({ ...map, nodes: arranged }));
+  };
+
+  const getBorderIntersection = (fromNode, toNode) => {
+    const x1 = fromNode.x + fromNode.width / 2;
+    const y1 = fromNode.y + fromNode.height / 2;
+    const x2 = toNode.x + toNode.width / 2;
+    const y2 = toNode.y + toNode.height / 2;
+
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const dist = Math.hypot(dx, dy);
+    if (dist === 0) return { x1, y1, x2, y2 };
+
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    const fromBorderX = x1 + nx * (fromNode.width / 2);
+    const fromBorderY = y1 + ny * (fromNode.height / 2);
+    const toBorderX = x2 - nx * (toNode.width / 2);
+    const toBorderY = y2 - ny * (toNode.height / 2);
+
+    return { x1: fromBorderX, y1: fromBorderY, x2: toBorderX, y2: toBorderY };
   };
 
   const fitView = () => {
@@ -619,8 +625,8 @@ const Mindmaps = () => {
                     />
 
                     <div>
-                      <p className="text-[11px] text-gray-400 mb-1.5">Pastel Color</p>
-                      <div className="grid grid-cols-3 gap-1.5">
+                      <p className="text-[11px] text-gray-400 mb-1.5">Pastel Color (15 options)</p>
+                      <div className="grid grid-cols-5 gap-1.5">
                         {PASTEL_COLORS.map((color) => (
                           <button
                             key={color}
@@ -653,8 +659,19 @@ const Mindmaps = () => {
                 }}
                 onWheel={(event) => {
                   event.preventDefault();
-                  const delta = event.deltaY > 0 ? -0.06 : 0.06;
-                  setZoom((prev) => clamp(prev + delta, 0.5, 2));
+
+                  if (event.ctrlKey || event.metaKey) {
+                    const direction = event.deltaY > 0 ? -0.08 : 0.08;
+                    setZoom((prev) => Math.max(0.5, Math.min(2, prev + direction)));
+                    return;
+                  }
+
+                  if (event.shiftKey) {
+                    setPan((prev) => ({ x: prev.x - event.deltaY * 0.35, y: prev.y }));
+                    return;
+                  }
+
+                  setPan((prev) => ({ x: prev.x - event.deltaX * 0.35, y: prev.y - event.deltaY * 0.35 }));
                 }}
                 style={{ touchAction: 'none', overscrollBehavior: 'contain' }}
               >
@@ -673,10 +690,7 @@ const Mindmaps = () => {
                       const target = activeMap.nodes.find((node) => node.id === edge.target);
                       if (!source || !target) return null;
 
-                      const x1 = source.x + source.width / 2;
-                      const y1 = source.y + source.height / 2;
-                      const x2 = target.x + target.width / 2;
-                      const y2 = target.y + target.height / 2;
+                      const { x1, y1, x2, y2 } = getBorderIntersection(source, target);
 
                       return (
                         <line
