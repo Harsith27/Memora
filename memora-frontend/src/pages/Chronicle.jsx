@@ -72,6 +72,41 @@ const Chronicle = () => {
     { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" }
   ];
 
+  // Handle sidebar navigation
+  const handleSidebarClick = (item) => {
+    if (item.label === "Chronicle") return;
+
+    if (item.label === "Dashboard") {
+      navigate('/dashboard');
+      return;
+    }
+
+    if (item.label === "DocTags") {
+      navigate('/doctags');
+      return;
+    }
+
+    if (item.label === "Journal") {
+      navigate('/journal');
+      return;
+    }
+
+    if (item.label === "Analytics") {
+      navigate('/analytics');
+      return;
+    }
+
+    if (item.label === "Mindmaps") {
+      navigate('/mindmaps');
+      return;
+    }
+
+    if (item.label === "Graph Mode") {
+      navigate('/graph');
+      return;
+    }
+  };
+
   // Quick actions for Chronicle
   const quickActions = [
     { icon: Plus, label: "Add Event", action: () => openEventModal(), primary: true },

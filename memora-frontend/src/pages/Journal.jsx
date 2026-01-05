@@ -199,6 +199,11 @@ const Journal = () => {
       return;
     }
 
+    if (item.label === "Mindmaps") {
+      navigate('/mindmaps');
+      return;
+    }
+
     if (item.label === "Graph Mode") {
       navigate('/graph');
       return;
