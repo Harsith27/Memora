@@ -191,42 +191,18 @@ const Mindmaps = () => {
     const el = viewportRef.current;
     if (!el) return undefined;
 
-    const blockGesture = (event) => {
+    const preventDefault = (event) => {
       event.preventDefault();
     };
 
-    el.addEventListener('gesturestart', blockGesture, { passive: false });
-    el.addEventListener('gesturechange', blockGesture, { passive: false });
-    el.addEventListener('gestureend', blockGesture, { passive: false });
+    el.addEventListener('gesturestart', preventDefault, { capture: true, passive: false });
+    el.addEventListener('gesturechange', preventDefault, { capture: true, passive: false });
+    el.addEventListener('gestureend', preventDefault, { capture: true, passive: false });
 
     return () => {
-      el.removeEventListener('gesturestart', blockGesture);
-      el.removeEventListener('gesturechange', blockGesture);
-      el.removeEventListener('gestureend', blockGesture);
-    };
-  }, []);
-
-  useEffect(() => {
-    const preventBrowserZoom = (event) => {
-      if (event.ctrlKey || event.metaKey || event.scale !== 1) {
-        event.preventDefault();
-      }
-    };
-
-    const preventGestureZoom = (event) => {
-      event.preventDefault();
-    };
-
-    document.addEventListener('wheel', preventBrowserZoom, { passive: false });
-    document.addEventListener('gesturestart', preventGestureZoom, { passive: false });
-    document.addEventListener('gesturechange', preventGestureZoom, { passive: false });
-    document.addEventListener('gestureend', preventGestureZoom, { passive: false });
-
-    return () => {
-      document.removeEventListener('wheel', preventBrowserZoom);
-      document.removeEventListener('gesturestart', preventGestureZoom);
-      document.removeEventListener('gesturechange', preventGestureZoom);
-      document.removeEventListener('gestureend', preventGestureZoom);
+      el.removeEventListener('gesturestart', preventDefault, { capture: true });
+      el.removeEventListener('gesturechange', preventDefault, { capture: true });
+      el.removeEventListener('gestureend', preventDefault, { capture: true });
     };
   }, []);
 
