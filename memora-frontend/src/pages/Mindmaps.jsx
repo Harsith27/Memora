@@ -191,18 +191,48 @@ const Mindmaps = () => {
     const el = viewportRef.current;
     if (!el) return undefined;
 
+    const blockBrowserZoom = (event) => {
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+      }
+    };
+
+    el.addEventListener('wheel', blockBrowserZoom, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', blockBrowserZoom);
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return undefined;
+
+    const blockWheel = (event) => {
+      event.preventDefault();
+    };
+
+    el.addEventListener('wheel', blockWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', blockWheel);
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return undefined;
+
     const preventDefault = (event) => {
       event.preventDefault();
     };
 
-    el.addEventListener('gesturestart', preventDefault, { capture: true, passive: false });
-    el.addEventListener('gesturechange', preventDefault, { capture: true, passive: false });
-    el.addEventListener('gestureend', preventDefault, { capture: true, passive: false });
+    el.addEventListener('gesturestart', preventDefault, { passive: false });
+    el.addEventListener('gesturechange', preventDefault, { passive: false });
+    el.addEventListener('gestureend', preventDefault, { passive: false });
 
     return () => {
-      el.removeEventListener('gesturestart', preventDefault, { capture: true });
-      el.removeEventListener('gesturechange', preventDefault, { capture: true });
-      el.removeEventListener('gestureend', preventDefault, { capture: true });
+      el.removeEventListener('gesturestart', preventDefault);
+      el.removeEventListener('gesturechange', preventDefault);
+      el.removeEventListener('gestureend', preventDefault);
     };
   }, []);
 
