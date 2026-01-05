@@ -4,7 +4,7 @@ import {
   BookOpen, Save, Edit3, Eye, Calendar, Clock,
   ChevronLeft, ChevronRight, CalendarDays, TrendingUp, BarChart2,
   FileText, BarChart3, PanelLeft, PanelLeftClose, Brain, Settings, Zap,
-  Plus, Target, RefreshCw, ToggleLeft, ToggleRight
+  Plus, Target, RefreshCw, ToggleLeft, ToggleRight, Globe, GitBranch
 } from 'lucide-react';
 import Logo from '../components/Logo';
 import Toast from '../components/Toast';
@@ -13,12 +13,32 @@ import UserProfileDropdown from '../components/UserProfileDropdown';
 import MinimalistTimer from '../components/MinimalistTimer';
 import { useAuth } from '../contexts/AuthContext';
 import apiService from '../services/api';
+import journalService from '../services/journalService';
+
+const escapeHtml = (value = '') => {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
+const sanitizeUrl = (url = '') => {
+  const trimmed = url.trim();
+  if (/^https?:\/\//i.test(trimmed) || /^mailto:/i.test(trimmed)) {
+    return trimmed;
+  }
+  return '#';
+};
 
 // Clean markdown to HTML converter with proper spacing
 const parseMarkdown = (markdown) => {
   if (!markdown) return '';
+
+  const escapedMarkdown = escapeHtml(markdown);
   
-  return markdown
+  return escapedMarkdown
     // Headers
     .replace(/^### (.*$)/gim, '<h3 class="text-lg font-semibold text-white mb-3 mt-6">$1</h3>')
     .replace(/^## (.*$)/gim, '<h2 class="text-xl font-semibold text-white mb-4 mt-8">$1</h2>')
@@ -32,7 +52,7 @@ const parseMarkdown = (markdown) => {
     .replace(/`([^`]+)`/g, '<code class="bg-gray-800 text-green-400 px-2 py-1 rounded text-sm font-mono">$1</code>')
     
     // Links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-blue-400 hover:text-blue-300 underline" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => `<a href="${sanitizeUrl(url)}" class="text-blue-400 hover:text-blue-300 underline" target="_blank" rel="noopener noreferrer">${text}</a>`)
     
     // Lists
     .replace(/^\- (.*$)/gim, '<li class="text-gray-300 mb-1">• $1</li>')
@@ -59,6 +79,7 @@ const Journal = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const userStorageId = user?.id || user?._id || user?.email || null;
 
   // Sidebar state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -107,8 +128,9 @@ const Journal = () => {
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
     { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
     { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
-    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
-    { icon: Settings, label: "Settings", active: location.pathname === "/settings", path: "/settings" }
+    { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
+    { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
+    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" }
   ];
 
   // Quick actions for Journal
@@ -177,6 +199,11 @@ const Journal = () => {
       return;
     }
 
+    if (item.label === "Graph Mode") {
+      navigate('/graph');
+      return;
+    }
+
     // For other pages, show coming soon
     showDialog({
       type: 'info',
@@ -199,7 +226,7 @@ const Journal = () => {
 
   // Auto-journal functions
   const getUserStorageKey = (key) => {
-    return user ? `${key}_${user.id}` : key;
+    return userStorageId ? `${key}_${userStorageId}` : key;
   };
 
   const loadJournalSettings = () => {
@@ -219,15 +246,82 @@ const Journal = () => {
 
     // Also update the journalService settings
     if (user) {
-      import('../services/journalService').then(({ default: journalService }) => {
-        journalService.saveSettings(settings);
-      });
+      journalService.saveSettings(settings);
     }
   };
 
   const saveJournalSettings = (newSettings) => {
     setJournalSettings(newSettings);
     localStorage.setItem(getUserStorageKey('journalSettings'), JSON.stringify(newSettings));
+    if (user) {
+      journalService.saveSettings(newSettings);
+      if (newSettings.autoPush) {
+        journalService.init();
+      }
+    }
+  };
+
+  const handleToggleAutoPush = () => {
+    const newSettings = { ...journalSettings, autoPush: !journalSettings.autoPush };
+    saveJournalSettings(newSettings);
+
+    if (newSettings.autoPush && (!newSettings.githubRepo || !newSettings.githubToken)) {
+      showToast('Configure GitHub repository and token to enable auto-push.', 'warning');
+    } else if (newSettings.autoPush) {
+      showToast('Auto Push enabled for daily journal sync.', 'success');
+    } else {
+      showToast('Auto Push disabled.', 'info');
+    }
+  };
+
+  const handleManualGitHubPush = async () => {
+    try {
+      if (!journalSettings.githubRepo || !journalSettings.githubToken) {
+        showToast('Please configure GitHub repository and token first.', 'error');
+        return;
+      }
+
+      if (currentEntry?.trim()) {
+        localStorage.setItem(getUserStorageKey(`journal_${currentDate}`), currentEntry);
+      }
+
+      journalService.saveSettings(journalSettings);
+      await journalService.pushToGitHub(currentDate);
+      showToast('Journal pushed to GitHub successfully!', 'success');
+    } catch (error) {
+      showToast(error.message || 'Failed to push journal to GitHub.', 'error');
+    }
+  };
+
+  const cleanupOldData = () => {
+    if (!user) return;
+
+    const keysToDelete = [];
+    const userSuffix = userStorageId ? `_${userStorageId}` : '';
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+
+      if (key.startsWith('session_logged_') || key.includes('harsith')) {
+        keysToDelete.push(key);
+      }
+
+      if (userSuffix && key.startsWith('activities_') && key.endsWith(userSuffix)) {
+        try {
+          const raw = localStorage.getItem(key);
+          const parsed = raw ? JSON.parse(raw) : [];
+          if (Array.isArray(parsed)) {
+            const deduped = Array.from(new Set(parsed));
+            localStorage.setItem(key, JSON.stringify(deduped));
+          }
+        } catch (error) {
+          keysToDelete.push(key);
+        }
+      }
+    }
+
+    keysToDelete.forEach((key) => localStorage.removeItem(key));
   };
 
   const loadTodayActivities = () => {
@@ -804,12 +898,13 @@ ${topicsSummary || 'No topics studied this month'}
   // Effects
   useEffect(() => {
     if (user) {
+      journalService.setCurrentUser(userStorageId);
       loadJournalSettings();
       loadTodayActivities();
       // Reset initial load state when user changes
       setInitialLoadComplete(false);
     }
-  }, [user]);
+  }, [user, userStorageId]);
 
   useEffect(() => {
     if (user && activeView === 'daily') {
@@ -1115,6 +1210,57 @@ ${topicsSummary || 'No topics studied this month'}
                       }`}
                     >
                       Plain Text
+                    </button>
+                  </div>
+                </div>
+
+                {/* Auto Push Toggle */}
+                <div className="flex items-center justify-between p-4 bg-white/5 rounded-lg">
+                  <div>
+                    <h4 className="font-medium">Auto Push</h4>
+                    <p className="text-sm text-gray-400">Automatically push today&apos;s journal to GitHub</p>
+                  </div>
+                  <button
+                    onClick={handleToggleAutoPush}
+                    className="flex items-center"
+                  >
+                    {journalSettings.autoPush ? (
+                      <ToggleRight className="w-8 h-8 text-blue-400" />
+                    ) : (
+                      <ToggleLeft className="w-8 h-8 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+
+                {/* GitHub Config */}
+                <div className="p-4 bg-white/5 rounded-lg space-y-3">
+                  <h4 className="font-medium">GitHub Sync</h4>
+                  <input
+                    type="text"
+                    value={journalSettings.githubRepo}
+                    onChange={(e) => saveJournalSettings({ ...journalSettings, githubRepo: e.target.value.trim() })}
+                    placeholder="owner/repo"
+                    className="w-full px-3 py-2 bg-black border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                  />
+                  <input
+                    type="password"
+                    value={journalSettings.githubToken}
+                    onChange={(e) => saveJournalSettings({ ...journalSettings, githubToken: e.target.value.trim() })}
+                    placeholder="GitHub Personal Access Token"
+                    className="w-full px-3 py-2 bg-black border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                  />
+                  <div className="flex items-center justify-between">
+                    <input
+                      type="time"
+                      value={journalSettings.dailyPushTime}
+                      onChange={(e) => saveJournalSettings({ ...journalSettings, dailyPushTime: e.target.value })}
+                      className="px-3 py-2 bg-black border border-white/10 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                    />
+                    <button
+                      onClick={handleManualGitHubPush}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+                    >
+                      Push Now
                     </button>
                   </div>
                 </div>

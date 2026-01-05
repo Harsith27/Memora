@@ -191,6 +191,22 @@ const Mindmaps = () => {
     const el = viewportRef.current;
     if (!el) return undefined;
 
+    const blockBrowserZoom = (event) => {
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+      }
+    };
+
+    el.addEventListener('wheel', blockBrowserZoom, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', blockBrowserZoom);
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return undefined;
+
     const blockGesture = (event) => {
       event.preventDefault();
     };
@@ -204,7 +220,7 @@ const Mindmaps = () => {
       el.removeEventListener('gesturechange', blockGesture);
       el.removeEventListener('gestureend', blockGesture);
     };
-  }, []);
+  }, [];
 
   const activeMap = useMemo(() => maps.find((map) => map.id === activeMapId) || null, [maps, activeMapId]);
   const selectedNode = useMemo(

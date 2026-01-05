@@ -5,7 +5,7 @@ import {
   Clock, BookOpen, Target, Star, AlertCircle, CheckCircle,
   Brain, FileText, BarChart3, Settings, PanelLeft, PanelLeftClose,
   X, Edit3, Trash2, Save, MapPin, Users, Gift,
-  Linkedin, Twitter, Instagram
+  Linkedin, Twitter, Instagram, Globe, GitBranch
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import Logo from '../components/Logo';
@@ -67,8 +67,9 @@ const Chronicle = () => {
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
     { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
     { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
-    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
-    { icon: Settings, label: "Settings", active: location.pathname === "/settings", path: "/settings" }
+    { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
+    { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
+    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" }
   ];
 
   // Quick actions for Chronicle

@@ -4,7 +4,7 @@ import {
   ArrowLeft, Plus, Search, Filter, Folder, FileText, Star, Clock,
   Upload, Link as LinkIcon, Edit3, Trash2, FolderOpen, File,
   Image, Video, Music, Code, Book, Palette, Calculator, Beaker,
-  Brain, BarChart3, Calendar, Settings, PanelLeft, PanelLeftClose, Zap
+  Brain, BarChart3, Calendar, Settings, PanelLeft, PanelLeftClose, Zap, Globe, GitBranch
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import Logo from '../components/Logo';
@@ -12,6 +12,8 @@ import Toast from '../components/Toast';
 import AddDocTagModal from '../components/AddDocTagModal';
 import EditDocTagModal from '../components/EditDocTagModal';
 import FileViewer from '../components/FileViewer';
+import docTagsService from '../services/docTagsService';
+import ShadcnSelect from '../components/ShadcnSelect';
 
 import Dialog from '../components/Dialog';
 
@@ -26,6 +28,7 @@ const DocTags = () => {
   const [filterCategory, setFilterCategory] = useState('all');
   const [currentPath, setCurrentPath] = useState([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createType, setCreateType] = useState('folder');
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
@@ -52,25 +55,57 @@ const DocTags = () => {
   });
 
   // Sidebar navigation items
+  const typeOptions = [
+    { value: 'all', label: 'All Types' },
+    { value: 'folder', label: 'Folders' },
+    { value: 'document', label: 'Documents' }
+  ];
+
+  const categoryOptions = [
+    { value: 'all', label: 'All Categories' },
+    { value: 'Science', label: 'Science' },
+    { value: 'Mathematics', label: 'Mathematics' },
+    { value: 'History', label: 'History' },
+    { value: 'Language', label: 'Language' },
+    { value: 'Technology', label: 'Technology' },
+    { value: 'Arts', label: 'Arts' },
+    { value: 'Business', label: 'Business' },
+    { value: 'Personal', label: 'Personal' },
+    { value: 'Research', label: 'Research' },
+    { value: 'Other', label: 'Other' }
+  ];
+
+  // Sidebar navigation items
   const sidebarItems = [
     { icon: Brain, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
-    { icon: Book, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
+    { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
     { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
-    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
-    { icon: Settings, label: "Settings", active: location.pathname === "/settings", path: "/settings" }
+    { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
+    { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
+    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" }
   ];
 
   // Quick actions for DocTags
   const quickActions = [
-    { icon: Plus, label: "Add Document", action: () => setShowCreateModal(true), primary: true },
-    { icon: Folder, label: "New Folder", action: () => showDialog({
-      type: 'info',
-      title: 'Create Folder',
-      message: 'This will open the create modal with folder type pre-selected.',
-      confirmText: 'Got it',
-      onConfirm: () => setShowCreateModal(true)
-    }), primary: false }
+    {
+      icon: Plus,
+      label: "Add Resource",
+      action: () => {
+        setCreateType('document');
+        setShowCreateModal(true);
+      },
+      primary: true
+    },
+    {
+      icon: Folder,
+      label: "New Workspace",
+      action: () => {
+        setCreateType('folder');
+        setShowCreateModal(true);
+      },
+      primary: false
+    }
   ];
 
   // Dialog helper functions
@@ -109,36 +144,14 @@ const DocTags = () => {
   const fetchDocTags = async (parentId = null) => {
     if (!user) return;
 
-    console.log('Fetching DocTags for user:', user.id);
-    console.log('Access token:', localStorage.getItem('accessToken'));
-
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (parentId) params.append('parentId', parentId);
-      if (filterType !== 'all') params.append('type', filterType);
-      if (filterCategory !== 'all') params.append('category', filterCategory);
-      if (searchQuery) params.append('search', searchQuery);
-
-      console.log('Fetching from URL:', `/api/doctags?${params}`);
-
-      const response = await fetch(`/api/doctags?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        }
+      const data = await docTagsService.getDocTags({
+        parentId: parentId || undefined,
+        type: filterType !== 'all' ? filterType : undefined,
+        category: filterCategory !== 'all' ? filterCategory : undefined,
+        search: searchQuery || undefined
       });
-
-      console.log('Response status:', response.status);
-      console.log('Response ok:', response.ok);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Response error:', errorText);
-        throw new Error(`Failed to fetch documents: ${response.status} ${errorText}`);
-      }
-
-      const data = await response.json();
-      console.log('Response data:', data);
       setDocTags(data.docTags || []);
     } catch (error) {
       console.error('Failed to fetch documents:', error);
@@ -148,23 +161,8 @@ const DocTags = () => {
     }
   };
 
-  // Test DocTags API health
-  const testDocTagsAPI = async () => {
-    try {
-      console.log('Testing DocTags API health...');
-      const response = await fetch('/api/doctags/health');
-      const data = await response.json();
-      console.log('DocTags API health:', data);
-    } catch (error) {
-      console.error('DocTags API health check failed:', error);
-    }
-  };
-
   useEffect(() => {
     if (user) {
-      // Test API health first
-      testDocTagsAPI();
-
       const currentParentId = currentPath.length > 0 ? currentPath[currentPath.length - 1].id : null;
       fetchDocTags(currentParentId);
     }
@@ -273,18 +271,7 @@ const DocTags = () => {
 
   const handleCreate = async (formData) => {
     try {
-      const response = await fetch('/api/doctags', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        },
-        body: JSON.stringify(formData)
-      });
-
-      if (!response.ok) throw new Error('Failed to create item');
-
-      const data = await response.json();
+      const data = await docTagsService.createDocTag(formData);
       showToast(data.message);
       fetchDocTags(currentPath.length > 0 ? currentPath[currentPath.length - 1].id : null);
     } catch (error) {
@@ -296,18 +283,7 @@ const DocTags = () => {
 
   const handleEdit = async (formData) => {
     try {
-      const response = await fetch(`/api/doctags/${editingItem._id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        },
-        body: JSON.stringify(formData)
-      });
-
-      if (!response.ok) throw new Error('Failed to update item');
-
-      const data = await response.json();
+      const data = await docTagsService.updateDocTag(editingItem._id, formData);
       showToast(data.message);
       fetchDocTags(currentPath.length > 0 ? currentPath[currentPath.length - 1].id : null);
     } catch (error) {
@@ -323,46 +299,13 @@ const DocTags = () => {
     }
 
     try {
-      const response = await fetch(`/api/doctags/${item._id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        }
-      });
-
-      if (!response.ok) throw new Error('Failed to delete item');
+      await docTagsService.deleteDocTag(item._id);
 
       showToast(`${item.type === 'folder' ? 'Folder' : 'Document'} deleted successfully`);
       fetchDocTags(currentPath.length > 0 ? currentPath[currentPath.length - 1].id : null);
     } catch (error) {
       console.error('Failed to delete item:', error);
       showToast('Failed to delete item', 'error');
-    }
-  };
-
-  const handleCleanupDuplicates = async () => {
-    if (!window.confirm('This will remove duplicate DocTag entries. Are you sure?')) {
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/doctags/cleanup-duplicates', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        }
-      });
-
-      if (!response.ok) throw new Error('Failed to cleanup duplicates');
-
-      const data = await response.json();
-      showToast(data.message, 'success');
-
-      // Refresh the current view
-      fetchDocTags(currentPath.length > 0 ? currentPath[currentPath.length - 1].id : null);
-    } catch (error) {
-      console.error('Failed to cleanup duplicates:', error);
-      showToast('Failed to cleanup duplicates', 'error');
     }
   };
 
@@ -467,19 +410,24 @@ const DocTags = () => {
             {/* Right: Buttons */}
             <div className="flex items-center space-x-2">
               <button
-                onClick={handleCleanupDuplicates}
-                className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg flex items-center space-x-2 transition-colors text-sm"
-                title="Remove duplicate entries"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>Cleanup</span>
-              </button>
-              <button
-                onClick={() => setShowCreateModal(true)}
+                onClick={() => {
+                  setCreateType('document');
+                  setShowCreateModal(true);
+                }}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
               >
                 <Plus className="w-4 h-4" />
-                <span>Add New</span>
+                <span>Add Resource</span>
+              </button>
+              <button
+                onClick={() => {
+                  setCreateType('folder');
+                  setShowCreateModal(true);
+                }}
+                className="bg-white/10 hover:bg-white/15 border border-white/20 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
+              >
+                <Folder className="w-4 h-4" />
+                <span>New Workspace</span>
               </button>
             </div>
           </div>
@@ -494,7 +442,7 @@ const DocTags = () => {
                   : 'text-blue-400 hover:text-blue-300 hover:bg-white/5'
               }`}
             >
-              Root
+              Home
             </button>
             {currentPath.map((folder, index) => (
               <div key={folder.id} className="flex items-center space-x-2">
@@ -536,32 +484,18 @@ const DocTags = () => {
                 className="w-full bg-white/5 border border-white/20 rounded-lg pl-10 pr-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
               />
             </div>
-            <select
+            <ShadcnSelect
               value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-              className="bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-            >
-              <option value="all">All Types</option>
-              <option value="folder">Folders</option>
-              <option value="document">Documents</option>
-            </select>
-            <select
+              onChange={setFilterType}
+              options={typeOptions}
+              className="sm:min-w-48"
+            />
+            <ShadcnSelect
               value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
-              className="bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-            >
-              <option value="all">All Categories</option>
-              <option value="Science">Science</option>
-              <option value="Mathematics">Mathematics</option>
-              <option value="History">History</option>
-              <option value="Language">Language</option>
-              <option value="Technology">Technology</option>
-              <option value="Arts">Arts</option>
-              <option value="Business">Business</option>
-              <option value="Personal">Personal</option>
-              <option value="Research">Research</option>
-              <option value="Other">Other</option>
-            </select>
+              onChange={setFilterCategory}
+              options={categoryOptions}
+              className="sm:min-w-48"
+            />
           </div>
         </div>
 
@@ -582,10 +516,13 @@ const DocTags = () => {
                 }
               </p>
               <button
-                onClick={() => setShowCreateModal(true)}
+                onClick={() => {
+                  setCreateType('document');
+                  setShowCreateModal(true);
+                }}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors"
               >
-                Create New
+                Add Resource
               </button>
             </div>
           ) : (
@@ -623,8 +560,16 @@ const DocTags = () => {
                   onClick={() => item.type === 'folder' ? handleNavigateToFolder(item) : handleOpenDocument(item)}
                 >
                   <h3 className="font-medium text-white mb-1 truncate">{item.name}</h3>
-                  {item.description && (
+                  {item.description && item.name !== 'Topics' && (
                     <p className="text-sm text-gray-400 mb-2 line-clamp-2">{item.description}</p>
+                  )}
+
+                  {item.linkedTopicId?.title && (
+                    <div className="mb-2">
+                      <span className="inline-flex items-center px-2 py-1 bg-emerald-500/15 text-emerald-300 text-xs rounded">
+                        Topic: {item.linkedTopicId.title}
+                      </span>
+                    </div>
                   )}
                   
                   <div className="flex items-center justify-between text-xs text-gray-500">
@@ -672,6 +617,7 @@ const DocTags = () => {
         onClose={() => setShowCreateModal(false)}
         onSubmit={handleCreate}
         loading={loading}
+        initialType={createType}
         currentParentId={currentPath.length > 0 ? currentPath[currentPath.length - 1].id : null}
       />
 
