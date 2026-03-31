@@ -195,44 +195,26 @@ const Mindmaps = () => {
     };
   }, [activeMapId, dragNode, isPanning, pan.x, pan.y, zoom]);
 
-  // Proper zoom and pan with wheel + gesture handling
+  // Simple zoom and pan with Space key for panning
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return undefined;
 
     const handleWheel = (event) => {
-      // Zoom with Ctrl + Wheel (pinch gesture)
+      // Zoom with Ctrl + Wheel/Pinch (touchpad pinch on Mac/Windows)
       if (event.ctrlKey || event.metaKey) {
         event.preventDefault();
         
-        const rect = el.getBoundingClientRect();
-        const cursorX = event.clientX - rect.left;
-        const cursorY = event.clientY - rect.top;
-
-        // Zoom direction (negative deltaY = zoom in)
-        const zoomSpeed = 0.001;
-        const delta = -event.deltaY * zoomSpeed;
+        // Simple zoom: -deltaY = zoom in, +deltaY = zoom out
+        const zoomDirection = event.deltaY > 0 ? -1 : 1;
+        const zoomSpeed = 0.08;
         
-        setZoom((prevZoom) => {
-          const newZoom = clamp(prevZoom + delta, 0.2, 3);
-          
-          // Calculate pan adjustment for cursor-origin zoom
-          const zoomDiff = newZoom - prevZoom;
-          const panAdjustX = (cursorX / newZoom - cursorX / prevZoom) * (prevZoom / newZoom);
-          const panAdjustY = (cursorY / newZoom - cursorY / prevZoom) * (prevZoom / newZoom);
-
-          setPan((prevPan) => ({
-            x: prevPan.x - panAdjustX,
-            y: prevPan.y - panAdjustY
-          }));
-
-          return newZoom;
-        });
+        setZoom((prev) => clamp(prev + zoomDirection * zoomSpeed, 0.2, 3));
         return;
       }
 
-      // Pan with regular wheel (or shift+wheel)
-      if (event.shiftKey || !event.ctrlKey) {
+      // Pan with shift+wheel
+      if (event.shiftKey) {
         event.preventDefault();
         setPan((prev) => ({
           x: prev.x - event.deltaX * 0.5,
@@ -241,47 +223,42 @@ const Mindmaps = () => {
       }
     };
 
-    const handleDoubleClick = (event) => {
-      // Toggle pan mode OR reset zoom
-      if (event.target === el || event.target.closest('[data-canvas]')) {
-        if (isPanMode) {
-          // Exit pan mode and reset zoom
-          setIsPanMode(false);
-          setZoom(1);
-          setPan({ x: 0, y: 0 });
-        } else {
-          // Enter pan mode
-          setIsPanMode(true);
-        }
+    const handleKeyDown = (event) => {
+      if (event.code === 'Space') {
+        event.preventDefault();
+        setIsPanMode(true);
       }
     };
 
-    const handleGestureStart = (event) => {
-      event.preventDefault();
-      gestureScaleRef.current = 1;
+    const handleKeyUp = (event) => {
+      if (event.code === 'Space') {
+        event.preventDefault();
+        setIsPanMode(false);
+      }
     };
 
     const handleGestureChange = (event) => {
       event.preventDefault();
+      // Safari pinch-zoom
       const scaleDelta = event.scale - gestureScaleRef.current;
-      const zoomDelta = scaleDelta * 0.1;
+      const zoomDelta = scaleDelta * 0.05;
       
       setZoom((prev) => clamp(prev + zoomDelta, 0.2, 3));
       gestureScaleRef.current = event.scale;
     };
 
     el.addEventListener('wheel', handleWheel, { passive: false });
-    el.addEventListener('dblclick', handleDoubleClick, { passive: false });
-    el.addEventListener('gesturestart', handleGestureStart, { passive: false });
     el.addEventListener('gesturechange', handleGestureChange, { passive: false });
+    window.addEventListener('keydown', handleKeyDown, { passive: false });
+    window.addEventListener('keyup', handleKeyUp, { passive: false });
 
     return () => {
       el.removeEventListener('wheel', handleWheel);
-      el.removeEventListener('dblclick', handleDoubleClick);
-      el.removeEventListener('gesturestart', handleGestureStart);
       el.removeEventListener('gesturechange', handleGestureChange);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [isPanMode]);
+  }, []);
 
   const activeMap = useMemo(() => maps.find((map) => map.id === activeMapId) || null, [maps, activeMapId]);
   const selectedNode = useMemo(
@@ -721,47 +698,22 @@ const Mindmaps = () => {
             </div>
 
             <div className="col-span-12 lg:col-span-9 bg-black border border-white/10 rounded-xl overflow-hidden relative">
-              <div className="absolute top-3 right-3 z-10 flex flex-col gap-2">
+              <div className="absolute top-3 right-3 z-10 flex flex-col items-end gap-2">
                 {isPanMode && (
                   <div className="px-3 py-1.5 rounded-md text-xs bg-blue-500/20 border border-blue-400/40 text-blue-200 font-medium">
-                    ✋ Pan Mode (move canvas)
+                    ✋ Panning active
                   </div>
                 )}
                 <div className="px-2.5 py-1 rounded-md text-xs bg-black/70 border border-white/15 text-gray-300">
                   Zoom: {Math.round(zoom * 100)}%
-                </div>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => setZoom((prev) => clamp(prev + 0.1, 0.2, 3))}
-                    className="p-1.5 bg-white/10 hover:bg-white/20 border border-white/15 rounded-md transition-colors"
-                    title="Zoom In (Ctrl+Scroll)"
-                  >
-                    <ZoomIn className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setZoom((prev) => clamp(prev - 0.1, 0.2, 3))}
-                    className="p-1.5 bg-white/10 hover:bg-white/20 border border-white/15 rounded-md transition-colors"
-                    title="Zoom Out (Ctrl+Scroll)"
-                  >
-                    <ZoomOut className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setIsPanMode(!isPanMode)}
-                    className={`p-1.5 rounded-md transition-colors ${ isPanMode ? 'bg-blue-500/30 border border-blue-400 text-blue-200' : 'bg-white/10 hover:bg-white/20 border border-white/15'}`}
-                    title="Toggle Pan Mode (Double-click canvas to reset)"
-                  >
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 2C11.5 2 11 2.19 10.59 2.59L2.59 10.59C1.8 11.37 1.8 12.63 2.59 13.41L10.59 21.41C11.37 22.2 12.63 22.2 13.41 21.41L21.41 13.41C22.2 12.63 22.2 11.37 21.41 10.59L13.41 2.59C13 2.19 12.5 2 12 2M7 10C5.9 10 5 10.9 5 12C5 13.1 5.9 14 7 14C8.1 14 9 13.1 9 12C9 10.9 8.1 10 7 10M12 10C10.9 10 10 10.9 10 12C10 13.1 10.9 14 12 14C13.1 14 14 13.1 14 12C14 10.9 13.1 10 12 10M17 10C15.9 10 15 10.9 15 12C15 13.1 15.9 14 17 14C18.1 14 19 13.1 19 12C19 10.9 18.1 10 17 10Z" />
-                    </svg>
-                  </button>
                 </div>
               </div>
 
               <div
                 ref={viewportRef}
                 data-canvas
-                className={`h-full w-full relative overflow-hidden transition-all ${
-                  isPanMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'
+                className={`h-full w-full relative overflow-hidden ${
+                  isPanMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'
                 }`}
                 onMouseDown={(event) => {
                   if (event.button !== 0) return;
