@@ -353,7 +353,7 @@ const DocTags = () => {
   }
 
   return (
-    <div className="bg-black text-white min-h-screen flex">
+    <div className="bg-black text-white min-h-screen flex flex-col">
       {/* Sidebar */}
       <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} bg-black border-r border-white/10 flex flex-col fixed left-0 top-0 h-screen z-10 transition-all duration-300`}>
         {/* Logo */}
@@ -415,13 +415,13 @@ const DocTags = () => {
       </div>
 
       {/* Main Content */}
-      <div className={`flex-1 flex flex-col transition-all duration-300 ${
+      <div className={`flex-1 flex flex-col h-screen transition-all duration-300 ${
         sidebarCollapsed
           ? 'ml-16'
           : 'ml-64'
       }`}>
         {/* Header */}
-        <header className="bg-black border-b border-white/10 px-3 sm:px-4 py-4">
+        <header className="bg-black border-b border-white/10 h-auto px-3 sm:px-4 py-4 shrink-0">
           {/* Top row: Title and Add New button */}
           <div className="flex items-center justify-between mb-4">
             {/* Left: Sidebar toggle and title */}
@@ -507,7 +507,7 @@ const DocTags = () => {
         </header>
 
         {/* Filters and Search */}
-        <div className="p-6 border-b border-white/10">
+        <div className="px-6 py-4 border-b border-white/10 bg-black shrink-0">
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -535,7 +535,7 @@ const DocTags = () => {
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-6 overflow-auto scrollbar-hide">
+        <div className="flex-1 p-6 overflow-auto scrollbar-hide bg-black">
           {loading ? (
             <div className="text-center py-8">
               <p className="text-gray-400">Loading...</p>
