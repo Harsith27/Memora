@@ -36,7 +36,11 @@ function ProtectedRoute({ children }) {
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
-    return null;
+    return (
+      <div className="bg-black text-white min-h-screen flex items-center justify-center">
+        <p className="text-gray-400">Loading...</p>
+      </div>
+    );
   }
 
   if (!user) {
