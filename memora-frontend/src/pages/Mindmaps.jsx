@@ -195,34 +195,8 @@ const Mindmaps = () => {
     };
   }, [activeMapId, dragNode, isPanning, pan.x, pan.y, zoom]);
 
-  // Simple zoom and pan with Space key for panning
+  // Space key handlers for pan mode
   useEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return undefined;
-
-    const handleWheel = (event) => {
-      // Zoom with Ctrl + Wheel/Pinch (touchpad pinch on Mac/Windows)
-      if (event.ctrlKey || event.metaKey) {
-        event.preventDefault();
-        
-        // Simple zoom: -deltaY = zoom in, +deltaY = zoom out
-        const zoomDirection = event.deltaY > 0 ? -1 : 1;
-        const zoomSpeed = 0.08;
-        
-        setZoom((prev) => clamp(prev + zoomDirection * zoomSpeed, 0.2, 3));
-        return;
-      }
-
-      // Pan with shift+wheel
-      if (event.shiftKey) {
-        event.preventDefault();
-        setPan((prev) => ({
-          x: prev.x - event.deltaX * 0.5,
-          y: prev.y - event.deltaY * 0.5
-        }));
-      }
-    };
-
     const handleKeyDown = (event) => {
       if (event.code === 'Space') {
         event.preventDefault();
@@ -237,24 +211,10 @@ const Mindmaps = () => {
       }
     };
 
-    const handleGestureChange = (event) => {
-      event.preventDefault();
-      // Safari pinch-zoom
-      const scaleDelta = event.scale - gestureScaleRef.current;
-      const zoomDelta = scaleDelta * 0.05;
-      
-      setZoom((prev) => clamp(prev + zoomDelta, 0.2, 3));
-      gestureScaleRef.current = event.scale;
-    };
-
-    el.addEventListener('wheel', handleWheel, { passive: false });
-    el.addEventListener('gesturechange', handleGestureChange, { passive: false });
-    window.addEventListener('keydown', handleKeyDown, { passive: false });
-    window.addEventListener('keyup', handleKeyUp, { passive: false });
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
 
     return () => {
-      el.removeEventListener('wheel', handleWheel);
-      el.removeEventListener('gesturechange', handleGestureChange);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
@@ -720,6 +680,23 @@ const Mindmaps = () => {
                   if (isPanMode) {
                     setIsPanning(true);
                   }
+                }}
+                onWheel={(event) => {
+                  event.preventDefault();
+
+                  // Pinch or Ctrl/Cmd + wheel zooms. Regular wheel pans.
+                  if (event.ctrlKey || event.metaKey) {
+                    const direction = event.deltaY > 0 ? -0.08 : 0.08;
+                    setZoom((prev) => Math.max(0.2, Math.min(3, prev + direction)));
+                    return;
+                  }
+
+                  if (event.shiftKey) {
+                    setPan((prev) => ({ x: prev.x - event.deltaY * 0.35, y: prev.y }));
+                    return;
+                  }
+
+                  setPan((prev) => ({ x: prev.x - event.deltaX * 0.35, y: prev.y - event.deltaY * 0.35 }));
                 }}
                 style={{
                   touchAction: 'none',
