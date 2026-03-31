@@ -4,7 +4,7 @@ import {
   ArrowLeft, Plus, Search, Filter, Folder, FileText, Star, Clock,
   Upload, Link as LinkIcon, Edit3, Trash2, FolderOpen, File,
   Image, Video, Music, Code, Book, Palette, Calculator, Beaker,
-  Brain, BarChart3, Calendar, Settings, PanelLeft, PanelLeftClose, Zap, Globe, GitBranch
+  Brain, BarChart3, Calendar, Settings, PanelLeft, PanelLeftClose, Zap, Globe, GitBranch, BookOpen
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import Logo from '../components/Logo';
