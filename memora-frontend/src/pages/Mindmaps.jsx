@@ -792,87 +792,87 @@ const Mindmaps = () => {
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Footer */}
-      <footer className="mt-1 border-t border-white/10 py-6">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
-            {/* Left: Memora Branding */}
-            <div className="flex items-center space-x-3">
-              <Logo size="sm" className="text-white" />
-              <div>
-                <div className="text-lg font-bold text-white">Memora</div>
-                <div className="text-xs text-gray-400">Sets your memory in motion</div>
+        {/* Footer */}
+        <footer className="border-t border-white/10 py-6 px-4 bg-black">
+          <div className="max-w-6xl mx-auto">
+            <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
+              {/* Left: Memora Branding */}
+              <div className="flex items-center space-x-3">
+                <Logo size="sm" className="text-white" />
+                <div>
+                  <div className="text-lg font-bold text-white">Memora</div>
+                  <div className="text-xs text-gray-400">Sets your memory in motion</div>
+                </div>
+              </div>
+
+              {/* Center: Social Icons */}
+              <div className="flex items-center space-x-3">
+                <motion.a
+                  href="https://linkedin.com/company/memora"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 hover:border-blue-400/20 transition-all"
+                  title="LinkedIn"
+                  whileHover={{ scale: 1.1, rotate: 5 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Linkedin className="w-4 h-4" />
+                </motion.a>
+                <motion.a
+                  href="https://twitter.com/memoraapp"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 hover:border-blue-400/20 transition-all"
+                  title="Twitter"
+                  whileHover={{ scale: 1.1, rotate: -5 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Twitter className="w-4 h-4" />
+                </motion.a>
+                <motion.a
+                  href="https://instagram.com/memoraapp"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-pink-400 hover:bg-pink-400/10 hover:border-pink-400/20 transition-all"
+                  title="Instagram"
+                  whileHover={{ scale: 1.1, rotate: 5 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Instagram className="w-4 h-4" />
+                </motion.a>
+              </div>
+
+              {/* Right: Navigation Links */}
+              <div className="flex flex-wrap items-center space-x-4 text-sm text-gray-400">
+                <button
+                  onClick={() => navigate('/profile')}
+                  className="hover:text-white transition-colors"
+                >
+                  Support
+                </button>
+                <a
+                  href="mailto:hello@memora.app"
+                  className="hover:text-white transition-colors"
+                >
+                  Contact Us
+                </a>
+                <button className="hover:text-white transition-colors">
+                  Privacy
+                </button>
+                <button className="hover:text-white transition-colors">
+                  Terms
+                </button>
               </div>
             </div>
 
-            {/* Center: Social Icons */}
-            <div className="flex items-center space-x-3">
-              <motion.a
-                href="https://linkedin.com/company/memora"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 hover:border-blue-400/20 transition-all"
-                title="LinkedIn"
-                whileHover={{ scale: 1.1, rotate: 5 }}
-                transition={{ duration: 0.2 }}
-              >
-                <Linkedin className="w-4 h-4" />
-              </motion.a>
-              <motion.a
-                href="https://twitter.com/memoraapp"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 hover:border-blue-400/20 transition-all"
-                title="Twitter"
-                whileHover={{ scale: 1.1, rotate: -5 }}
-                transition={{ duration: 0.2 }}
-              >
-                <Twitter className="w-4 h-4" />
-              </motion.a>
-              <motion.a
-                href="https://instagram.com/memoraapp"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-pink-400 hover:bg-pink-400/10 hover:border-pink-400/20 transition-all"
-                title="Instagram"
-                whileHover={{ scale: 1.1, rotate: 5 }}
-                transition={{ duration: 0.2 }}
-              >
-                <Instagram className="w-4 h-4" />
-              </motion.a>
-            </div>
-
-            {/* Right: Navigation Links */}
-            <div className="flex flex-wrap items-center space-x-4 text-sm text-gray-400">
-              <button
-                onClick={() => navigate('/profile')}
-                className="hover:text-white transition-colors"
-              >
-                Support
-              </button>
-              <a
-                href="mailto:hello@memora.app"
-                className="hover:text-white transition-colors"
-              >
-                Contact Us
-              </a>
-              <button className="hover:text-white transition-colors">
-                Privacy
-              </button>
-              <button className="hover:text-white transition-colors">
-                Terms
-              </button>
+            {/* Bottom Copyright */}
+            <div className="mt-4 pt-4 border-t border-white/10 text-center text-sm text-gray-500">
+              © 2025 Memora, Inc. All rights reserved.
             </div>
           </div>
-
-          {/* Bottom Copyright */}
-          <div className="mt-4 pt-4 border-t border-white/10 text-center text-sm text-gray-500">
-            © 2025 Memora, Inc. All rights reserved.
-          </div>
-        </div>
-      </footer>
+        </footer>
+      </div>
 
       <Toast show={toast.show} message={toast.message} type={toast.type} onClose={() => setToast((prev) => ({ ...prev, show: false }))} />
     </div>
