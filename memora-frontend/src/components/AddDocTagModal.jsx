@@ -1,33 +1,143 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Folder, FileText, Upload, Link as LinkIcon, Plus, Trash2 } from 'lucide-react';
+import apiService from '../services/api';
+import docTagsService from '../services/docTagsService';
+import ShadcnSelect from './ShadcnSelect';
 
-const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = null }) => {
+const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = null, initialType = 'folder' }) => {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    type: 'folder',
+    type: initialType,
     category: 'Other',
     tags: [],
     color: 'blue',
     icon: 'folder',
     attachments: [],
-    externalLinks: []
+    externalLinks: [],
+    linkedTopicId: ''
   });
   const [newTag, setNewTag] = useState('');
   const [newLink, setNewLink] = useState({ title: '', url: '', type: 'other', description: '' });
+  const [topics, setTopics] = useState([]);
+  const [topicsLoading, setTopicsLoading] = useState(false);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [error, setError] = useState('');
+
+  const categoryOptions = [
+    { value: 'Science', label: 'Science' },
+    { value: 'Mathematics', label: 'Mathematics' },
+    { value: 'History', label: 'History' },
+    { value: 'Language', label: 'Language' },
+    { value: 'Technology', label: 'Technology' },
+    { value: 'Arts', label: 'Arts' },
+    { value: 'Business', label: 'Business' },
+    { value: 'Personal', label: 'Personal' },
+    { value: 'Research', label: 'Research' },
+    { value: 'Other', label: 'Other' }
+  ];
+
+  const folderColorOptions = [
+    { value: 'blue', label: 'Blue' },
+    { value: 'green', label: 'Green' },
+    { value: 'purple', label: 'Purple' },
+    { value: 'red', label: 'Red' },
+    { value: 'orange', label: 'Orange' },
+    { value: 'yellow', label: 'Yellow' },
+    { value: 'pink', label: 'Pink' },
+    { value: 'gray', label: 'Gray' }
+  ];
+
+  const folderIconOptions = [
+    { value: 'folder', label: 'Folder' },
+    { value: 'book', label: 'Book' },
+    { value: 'code', label: 'Code' },
+    { value: 'science', label: 'Science' },
+    { value: 'math', label: 'Math' },
+    { value: 'art', label: 'Art' },
+    { value: 'music', label: 'Music' },
+    { value: 'video', label: 'Video' },
+    { value: 'image', label: 'Image' },
+    { value: 'document', label: 'Document' }
+  ];
+
+  const linkTypeOptions = [
+    { value: 'youtube', label: 'YouTube' },
+    { value: 'google_drive', label: 'Google Drive' },
+    { value: 'notion', label: 'Notion' },
+    { value: 'github', label: 'GitHub' },
+    { value: 'website', label: 'Website' },
+    { value: 'other', label: 'Other' }
+  ];
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    setFormData(prev => ({
+      ...prev,
+      type: initialType,
+      icon: initialType === 'folder' ? 'folder' : 'document'
+    }));
+  }, [isOpen, initialType]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const fetchTopics = async () => {
+      setTopicsLoading(true);
+      try {
+        const response = await apiService.getTopics({ limit: 200 });
+        if (response?.success) {
+          setTopics(response.topics || []);
+        }
+      } catch (err) {
+        console.error('Failed to load topics for linking:', err);
+      } finally {
+        setTopicsLoading(false);
+      }
+    };
+
+    fetchTopics();
+  }, [isOpen]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
+
+    if (formData.type === 'document' && formData.attachments.length === 0 && formData.externalLinks.length === 0) {
+      setError('Add at least one file or one link for a resource.');
+      return;
+    }
+
     try {
+      const normalizedParentId =
+        typeof currentParentId === 'string' && /^[0-9a-fA-F]{24}$/.test(currentParentId)
+          ? currentParentId
+          : undefined;
+
+      const normalizedLinks = (formData.externalLinks || []).map((link) => ({
+        ...link,
+        title: String(link.title || '').trim().slice(0, 300),
+        url: String(link.url || '').trim().slice(0, 4000),
+        description: String(link.description || '').trim().slice(0, 2000)
+      }));
+
       const submitData = {
         ...formData,
-        parentId: currentParentId,
-        tags: formData.tags.filter(tag => tag.trim() !== '')
+        name: String(formData.name || '').trim().slice(0, 200),
+        description: String(formData.description || '').trim().slice(0, 5000),
+        parentId: normalizedParentId,
+        linkedTopicId: formData.linkedTopicId || null,
+        tags: formData.tags
+          .map((tag) => String(tag || '').trim().slice(0, 100))
+          .filter((tag) => tag !== ''),
+        externalLinks: normalizedLinks
       };
       await onSubmit(submitData);
       handleClose();
     } catch (error) {
       console.error('Failed to create item:', error);
+      setError(error.message || 'Failed to create item. Please try again.');
     }
   };
 
@@ -41,10 +151,12 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
       color: 'blue',
       icon: 'folder',
       attachments: [],
-      externalLinks: []
+      externalLinks: [],
+      linkedTopicId: ''
     });
     setNewTag('');
     setNewLink({ title: '', url: '', type: 'other', description: '' });
+    setError('');
     onClose();
   };
 
@@ -82,6 +194,34 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
     }));
   };
 
+  const removeAttachment = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      attachments: prev.attachments.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleFileUpload = async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    setUploadingFiles(true);
+    setError('');
+    try {
+      const uploadedFiles = await docTagsService.uploadFiles(files);
+      setFormData(prev => ({
+        ...prev,
+        attachments: [...prev.attachments, ...uploadedFiles]
+      }));
+    } catch (uploadError) {
+      console.error('File upload failed:', uploadError);
+      setError(uploadError.message || 'Failed to upload files.');
+    } finally {
+      setUploadingFiles(false);
+      event.target.value = '';
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -90,7 +230,7 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-white">
-            Create New {formData.type === 'folder' ? 'Folder' : 'Document'}
+            Create New {formData.type === 'folder' ? 'Workspace' : 'Resource'}
           </h2>
           <button
             onClick={handleClose}
@@ -115,7 +255,7 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
                 }`}
               >
                 <Folder className="w-5 h-5" />
-                <span>Folder</span>
+                <span>Workspace</span>
               </button>
               <button
                 type="button"
@@ -127,9 +267,25 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
                 }`}
               >
                 <FileText className="w-5 h-5" />
-                <span>Document</span>
+                <span>Resource</span>
               </button>
             </div>
+          </div>
+
+          {/* Optional Topic Link */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Link To Existing Topic (Optional)
+            </label>
+            <ShadcnSelect
+              value={formData.linkedTopicId}
+              onChange={(nextValue) => setFormData(prev => ({ ...prev, linkedTopicId: nextValue }))}
+              disabled={topicsLoading}
+              options={[
+                { value: '', label: 'No topic (standalone resource/workspace)' },
+                ...topics.map((topic) => ({ value: topic._id, label: topic.title }))
+              ]}
+            />
           </div>
 
           {/* Basic Information */}
@@ -144,7 +300,7 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
                 value={formData.name}
                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                 className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
-                placeholder={`Enter ${formData.type} name`}
+                placeholder={`Enter ${formData.type === 'folder' ? 'workspace' : 'resource'} name`}
               />
             </div>
 
@@ -152,22 +308,11 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 Category
               </label>
-              <select
+              <ShadcnSelect
                 value={formData.category}
-                onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
-                className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-              >
-                <option value="Science">Science</option>
-                <option value="Mathematics">Mathematics</option>
-                <option value="History">History</option>
-                <option value="Language">Language</option>
-                <option value="Technology">Technology</option>
-                <option value="Arts">Arts</option>
-                <option value="Business">Business</option>
-                <option value="Personal">Personal</option>
-                <option value="Research">Research</option>
-                <option value="Other">Other</option>
-              </select>
+                onChange={(nextValue) => setFormData(prev => ({ ...prev, category: nextValue }))}
+                options={categoryOptions}
+              />
             </div>
           </div>
 
@@ -192,55 +337,76 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
                 <label className="block text-sm font-medium text-gray-300 mb-2">
                   Color
                 </label>
-                <select
+                <ShadcnSelect
                   value={formData.color}
-                  onChange={(e) => setFormData(prev => ({ ...prev, color: e.target.value }))}
-                  className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                >
-                  <option value="blue">Blue</option>
-                  <option value="green">Green</option>
-                  <option value="purple">Purple</option>
-                  <option value="red">Red</option>
-                  <option value="orange">Orange</option>
-                  <option value="yellow">Yellow</option>
-                  <option value="pink">Pink</option>
-                  <option value="gray">Gray</option>
-                </select>
+                  onChange={(nextValue) => setFormData(prev => ({ ...prev, color: nextValue }))}
+                  options={folderColorOptions}
+                />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
                   Icon
                 </label>
-                <select
+                <ShadcnSelect
                   value={formData.icon}
-                  onChange={(e) => setFormData(prev => ({ ...prev, icon: e.target.value }))}
-                  className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                >
-                  <option value="folder">Folder</option>
-                  <option value="book">Book</option>
-                  <option value="code">Code</option>
-                  <option value="science">Science</option>
-                  <option value="math">Math</option>
-                  <option value="art">Art</option>
-                  <option value="music">Music</option>
-                  <option value="video">Video</option>
-                  <option value="image">Image</option>
-                  <option value="document">Document</option>
-                </select>
+                  onChange={(nextValue) => setFormData(prev => ({ ...prev, icon: nextValue }))}
+                  options={folderIconOptions}
+                />
               </div>
             </div>
           )}
 
-          {/* External Links for Documents */}
+          {/* Files and Links for Resources */}
           {formData.type === 'document' && (
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-3">
-                External Links
+                Files & Links
               </label>
+
+              {/* File Upload */}
+              <div className="bg-white/5 border border-white/20 rounded-lg p-4 mb-4">
+                <p className="text-sm text-gray-300 mb-3">Upload Files</p>
+                <input
+                  type="file"
+                  id="doctag-resource-upload"
+                  multiple
+                  accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.gif,.webp,.mp4,.webm,.mp3,.wav,.zip,.rar"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+                <label
+                  htmlFor="doctag-resource-upload"
+                  className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors cursor-pointer"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>{uploadingFiles ? 'Uploading...' : 'Add Files'}</span>
+                </label>
+
+                {formData.attachments.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {formData.attachments.map((attachment, index) => (
+                      <div key={`${attachment.filename}-${index}`} className="flex items-center justify-between bg-black border border-white/10 rounded-lg p-2">
+                        <div className="min-w-0">
+                          <p className="text-sm text-white truncate">{attachment.originalName || attachment.filename}</p>
+                          <p className="text-xs text-gray-400">{attachment.fileType || 'file'}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeAttachment(index)}
+                          className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-red-400"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               
               {/* Add new link */}
               <div className="bg-white/5 border border-white/20 rounded-lg p-4 mb-4">
+                <p className="text-sm text-gray-300 mb-3">Add Resource Link</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                   <input
                     type="text"
@@ -249,18 +415,11 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
                     onChange={(e) => setNewLink(prev => ({ ...prev, title: e.target.value }))}
                     className="bg-white/5 border border-white/20 rounded px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
                   />
-                  <select
+                  <ShadcnSelect
                     value={newLink.type}
-                    onChange={(e) => setNewLink(prev => ({ ...prev, type: e.target.value }))}
-                    className="bg-white/5 border border-white/20 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="youtube">YouTube</option>
-                    <option value="google_drive">Google Drive</option>
-                    <option value="notion">Notion</option>
-                    <option value="github">GitHub</option>
-                    <option value="website">Website</option>
-                    <option value="other">Other</option>
-                  </select>
+                    onChange={(nextValue) => setNewLink(prev => ({ ...prev, type: nextValue }))}
+                    options={linkTypeOptions}
+                  />
                 </div>
                 <input
                   type="url"
@@ -304,6 +463,12 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-sm text-red-300">
+              {error}
             </div>
           )}
 
@@ -364,7 +529,7 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
               disabled={loading || !formData.name.trim()}
               className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
             >
-              {loading ? 'Creating...' : `Create ${formData.type === 'folder' ? 'Folder' : 'Document'}`}
+              {loading ? 'Creating...' : `Create ${formData.type === 'folder' ? 'Workspace' : 'Resource'}`}
             </button>
           </div>
         </form>

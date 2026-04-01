@@ -134,16 +134,7 @@ export const AuthProvider = ({ children }) => {
       const response = await apiService.login(credentials);
 
       if (response.success) {
-        let user = response.user;
-
-        // Special case for veeracharan99@gmail.com - set MemScore to 9
-        if (user.email === 'veeracharan99@gmail.com') {
-          user = {
-            ...user,
-            memScore: 9,
-            hasCompletedEvaluation: true
-          };
-        }
+        const user = response.user;
 
         // Set the authentication token in API service
         if (response.tokens?.accessToken) {
@@ -222,7 +213,6 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await apiService.saveEvaluationResults(results);
       if (response.success) {
-        console.log('Evaluation saved successfully. MemScore from backend:', response.memScore);
         // Update user with evaluation completion and the memScore from backend response
         updateUser({
           hasCompletedEvaluation: true,

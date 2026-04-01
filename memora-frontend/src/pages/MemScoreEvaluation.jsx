@@ -68,6 +68,25 @@ const MemScoreEvaluation = () => {
 
   const [isLoading, setIsLoading] = useState(false);
 
+  const phaseFlow = [
+    { key: 'memory-game-instructions', label: 'Memory Match' },
+    { key: 'tile-recall-instructions', label: 'Tile Recall' },
+    { key: 'speed-test-instructions', label: 'Speed Test' },
+    { key: 'results', label: 'MemScore Result' },
+  ];
+
+  const phaseIndex = (() => {
+    const idx = phaseFlow.findIndex((step) => step.key === currentPhase);
+    if (idx >= 0) return idx;
+    if (currentPhase === 'memory-game') return 0;
+    if (currentPhase === 'tile-recall') return 1;
+    if (currentPhase === 'speed-test') return 2;
+    if (currentPhase === 'intro') return -1;
+    return 0;
+  })();
+
+  const phaseProgress = phaseIndex < 0 ? 0 : ((phaseIndex + 1) / phaseFlow.length) * 100;
+
   // Generate cards for memory game
   const generateMemoryCards = (level) => {
     const gridSize = level === 1 ? 4 : level === 2 ? 5 : 6; // 4x4, 5x5, 6x6
@@ -199,8 +218,6 @@ const MemScoreEvaluation = () => {
       showTime += 1000; // Add 1 second to the last round: 1.8s + 1s = 2.8s
     }
 
-    console.log(`Tile Recall Round ${round + 1}: ${sequenceLength} tiles, ${showTime}ms show time`);
-
     setTileRecall(prev => ({
       ...prev,
       gridSize,
@@ -222,8 +239,6 @@ const MemScoreEvaluation = () => {
   const startTileRound = (gridSize = tileRecall.gridSize, sequenceLength = tileRecall.sequenceLength, showTime = tileRecall.showTime) => {
     const totalTiles = gridSize * gridSize;
 
-    console.log(`Starting round with ${sequenceLength} tiles on ${gridSize}x${gridSize} grid`);
-
     // Generate random sequence of tile positions
     const sequence = [];
     while (sequence.length < sequenceLength) {
@@ -232,8 +247,6 @@ const MemScoreEvaluation = () => {
         sequence.push(tileIndex);
       }
     }
-
-    console.log(`Generated sequence:`, sequence);
 
     setTileRecall(prev => ({
       ...prev,
@@ -302,8 +315,6 @@ const MemScoreEvaluation = () => {
               if (tileRecall.currentRound < tileRecall.totalRounds - 1) {
                 // Next round - update state and then initialize next round
                 const nextRound = tileRecall.currentRound + 1;
-                console.log(`Moving to round ${nextRound + 1}`);
-
                 setTileRecall(prev => ({
                   ...prev,
                   currentRound: nextRound,
@@ -340,8 +351,6 @@ const MemScoreEvaluation = () => {
           if (tileRecall.currentRound < tileRecall.totalRounds - 1) {
             // Next round - update state and then initialize next round
             const nextRound = tileRecall.currentRound + 1;
-            console.log(`Moving to round ${nextRound + 1}`);
-
             setTileRecall(prev => ({
               ...prev,
               currentRound: nextRound,
@@ -459,12 +468,6 @@ const MemScoreEvaluation = () => {
       (memoryScore + tileScore + processSpeed) / 3
     ); // Round to integer
 
-    console.log('Final evaluation scores:');
-    console.log('Memory Game:', memoryScore);
-    console.log('Tile Recall:', tileScore);
-    console.log('Processing Speed:', processSpeed);
-    console.log('Overall Score:', overallScore);
-
     setTestResults(prev => ({
       ...prev,
       processingSpeed: speedScore,
@@ -492,7 +495,6 @@ const MemScoreEvaluation = () => {
 
     try {
       // Save results to backend
-      console.log('Saving evaluation results:', testResults);
       await saveEvaluationResults(testResults);
 
       // Log to journal
@@ -515,65 +517,126 @@ const MemScoreEvaluation = () => {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="text-center max-w-2xl mx-auto"
+      className="relative w-full max-w-5xl mx-auto"
     >
-      <div className="mb-8">
-        <div className="w-20 h-20 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-          <Brain className="w-10 h-10 text-blue-400" />
-        </div>
-        <h1 className="text-3xl font-bold mb-4">Welcome to Memora!</h1>
-        <p className="text-gray-400 text-lg leading-relaxed">
-          Before we begin your personalized learning journey, we need to establish your baseline MemScore. 
-          This quick evaluation will help our Neuro Engine understand your cognitive patterns and optimize 
-          your learning experience.
-        </p>
-      </div>
+      <div className="relative overflow-hidden rounded-3xl bg-[#050505] p-6 sm:p-10 shadow-[0_24px_90px_rgba(0,0,0,0.55)]">
+        <div
+          className="absolute inset-0 opacity-20"
+          style={{
+            backgroundImage:
+              'linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)',
+            backgroundSize: '52px 52px',
+          }}
+        />
 
-      <div className="bg-gray-900/50 border border-white/10 rounded-xl p-6 mb-8">
-        <h3 className="text-xl font-semibold mb-4">What to Expect</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-          <div className="text-center">
-            <h4 className="font-medium mb-1">Memory Game</h4>
-            <p className="text-gray-400">Match pairs of cards to test working memory</p>
+        <div className="relative z-10 text-center">
+          <div className="relative mx-auto mb-6 h-20 w-20">
+            <motion.span
+              className="absolute inset-0 rounded-2xl bg-gradient-to-br from-indigo-500/25 to-emerald-400/20"
+              animate={{ scale: [1, 1.1, 1], opacity: [0.45, 0.2, 0.45] }}
+              transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
+            />
+            <motion.div
+              initial={{ scale: 0.94, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.45 }}
+              className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-black/45"
+            >
+              <Brain className="h-10 w-10 text-indigo-300" />
+            </motion.div>
           </div>
-          <div className="text-center">
-            <h4 className="font-medium mb-1">Tile Recall</h4>
-            <p className="text-gray-400">Remember and repeat tile sequences</p>
-          </div>
-          <div className="text-center">
-            <h4 className="font-medium mb-1">Processing Speed</h4>
-            <p className="text-gray-400">Quick mental math under time pressure</p>
-          </div>
-        </div>
-      </div>
 
-      <div className="flex items-center justify-center space-x-4 text-sm text-gray-400 mb-8">
-        <div className="flex items-center space-x-1">
-          <Clock className="w-4 h-4" />
-          <span>5-7 minutes</span>
+          <p className="mb-3 text-xs uppercase tracking-[0.22em] text-indigo-300/85">Baseline Calibration</p>
+          <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight mb-4">Train Your MemScore Profile</h1>
+          <p className="mx-auto max-w-3xl text-base sm:text-lg leading-relaxed text-slate-300">
+            This startup evaluation maps your memory precision, sequential recall, and response speed.
+            The output becomes your baseline that tunes spacing, revision intensity, and topic priority.
+          </p>
         </div>
-        <div className="flex items-center space-x-1">
-          <Brain className="w-4 h-4" />
-          <span>3 cognitive tests</span>
-        </div>
-      </div>
 
-      <motion.button
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={() => {
-          setCurrentPhase('memory-game-instructions');
-        }}
-        className="bg-blue-500 text-white px-8 py-3 rounded-lg font-medium hover:bg-blue-600 transition-colors flex items-center space-x-2 mx-auto"
-      >
-        <span>Begin Evaluation</span>
-        <ArrowRight className="w-4 h-4" />
-      </motion.button>
+        <div className="relative z-10 mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[
+            {
+              title: 'Memory Match',
+              text: 'Pair hidden cards after a short preview to measure visual memory retention.',
+              icon: Brain,
+              accent: 'text-indigo-300',
+              chipBg: 'bg-indigo-500/18',
+            },
+            {
+              title: 'Tile Recall',
+              text: 'Repeat growing tile sequences across rounds to test ordered recall control.',
+              icon: Target,
+              accent: 'text-emerald-300',
+              chipBg: 'bg-emerald-500/18',
+            },
+            {
+              title: 'Processing Speed',
+              text: 'Solve rapid mental prompts under a timer to capture reaction consistency.',
+              icon: Zap,
+              accent: 'text-amber-300',
+              chipBg: 'bg-amber-500/18',
+            },
+          ].map((item, index) => {
+            const Icon = item.icon;
+            return (
+              <motion.div
+                key={item.title}
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 + index * 0.08, duration: 0.45 }}
+                className="rounded-2xl bg-white/[0.03] p-5 text-left transition-colors hover:bg-white/[0.06]"
+              >
+                <div className={`mb-4 flex h-10 w-10 items-center justify-center rounded-xl ${item.chipBg}`}>
+                  <Icon className={`h-5 w-5 ${item.accent}`} />
+                </div>
+                <h3 className="text-lg font-semibold mb-2">{item.title}</h3>
+                <p className="text-sm leading-relaxed text-slate-300">{item.text}</p>
+              </motion.div>
+            );
+          })}
+        </div>
+
+        <div className="relative z-10 mt-7 flex flex-col sm:flex-row items-center justify-center gap-4 text-sm text-slate-300">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2">
+            <Clock className="h-4 w-4 text-indigo-300" />
+            <span>5-7 minutes total</span>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2">
+            <Brain className="h-4 w-4 text-emerald-300" />
+            <span>3 cognitive tests</span>
+          </div>
+        </div>
+
+        <motion.button
+          whileHover={{ scale: 1.03, y: -1 }}
+          whileTap={{ scale: 0.97 }}
+          onClick={() => {
+            setCurrentPhase('memory-game-instructions');
+          }}
+          className="group relative z-10 mt-8 mx-auto flex items-center gap-2 overflow-hidden rounded-xl border border-white/20 bg-black/60 px-8 py-3.5 text-sm font-semibold text-white shadow-[0_10px_28px_rgba(0,0,0,0.4)] transition-all hover:border-white/35 hover:bg-black/75"
+        >
+          <span className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-indigo-300/0 via-indigo-300/70 to-emerald-300/0" />
+          <span>Begin Evaluation</span>
+          <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+        </motion.button>
+      </div>
     </motion.div>
   );
 
   return (
-    <div className="bg-black text-white min-h-screen flex flex-col">
+    <div className="relative bg-black text-white min-h-screen flex flex-col overflow-hidden">
+      <motion.div
+        className="pointer-events-none absolute -left-12 top-24 h-64 w-64 rounded-full bg-indigo-500/15 blur-3xl"
+        animate={{ x: [0, 24, 0], y: [0, -18, 0], scale: [1, 1.1, 1] }}
+        transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <motion.div
+        className="pointer-events-none absolute -right-10 bottom-20 h-72 w-72 rounded-full bg-emerald-400/12 blur-3xl"
+        animate={{ x: [0, -28, 0], y: [0, 20, 0], scale: [1, 1.12, 1] }}
+        transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }}
+      />
+
       {/* Header - Only show during intro */}
       {currentPhase === 'intro' && (
         <header className="border-b border-white/10 px-6 py-4 flex-shrink-0">
@@ -589,8 +652,46 @@ const MemScoreEvaluation = () => {
         </header>
       )}
 
+      {currentPhase !== 'intro' && (
+        <div className="relative z-10 px-6 pt-5">
+          <div className="max-w-4xl mx-auto">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Evaluation Storyline</p>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-cyan-200/80">{Math.round(phaseProgress)}% Complete</p>
+            </div>
+
+            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden mb-3">
+              <motion.div
+                className="h-full bg-gradient-to-r from-indigo-300/80 via-cyan-300/80 to-emerald-300/80"
+                initial={{ width: 0 }}
+                animate={{ width: `${phaseProgress}%` }}
+                transition={{ duration: 0.5, ease: 'easeOut' }}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {phaseFlow.map((step, idx) => {
+                const active = idx <= phaseIndex;
+                return (
+                  <div
+                    key={step.key}
+                    className={`rounded-lg border px-3 py-2 text-xs uppercase tracking-[0.12em] transition-colors ${
+                      active
+                        ? 'border-cyan-300/45 bg-cyan-400/10 text-cyan-100'
+                        : 'border-white/10 bg-black/35 text-white/45'
+                    }`}
+                  >
+                    {step.label}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
-      <main className="flex-1 px-6 py-6">
+      <main className="relative z-10 flex-1 px-6 py-6">
         <div className="max-w-4xl mx-auto min-h-[calc(100vh-120px)] flex items-center justify-center">
           <div className="w-full flex items-center justify-center">
           <AnimatePresence mode="wait">
@@ -609,38 +710,41 @@ const MemScoreEvaluation = () => {
                 className="text-center max-w-2xl mx-auto"
               >
                 <div className="mb-8">
-                  <h2 className="text-2xl font-bold mb-4">Memory Game Instructions</h2>
-                  <div className="text-left bg-gray-900/50 border border-white/10 rounded-xl p-6 space-y-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-indigo-300/80 mb-2">Test 1 of 3</p>
+                  <h2 className="text-3xl font-bold mb-3 text-white">Memory Game Instructions</h2>
+                  <p className="text-gray-300 mb-5 font-light tracking-wide">Quick brief before you start. Keep accuracy over speed.</p>
+
+                  <div className="text-left bg-black border border-white/15 rounded-2xl p-7 space-y-4 shadow-[0_12px_28px_rgba(0,0,0,0.5)]">
                     <div className="flex items-start space-x-3">
-                      <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">1</div>
-                      <p className="text-gray-300">You'll see a 4×4 grid of cards with emoji symbols</p>
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5 bg-indigo-500/90">1</div>
+                      <p className="text-gray-200 font-medium leading-relaxed">You'll see a 4×4 grid of cards with emoji symbols</p>
                     </div>
                     <div className="flex items-start space-x-3">
-                      <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">2</div>
-                      <p className="text-gray-300">First, all cards will be revealed for <strong className="text-white">10 seconds</strong> - memorize their positions!</p>
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5 bg-indigo-500/90">2</div>
+                      <p className="text-gray-200 font-medium leading-relaxed">First, all cards will be revealed for <strong className="text-indigo-300">10 seconds</strong>. Memorize their positions.</p>
                     </div>
                     <div className="flex items-start space-x-3">
-                      <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">3</div>
-                      <p className="text-gray-300">After the preview, cards will flip back and you can start clicking to find matching pairs</p>
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5 bg-indigo-500/90">3</div>
+                      <p className="text-gray-200 font-medium leading-relaxed">After preview, cards flip back and you start matching pairs.</p>
                     </div>
                     <div className="flex items-start space-x-3">
-                      <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">4</div>
-                      <p className="text-gray-300">Your score depends on how few moves and wrong attempts you make</p>
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5 bg-indigo-500/90">4</div>
+                      <p className="text-gray-200 font-medium leading-relaxed">Final score is based on lower moves and fewer wrong attempts.</p>
                     </div>
                   </div>
                 </div>
 
                 <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                  whileHover={{ scale: 1.03, y: -1 }}
+                  whileTap={{ scale: 0.97 }}
                   onClick={() => {
                     setCurrentPhase('memory-game');
                     setTimeout(initMemoryGame, 500);
                   }}
-                  className="bg-green-500 text-white px-8 py-3 rounded-lg font-medium hover:bg-green-600 transition-colors flex items-center space-x-2 mx-auto"
+                  className="group mx-auto flex items-center gap-2 rounded-xl border border-white/20 bg-black/60 px-8 py-3 font-medium text-indigo-200 transition-all hover:border-indigo-400/50 hover:bg-black/75"
                 >
                   <span>Start Memory Game</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-0.5" />
                 </motion.button>
               </motion.div>
             )}
@@ -741,42 +845,44 @@ const MemScoreEvaluation = () => {
                 className="text-center max-w-2xl mx-auto"
               >
                 <div className="mb-8">
-                  <h2 className="text-2xl font-bold mb-4">Tile Recall Instructions</h2>
-                  <div className="text-left bg-gray-900/50 border border-white/10 rounded-xl p-6 space-y-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-emerald-300/80 mb-2">Test 2 of 3</p>
+                  <h2 className="text-3xl font-bold mb-3 text-white">Tile Recall Instructions</h2>
+                  <p className="text-gray-300 mb-5 font-light tracking-wide">Watch the sequence and click tiles in the same order.</p>
+                  <div className="text-left bg-black border border-white/15 rounded-2xl p-7 space-y-4 shadow-[0_12px_28px_rgba(0,0,0,0.5)]">
                     <div className="flex items-start space-x-3">
-                      <div className="w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">1</div>
-                      <p className="text-gray-300">You'll see a 5×5 grid of tiles for <strong className="text-white">5 rounds</strong></p>
+                      <div className="w-6 h-6 bg-emerald-500/90 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">1</div>
+                      <p className="text-gray-200 font-medium leading-relaxed">You'll see a 5×5 grid of tiles for <strong className="text-emerald-300">5 rounds</strong></p>
                     </div>
                     <div className="flex items-start space-x-3">
-                      <div className="w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">2</div>
-                      <p className="text-gray-300">Watch as tiles light up in sequence with numbers (3, 4, 5, 6, 7 tiles per round)</p>
+                      <div className="w-6 h-6 bg-emerald-500/90 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">2</div>
+                      <p className="text-gray-200 font-medium leading-relaxed">Watch as tiles light up in sequence with numbers (3, 4, 5, 6, 7 tiles per round)</p>
                     </div>
                     <div className="flex items-start space-x-3">
-                      <div className="w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">3</div>
-                      <p className="text-gray-300">After the sequence disappears, click the tiles in the <strong className="text-white">same order</strong></p>
+                      <div className="w-6 h-6 bg-emerald-500/90 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">3</div>
+                      <p className="text-gray-200 font-medium leading-relaxed">After the sequence disappears, click the tiles in the <strong className="text-emerald-300">same order</strong></p>
                     </div>
                     <div className="flex items-start space-x-3">
-                      <div className="w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">4</div>
-                      <p className="text-gray-300">You can <strong className="text-yellow-400">undo your last move</strong> if you make a mistake</p>
+                      <div className="w-6 h-6 bg-emerald-500/90 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">4</div>
+                      <p className="text-gray-200 font-medium leading-relaxed">You can <strong className="text-yellow-300">undo your last move</strong> if you make a mistake</p>
                     </div>
                     <div className="flex items-start space-x-3">
-                      <div className="w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">5</div>
-                      <p className="text-gray-300">Each round gets faster and longer - stay focused!</p>
+                      <div className="w-6 h-6 bg-emerald-500/90 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">5</div>
+                      <p className="text-gray-200 font-medium leading-relaxed">Each round gets faster and longer - stay focused!</p>
                     </div>
                   </div>
                 </div>
 
                 <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                  whileHover={{ scale: 1.03, y: -1 }}
+                  whileTap={{ scale: 0.97 }}
                   onClick={() => {
                     setCurrentPhase('tile-recall');
                     setTimeout(initTileRecall, 500);
                   }}
-                  className="bg-purple-500 text-white px-8 py-3 rounded-lg font-medium hover:bg-purple-600 transition-colors flex items-center space-x-2 mx-auto"
+                  className="group mx-auto flex items-center gap-2 rounded-xl border border-white/20 bg-black/60 px-8 py-3 font-medium text-emerald-200 transition-all hover:border-emerald-400/50 hover:bg-black/75"
                 >
                   <span>Start Tile Recall</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-0.5" />
                 </motion.button>
               </motion.div>
             )}
@@ -917,38 +1023,40 @@ const MemScoreEvaluation = () => {
                 className="text-center max-w-2xl mx-auto"
               >
                 <div className="mb-8">
-                  <h2 className="text-2xl font-bold mb-4">Processing Speed Instructions</h2>
-                  <div className="text-left bg-gray-900/50 border border-white/10 rounded-xl p-6 space-y-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-amber-300/80 mb-2">Test 3 of 3</p>
+                  <h2 className="text-3xl font-bold mb-3 text-white">Processing Speed Instructions</h2>
+                  <p className="text-gray-300 mb-5 font-light tracking-wide">Solve math problems quickly and accurately.</p>
+                  <div className="text-left bg-black border border-white/15 rounded-2xl p-7 space-y-4 shadow-[0_12px_28px_rgba(0,0,0,0.5)]">
                     <div className="flex items-start space-x-3">
-                      <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">1</div>
-                      <p className="text-gray-300">You have <strong className="text-white">30 seconds</strong> to solve as many math problems as possible</p>
+                      <div className="w-6 h-6 bg-amber-500/90 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">1</div>
+                      <p className="text-gray-200 font-medium leading-relaxed">You have <strong className="text-amber-300">30 seconds</strong> to solve as many math problems as possible</p>
                     </div>
                     <div className="flex items-start space-x-3">
-                      <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">2</div>
-                      <p className="text-gray-300">Problems include addition, subtraction, and multiplication</p>
+                      <div className="w-6 h-6 bg-amber-500/90 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">2</div>
+                      <p className="text-gray-200 font-medium leading-relaxed">Problems include addition, subtraction, and multiplication</p>
                     </div>
                     <div className="flex items-start space-x-3">
-                      <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">3</div>
-                      <p className="text-gray-300">Type your answer and press <strong className="text-white">Enter</strong> or click Submit</p>
+                      <div className="w-6 h-6 bg-amber-500/90 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">3</div>
+                      <p className="text-gray-200 font-medium leading-relaxed">Type your answer and press <strong className="text-amber-300">Enter</strong> or click Submit</p>
                     </div>
                     <div className="flex items-start space-x-3">
-                      <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">4</div>
-                      <p className="text-gray-300">Work quickly but accurately - speed and precision both matter!</p>
+                      <div className="w-6 h-6 bg-amber-500/90 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 mt-0.5">4</div>
+                      <p className="text-gray-200 font-medium leading-relaxed">Work quickly but accurately - speed and precision both matter!</p>
                     </div>
                   </div>
                 </div>
 
                 <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                  whileHover={{ scale: 1.03, y: -1 }}
+                  whileTap={{ scale: 0.97 }}
                   onClick={() => {
                     setCurrentPhase('speed-test');
                     setTimeout(initSpeedTest, 500);
                   }}
-                  className="bg-orange-500 text-white px-8 py-3 rounded-lg font-medium hover:bg-orange-600 transition-colors flex items-center space-x-2 mx-auto"
+                  className="group mx-auto flex items-center gap-2 rounded-xl border border-white/20 bg-black/60 px-8 py-3 font-medium text-amber-200 transition-all hover:border-amber-400/50 hover:bg-black/75"
                 >
                   <span>Start Speed Test</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-0.5" />
                 </motion.button>
               </motion.div>
             )}
@@ -1016,104 +1124,128 @@ const MemScoreEvaluation = () => {
             {currentPhase === 'results' && (
               <motion.div
                 key="results"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="text-center max-w-3xl mx-auto"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-center max-w-2xl mx-auto"
               >
-                <div className="mb-8">
-                  <h2 className="text-3xl font-bold mb-4">Your MemScore Results</h2>
-                  <p className="text-gray-400 text-lg">
-                    Congratulations! Your cognitive baseline has been established.
-                  </p>
+                {/* Header */}
+                <div className="mb-7">
+                  <p className="text-xs uppercase tracking-[0.2em] text-emerald-300/80 mb-2">Complete</p>
+                  <h2 className="text-3xl font-bold text-white mb-1">Your MemScore</h2>
+                  <p className="text-gray-400 text-sm">Your cognitive baseline has been established</p>
                 </div>
 
                 {/* Overall Score */}
-                <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-500/30 rounded-xl p-8 mb-8">
-                  <div className="text-6xl font-bold text-blue-400 mb-2">
-                    {testResults.overallScore}/10
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.1 }}
+                  className="bg-black border border-white/15 rounded-2xl p-7 mb-7 text-center shadow-[0_8px_16px_rgba(0,0,0,0.3)]"
+                >
+                  <p className="text-gray-400 text-xs uppercase tracking-[0.15em] mb-2">Overall Score</p>
+                  <div className="flex items-end justify-center gap-1 mb-3">
+                    <div className="text-5xl font-bold text-white">
+                      {testResults.overallScore}
+                    </div>
+                    <div className="text-xl text-gray-500">/10</div>
                   </div>
-                  <div className="text-xl font-semibold mb-2">Overall MemScore</div>
-                  <div className="text-gray-400">
-                    {testResults.overallScore >= 8 ? 'Excellent cognitive performance!' :
-                     testResults.overallScore >= 6 ? 'Good cognitive performance!' :
-                     testResults.overallScore >= 4 ? 'Average cognitive performance.' :
-                     'Room for improvement - let\'s build those skills!'}
-                  </div>
-                </div>
+                  <p className="text-gray-300 text-sm font-medium">
+                    {testResults.overallScore >= 8 ? 'Exceptional cognitive ability' :
+                     testResults.overallScore >= 7 ? 'Excellent performance' :
+                     testResults.overallScore >= 6 ? 'Strong baseline established' :
+                     testResults.overallScore >= 4 ? 'Average performance' :
+                     'Building your foundation'}
+                  </p>
+                </motion.div>
 
-                {/* Detailed Breakdown */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                  <div className="bg-gray-900/50 border border-white/10 rounded-xl p-6">
-                    <div className="text-2xl font-bold text-green-400 mb-1">
+                {/* Test Scores Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-7">
+                  {/* Memory Game */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 }}
+                    className="bg-black border border-indigo-500/30 rounded-xl p-5"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mx-auto mb-3">
+                      <Brain className="w-4 h-4 text-indigo-300" />
+                    </div>
+                    <div className="text-2xl font-bold text-indigo-300 mb-1">
                       {testResults.memoryGame}/10
                     </div>
-                    <div className="font-medium mb-2">Memory Game</div>
-                    <div className="text-sm text-gray-400">
-                      Moves: {memoryGame.moves} | Wrong: {memoryGame.wrongAttempts}
-                    </div>
-                  </div>
+                    <p className="text-xs text-gray-400 font-medium mb-2">Memory Game</p>
+                    <p className="text-xs text-gray-500">{memoryGame.moves} moves</p>
+                  </motion.div>
 
-                  <div className="bg-gray-900/50 border border-white/10 rounded-xl p-6">
-                    <div className="text-2xl font-bold text-purple-400 mb-1">
-                      {Math.round(testResults.tileRecall * 10) / 10}/10
+                  {/* Tile Recall */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                    className="bg-black border border-emerald-500/30 rounded-xl p-5"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
+                      <Target className="w-4 h-4 text-emerald-300" />
                     </div>
-                    <div className="font-medium mb-2">Tile Recall</div>
-                    <div className="text-sm text-gray-400">
-                      {tileRecall.roundScores.filter(s => s > 0).length}/{tileRecall.totalRounds} rounds correct
+                    <div className="text-2xl font-bold text-emerald-300 mb-1">
+                      {Math.round(testResults.tileRecall)}/10
                     </div>
-                  </div>
+                    <p className="text-xs text-gray-400 font-medium mb-2">Tile Recall</p>
+                    <p className="text-xs text-gray-500">{tileRecall.roundScores.filter(s => s > 0).length}/{tileRecall.totalRounds} rounds</p>
+                  </motion.div>
 
-                  <div className="bg-gray-900/50 border border-white/10 rounded-xl p-6">
-                    <div className="text-2xl font-bold text-orange-400 mb-1">
-                      {Math.round(testResults.processingSpeed * 10) / 10}/10
+                  {/* Processing Speed */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.25 }}
+                    className="bg-black border border-amber-500/30 rounded-xl p-5"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center mx-auto mb-3">
+                      <Zap className="w-4 h-4 text-amber-300" />
                     </div>
-                    <div className="font-medium mb-2">Processing Speed</div>
-                    <div className="text-sm text-gray-400">
-                      {speedTest.correctAnswers}/{speedTest.totalQuestions} in 30s
+                    <div className="text-2xl font-bold text-amber-300 mb-1">
+                      {Math.round(testResults.processingSpeed)}/10
                     </div>
-                  </div>
+                    <p className="text-xs text-gray-400 font-medium mb-2">Processing Speed</p>
+                    <p className="text-xs text-gray-500">{speedTest.correctAnswers} correct</p>
+                  </motion.div>
                 </div>
 
-                {/* Personalized Insights */}
-                <div className="bg-gray-900/50 border border-white/10 rounded-xl p-6 mb-8 text-left">
-                  <h3 className="text-lg font-semibold mb-4">
-                    Personalized Insights
-                  </h3>
-                  <div className="space-y-3 text-sm text-gray-300">
-                    {testResults.memoryGame >= 8 && (
-                      <p>• Excellent working memory! You can handle complex, multi-layered learning materials.</p>
-                    )}
-                    {testResults.tileRecall >= 8 && (
-                      <p>• Strong spatial memory indicates you'll excel at visual and sequential learning.</p>
-                    )}
-                    {testResults.processingSpeed >= 8 && (
-                      <p>• High processing speed means you can benefit from rapid-fire review sessions.</p>
-                    )}
-                    {testResults.overallScore < 6 && (
-                      <p>• We'll start with shorter, more frequent review sessions to build your confidence.</p>
-                    )}
-                    <p>• Your Neuro Engine will adapt review intervals based on these cognitive patterns.</p>
-                    <p>• Expect your MemScore to improve as you use Memora's spaced repetition system.</p>
-                  </div>
-                </div>
+                {/* Brief Insights */}
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 }}
+                  className="bg-black border border-white/10 rounded-xl p-5 mb-7 text-left text-sm text-gray-300"
+                >
+                  <p className="mb-2">
+                    {testResults.overallScore >= 8 ? '✓ Outstanding results. Your Neuro Engine is ready to optimize your learning.' :
+                     testResults.overallScore >= 6 ? '✓ Strong baseline established. Personalized spaced repetition will accelerate your progress.' :
+                     '✓ Foundation set. We\'ll customize your review intervals to match your pace.'}
+                  </p>
+                </motion.div>
 
-                {/* Complete Button */}
+                {/* Action Button */}
                 <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.35 }}
+                  whileHover={{ scale: 1.03, y: -1 }}
+                  whileTap={{ scale: 0.97 }}
                   onClick={completeEvaluation}
                   disabled={isLoading}
-                  className="bg-blue-500 text-white px-8 py-3 rounded-lg font-medium hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 mx-auto"
+                  className="group w-full px-6 py-3 rounded-xl border border-white/20 bg-black/60 font-medium text-white transition-all hover:border-white/35 hover:bg-black/75 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {isLoading ? (
                     <>
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Setting up your dashboard...</span>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span className="text-sm">Setting up...</span>
                     </>
                   ) : (
                     <>
-                      <span>Enter Memora Dashboard</span>
-                      <ArrowRight className="w-4 h-4" />
+                      <span>Go to Dashboard</span>
+                      <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-0.5" />
                     </>
                   )}
                 </motion.button>

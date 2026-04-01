@@ -10,25 +10,52 @@ const RevisionCard = ({ revision, onStart, onComplete, onPostpone, onViewDocs })
   const [showActions, setShowActions] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  const getDifficultyLabel = (difficulty) => {
+    const labels = {
+      1: 'Very Easy',
+      2: 'Easy',
+      3: 'Medium',
+      4: 'Hard',
+      5: 'Very Hard'
+    };
+    return labels[Number(difficulty)] || 'Medium';
+  };
+
   const getDifficultyColor = (difficulty) => {
-    if (difficulty <= 2) return {
-      bg: "bg-blue-400/10",
-      border: "border-blue-400/30",
-      text: "text-blue-400",
-      dot: "bg-blue-400"
+    const palette = {
+      1: {
+        bg: "bg-green-400/10",
+        border: "border-green-400/30",
+        text: "text-green-400",
+        dot: "bg-green-400"
+      },
+      2: {
+        bg: "bg-blue-400/10",
+        border: "border-blue-400/30",
+        text: "text-blue-400",
+        dot: "bg-blue-400"
+      },
+      3: {
+        bg: "bg-yellow-400/10",
+        border: "border-yellow-400/30",
+        text: "text-yellow-400",
+        dot: "bg-yellow-400"
+      },
+      4: {
+        bg: "bg-orange-400/10",
+        border: "border-orange-400/30",
+        text: "text-orange-400",
+        dot: "bg-orange-400"
+      },
+      5: {
+        bg: "bg-red-400/10",
+        border: "border-red-400/30",
+        text: "text-red-400",
+        dot: "bg-red-400"
+      }
     };
-    if (difficulty <= 3) return {
-      bg: "bg-yellow-400/10", 
-      border: "border-yellow-400/30",
-      text: "text-yellow-400",
-      dot: "bg-yellow-400"
-    };
-    return {
-      bg: "bg-red-400/10",
-      border: "border-red-400/30", 
-      text: "text-red-400",
-      dot: "bg-red-400"
-    };
+
+    return palette[Number(difficulty)] || palette[3];
   };
 
   const getStatusConfig = (status) => {
@@ -135,7 +162,7 @@ const RevisionCard = ({ revision, onStart, onComplete, onPostpone, onViewDocs })
             <div className={`px-2 py-1 rounded-full text-xs font-medium border ${difficultyConfig.bg} ${difficultyConfig.border} ${difficultyConfig.text}`}>
               <div className="flex items-center space-x-1">
                 <div className={`w-1.5 h-1.5 rounded-full ${difficultyConfig.dot}`} />
-                <span>L{revision.difficulty}</span>
+                <span>{getDifficultyLabel(revision.difficulty)}</span>
               </div>
             </div>
 

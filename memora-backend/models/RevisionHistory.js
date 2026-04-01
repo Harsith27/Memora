@@ -13,8 +13,7 @@ const revisionHistorySchema = new mongoose.Schema({
   },
   sessionId: {
     type: String,
-    required: [true, 'Session ID is required'],
-    index: true
+    required: [true, 'Session ID is required']
   },
   quality: {
     type: Number,

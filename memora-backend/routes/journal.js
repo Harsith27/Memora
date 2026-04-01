@@ -38,7 +38,9 @@ router.get('/:date', authenticateToken, async (req, res) => {
       userId,
       dateString: date,
       isActive: true
-    });
+    })
+      .select('dateString content mood tags activities updatedAt createdAt')
+      .lean();
     
     res.json({
       success: true,
@@ -80,20 +82,32 @@ router.post('/', authenticateToken, async (req, res) => {
       });
     }
     
-    // Find existing entry or create new one
+    // Reuse an existing record for the same date when possible so deleted
+    // entries can be recreated without hitting the unique date index.
     let entry = await Journal.findOne({
       userId,
       dateString: date,
       isActive: true
     });
+
+    if (!entry) {
+      entry = await Journal.findOne({
+        userId,
+        dateString: date
+      });
+    }
+
+    const wasExistingEntry = Boolean(entry);
     
     if (entry) {
       // Update existing entry
       entry.content = content;
-      entry.mood = mood || entry.mood;
-      entry.tags = tags || entry.tags;
-      entry.activities = activities || entry.activities;
+      entry.mood = mood !== undefined ? mood : entry.mood;
+      entry.tags = Array.isArray(tags) ? tags : entry.tags;
+      entry.activities = Array.isArray(activities) ? activities : entry.activities;
       entry.date = new Date(date);
+      entry.dateString = date;
+      entry.isActive = true;
     } else {
       // Create new entry
       entry = new Journal({
@@ -102,8 +116,8 @@ router.post('/', authenticateToken, async (req, res) => {
         dateString: date,
         content,
         mood: mood || 'neutral',
-        tags: tags || [],
-        activities: activities || []
+        tags: Array.isArray(tags) ? tags : [],
+        activities: Array.isArray(activities) ? activities : []
       });
     }
     
@@ -111,7 +125,7 @@ router.post('/', authenticateToken, async (req, res) => {
     
     res.json({
       success: true,
-      message: entry.isNew ? 'Journal entry created' : 'Journal entry updated',
+      message: wasExistingEntry ? 'Journal entry updated' : 'Journal entry created',
       entry
     });
     

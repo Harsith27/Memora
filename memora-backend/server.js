@@ -18,13 +18,23 @@ app.use(helmet());
 // });
 // app.use(limiter);
 
-// CORS configuration - More permissive for development
+// CORS configuration: allow local dev hosts on any port + optional explicit frontend URL.
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'https://lwj6kt2m-5173.inc1.devtunnels.ms'
+].filter(Boolean);
+
+const isLocalDevOrigin = (origin) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'https://lwj6kt2m-5173.inc1.devtunnels.ms',
-    process.env.FRONTEND_URL
-  ].filter(Boolean),
+  origin: (origin, callback) => {
+    // Allow non-browser requests (no Origin header) and local dev ports.
+    if (!origin || isLocalDevOrigin(origin) || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -64,7 +74,8 @@ app.get('/', (req, res) => {
       user: '/api/user/*',
       topics: '/api/topics/*',
       doctags: '/api/doctags/*',
-      journal: '/api/journal/*'
+      journal: '/api/journal/*',
+      mindmaps: '/api/mindmaps/*'
     }
   });
 });
@@ -83,6 +94,7 @@ app.use('/api/user', require('./routes/user'));
 app.use('/api/topics', require('./routes/topics'));
 app.use('/api/doctags', require('./routes/doctags'));
 app.use('/api/journal', require('./routes/journal'));
+app.use('/api/mindmaps', require('./routes/mindmaps'));
 // app.use('/api/revisions', require('./routes/revisions'));
 // app.use('/api/neuro', require('./routes/neuro'));
 

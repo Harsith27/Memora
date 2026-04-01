@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, LinkIcon } from 'lucide-react';
+import ShadcnSelect from './ShadcnSelect';
 
 const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
   const [formData, setFormData] = useState({
@@ -13,6 +14,52 @@ const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
   });
   const [newTag, setNewTag] = useState('');
   const [newLink, setNewLink] = useState({ title: '', url: '', type: 'other', description: '' });
+
+  const categoryOptions = [
+    { value: 'Science', label: 'Science' },
+    { value: 'Mathematics', label: 'Mathematics' },
+    { value: 'History', label: 'History' },
+    { value: 'Language', label: 'Language' },
+    { value: 'Technology', label: 'Technology' },
+    { value: 'Arts', label: 'Arts' },
+    { value: 'Business', label: 'Business' },
+    { value: 'Personal', label: 'Personal' },
+    { value: 'Research', label: 'Research' },
+    { value: 'Other', label: 'Other' }
+  ];
+
+  const folderColorOptions = [
+    { value: 'blue', label: 'Blue' },
+    { value: 'green', label: 'Green' },
+    { value: 'purple', label: 'Purple' },
+    { value: 'red', label: 'Red' },
+    { value: 'orange', label: 'Orange' },
+    { value: 'yellow', label: 'Yellow' },
+    { value: 'pink', label: 'Pink' },
+    { value: 'gray', label: 'Gray' }
+  ];
+
+  const folderIconOptions = [
+    { value: 'folder', label: 'Folder' },
+    { value: 'book', label: 'Book' },
+    { value: 'code', label: 'Code' },
+    { value: 'science', label: 'Science' },
+    { value: 'math', label: 'Math' },
+    { value: 'art', label: 'Art' },
+    { value: 'music', label: 'Music' },
+    { value: 'video', label: 'Video' },
+    { value: 'image', label: 'Image' },
+    { value: 'document', label: 'Document' }
+  ];
+
+  const linkTypeOptions = [
+    { value: 'youtube', label: 'YouTube' },
+    { value: 'google_drive', label: 'Google Drive' },
+    { value: 'notion', label: 'Notion' },
+    { value: 'github', label: 'GitHub' },
+    { value: 'website', label: 'Website' },
+    { value: 'other', label: 'Other' }
+  ];
 
   useEffect(() => {
     if (item) {
@@ -121,22 +168,11 @@ const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 Category
               </label>
-              <select
+              <ShadcnSelect
                 value={formData.category}
-                onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
-                className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-              >
-                <option value="Science">Science</option>
-                <option value="Mathematics">Mathematics</option>
-                <option value="History">History</option>
-                <option value="Language">Language</option>
-                <option value="Technology">Technology</option>
-                <option value="Arts">Arts</option>
-                <option value="Business">Business</option>
-                <option value="Personal">Personal</option>
-                <option value="Research">Research</option>
-                <option value="Other">Other</option>
-              </select>
+                onChange={(nextValue) => setFormData(prev => ({ ...prev, category: nextValue }))}
+                options={categoryOptions}
+              />
             </div>
           </div>
 
@@ -161,42 +197,22 @@ const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
                 <label className="block text-sm font-medium text-gray-300 mb-2">
                   Color
                 </label>
-                <select
+                <ShadcnSelect
                   value={formData.color}
-                  onChange={(e) => setFormData(prev => ({ ...prev, color: e.target.value }))}
-                  className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                >
-                  <option value="blue">Blue</option>
-                  <option value="green">Green</option>
-                  <option value="purple">Purple</option>
-                  <option value="red">Red</option>
-                  <option value="orange">Orange</option>
-                  <option value="yellow">Yellow</option>
-                  <option value="pink">Pink</option>
-                  <option value="gray">Gray</option>
-                </select>
+                  onChange={(nextValue) => setFormData(prev => ({ ...prev, color: nextValue }))}
+                  options={folderColorOptions}
+                />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
                   Icon
                 </label>
-                <select
+                <ShadcnSelect
                   value={formData.icon}
-                  onChange={(e) => setFormData(prev => ({ ...prev, icon: e.target.value }))}
-                  className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                >
-                  <option value="folder">Folder</option>
-                  <option value="book">Book</option>
-                  <option value="code">Code</option>
-                  <option value="science">Science</option>
-                  <option value="math">Math</option>
-                  <option value="art">Art</option>
-                  <option value="music">Music</option>
-                  <option value="video">Video</option>
-                  <option value="image">Image</option>
-                  <option value="document">Document</option>
-                </select>
+                  onChange={(nextValue) => setFormData(prev => ({ ...prev, icon: nextValue }))}
+                  options={folderIconOptions}
+                />
               </div>
             </div>
           )}
@@ -218,18 +234,11 @@ const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
                     onChange={(e) => setNewLink(prev => ({ ...prev, title: e.target.value }))}
                     className="bg-white/5 border border-white/20 rounded px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
                   />
-                  <select
+                  <ShadcnSelect
                     value={newLink.type}
-                    onChange={(e) => setNewLink(prev => ({ ...prev, type: e.target.value }))}
-                    className="bg-white/5 border border-white/20 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="youtube">YouTube</option>
-                    <option value="google_drive">Google Drive</option>
-                    <option value="notion">Notion</option>
-                    <option value="github">GitHub</option>
-                    <option value="website">Website</option>
-                    <option value="other">Other</option>
-                  </select>
+                    onChange={(nextValue) => setNewLink(prev => ({ ...prev, type: nextValue }))}
+                    options={linkTypeOptions}
+                  />
                 </div>
                 <input
                   type="url"

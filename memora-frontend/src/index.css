@@ -1,7 +1,23 @@
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap");
+
+@font-face {
+  font-family: "Geist Fallback";
+  src: local("Arial");
+  ascent-override: 90%;
+  descent-override: 22%;
+  line-gap-override: 0%;
+  size-adjust: 107%;
+}
+
+:root {
+  --font-geist-sans: "Geist", "Geist Fallback";
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+}
 
 /* Hide all scrollbars globally but keep scrolling functionality */
 * {
+  font-family: var(--font-sans);
   -ms-overflow-style: none;  /* Internet Explorer 10+ */
   scrollbar-width: none;  /* Firefox */
 }
@@ -11,7 +27,18 @@
 }
 
 html, body {
-  overflow-x: hidden; /* Only hide horizontal scroll */
+  font-family: var(--font-sans);
+  margin: 0;
+  background-color: #000;
+  color: #fff;
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+#root {
+  min-height: 100vh;
+  background-color: #000;
 }
 
 /* Specific class for elements that need scrollbar hiding */

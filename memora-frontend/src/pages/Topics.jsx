@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Search, Filter, FileText, Calendar, Target, Edit3, Trash2, Eye } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTopics } from '../hooks/useTopics';
+import apiService from '../services/api';
 import AddTopicModal from '../components/AddTopicModal';
 import EditTopicModal from '../components/EditTopicModal';
 import FileViewer from '../components/FileViewer';
+import ShadcnSelect from '../components/ShadcnSelect';
 
 const Topics = () => {
   const navigate = useNavigate();
@@ -68,6 +70,26 @@ const Topics = () => {
       console.error('Failed to update topic:', error);
       throw error;
     }
+  };
+
+  const handleRescheduleFromEdit = async (topicId, selectedDate, reason = 'edit_topic_timeline') => {
+    const response = await apiService.updateTopicRevisionDate(topicId, selectedDate, reason);
+    if (!response.success) {
+      throw new Error(response.message || 'Failed to reschedule topic');
+    }
+
+    await fetchTopics();
+
+    setEditingTopic((prev) => {
+      if (!prev || prev._id !== topicId) return prev;
+      return {
+        ...prev,
+        nextReviewDate: response.topic?.nextReviewDate || prev.nextReviewDate,
+        rescheduleCount: response.topic?.rescheduleCount ?? prev.rescheduleCount
+      };
+    });
+
+    return response;
   };
 
   const handleDeleteTopic = async (topicId) => {
@@ -175,18 +197,19 @@ const Topics = () => {
           {/* Difficulty Filter */}
           <div className="flex items-center space-x-2">
             <Filter className="w-4 h-4 text-gray-400" />
-            <select
+            <ShadcnSelect
               value={filterDifficulty}
-              onChange={(e) => setFilterDifficulty(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Difficulties</option>
-              <option value="1">Very Easy (1)</option>
-              <option value="2">Easy (2)</option>
-              <option value="3">Medium (3)</option>
-              <option value="4">Hard (4)</option>
-              <option value="5">Very Hard (5)</option>
-            </select>
+              onChange={setFilterDifficulty}
+              options={[
+                { value: 'all', label: 'All Difficulties' },
+                { value: '1', label: 'Very Easy (1)' },
+                { value: '2', label: 'Easy (2)' },
+                { value: '3', label: 'Medium (3)' },
+                { value: '4', label: 'Hard (4)' },
+                { value: '5', label: 'Very Hard (5)' }
+              ]}
+              className="w-[210px]"
+            />
           </div>
         </div>
       </div>
@@ -297,6 +320,7 @@ const Topics = () => {
           setEditingTopic(null);
         }}
         onSubmit={handleEditTopicSubmit}
+        onReschedule={handleRescheduleFromEdit}
         topic={editingTopic}
         loading={topicsLoading}
       />

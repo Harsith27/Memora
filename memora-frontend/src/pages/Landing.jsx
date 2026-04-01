@@ -1,74 +1,283 @@
-import React, { useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Brain, Target, Calendar, Flag, ChevronDown, Clock, FileText, Play, BarChart3, Zap, Users, Smartphone, LogOut } from 'lucide-react';
-import { motion, useScroll, useTransform, useInView } from 'framer-motion';
-import Logo from '../components/Logo';
+import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  Brain,
+  Target,
+  Calendar,
+  ArrowRight,
+  ChevronDown,
+  Check,
+  Clock,
+  FileText,
+  BarChart3,
+  Zap,
+  Globe,
+  Users,
+  X,
+  PenLine,
+} from 'lucide-react';
+import { motion, useInView, useScroll, useTransform } from 'framer-motion';
 import logoImg from '../assets/logo.jpg';
 import UserProfileDropdown from '../components/UserProfileDropdown';
+import PublicFooter from '../components/PublicFooter';
 import { useAuth } from '../contexts/AuthContext';
 
-// Floating Particles Component
-const FloatingParticles = () => {
-  return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {[...Array(15)].map((_, i) => (
-        <motion.div
-          key={i}
-          className="absolute w-1 h-1 bg-blue-400/20 rounded-full"
-          initial={{
-            x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1200),
-            y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 800),
-          }}
-          animate={{
-            x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1200),
-            y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 800),
-          }}
-          transition={{
-            duration: Math.random() * 15 + 10,
-            repeat: Infinity,
-            repeatType: "reverse",
-            ease: "linear"
-          }}
-        />
-      ))}
-      {/* Larger floating elements */}
-      {[...Array(5)].map((_, i) => (
-        <motion.div
-          key={`large-${i}`}
-          className="absolute w-2 h-2 bg-purple-400/10 rounded-full"
-          initial={{
-            x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1200),
-            y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 800),
-          }}
-          animate={{
-            x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1200),
-            y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 800),
-            scale: [1, 1.5, 1],
-            opacity: [0.1, 0.3, 0.1]
-          }}
-          transition={{
-            duration: Math.random() * 25 + 15,
-            repeat: Infinity,
-            repeatType: "reverse",
-            ease: "easeInOut"
-          }}
-        />
-      ))}
-    </div>
-  );
-};
+const featureCards = [
+  {
+    title: 'Adaptive Neuro Engine',
+    category: 'Core Module',
+    description:
+      'Continuously recalculates review timing using recall quality, response confidence, and topic difficulty so spacing adapts to your real learning behavior.',
+    points: ['Adaptive interval engine', 'Difficulty-aware scheduling'],
+    icon: Brain,
+    media: 'wave',
+    titleClass: 'text-cyan-100 font-semibold tracking-tight',
+    categoryClass: 'text-cyan-300/85',
+    accentColor: '#22d3ee',
+    hover: { y: -4, scale: 1.01 },
+  },
+  {
+    title: 'ReviseBy Deadlines',
+    category: 'Planning',
+    description:
+      'Builds backward from exam and target dates so critical topics are revised at the right time without last-minute overload.',
+    points: ['Deadline-safe sequencing', 'Automatic load balancing'],
+    icon: Clock,
+    media: 'rings',
+    titleClass: 'text-emerald-100 font-semibold tracking-wide',
+    categoryClass: 'text-emerald-300/85',
+    accentColor: '#6ee7b7',
+    hover: { y: -3, rotate: -0.2, scale: 1.008 },
+  },
+  {
+    title: 'DocTags Knowledge Hub',
+    category: 'Resources',
+    description:
+      'Attach PDFs, links, videos, and notes directly to each topic so revision context is always available in one place.',
+    points: ['Attachment-first workflow', 'Fast tag-based lookup'],
+    icon: FileText,
+    media: 'docstack',
+    titleClass: 'text-violet-100 font-semibold tracking-tight',
+    categoryClass: 'text-violet-300/85',
+    accentColor: '#c4b5fd',
+    hover: { y: -3, scale: 1.01 },
+  },
+  {
+    title: 'Chronicle Calendar',
+    category: 'Timeline',
+    description:
+      'Visual calendar for due, upcoming, and completed sessions that keeps weekly planning clear and consistent.',
+    points: ['Daily + weekly visibility', 'Completion continuity'],
+    icon: Calendar,
+    media: 'timeline',
+    titleClass: 'text-sky-100 font-semibold tracking-tight',
+    categoryClass: 'text-sky-300/85',
+    accentColor: '#7dd3fc',
+    hover: { y: -4, scale: 1.01 },
+  },
+  {
+    title: 'Focus Mode Sessions',
+    category: 'Execution',
+    description:
+      'Run distraction-controlled deep study sessions and log output so effort is measurable and not just time spent.',
+    points: ['Timer presets', 'Session tracking'],
+    icon: Target,
+    media: 'pulse',
+    titleClass: 'text-lime-100 font-semibold tracking-tight',
+    categoryClass: 'text-lime-300/85',
+    accentColor: '#bef264',
+    hover: { y: -3, scale: 1.008 },
+  },
+  {
+    title: 'MemScore + Analytics',
+    category: 'Insights',
+    description:
+      'Track recall trends, consistency, and weak zones across time ranges to decide exactly where next revision effort should go.',
+    points: ['Trend-based decisions', 'Retention health tracking'],
+    icon: BarChart3,
+    media: 'bars',
+    titleClass: 'text-fuchsia-100 font-semibold tracking-tight',
+    categoryClass: 'text-fuchsia-300/85',
+    accentColor: '#f0abfc',
+    hover: { y: -4, scale: 1.01 },
+  },
+  {
+    title: 'Journal and Reflection',
+    category: 'Reflection',
+    description:
+      'Capture structured session reflections so each cycle improves from what worked, what failed, and what to revisit next.',
+    points: ['Markdown journal flow', 'Date-aware continuity'],
+    icon: PenLine,
+    media: 'trail',
+    titleClass: 'text-amber-100 font-semibold tracking-tight',
+    categoryClass: 'text-amber-300/85',
+    accentColor: '#fcd34d',
+    hover: { y: -3, rotate: 0.2, scale: 1.008 },
+  },
+  {
+    title: 'Quick Review Loop',
+    category: 'Momentum',
+    description:
+      'Use rapid due-topic bursts for busy days so consistency stays intact even when study windows are short.',
+    points: ['One-click quick starts', 'Low-friction revision'],
+    icon: Zap,
+    media: 'quickloop',
+    titleClass: 'text-blue-100 font-bold tracking-[0.01em]',
+    categoryClass: 'text-blue-300/85',
+    accentColor: '#93c5fd',
+    hover: { y: -4, scale: 1.01 },
+  },
+  {
+    title: 'Graph View Intelligence',
+    category: 'Visualization',
+    description:
+      'Explore your learning network as connected nodes of topics, revisions, and retention strength for faster pattern recognition.',
+    points: ['Relationship graph of topics', 'Weak-link detection at a glance'],
+    icon: Globe,
+    media: 'graphnodes',
+    titleClass: 'text-indigo-100 font-semibold tracking-tight',
+    categoryClass: 'text-indigo-300/85',
+    accentColor: '#a5b4fc',
+    hover: { y: -3, scale: 1.008 },
+  },
+];
 
-// Animated Section Component
-const AnimatedSection = ({ children, className = "", delay = 0 }) => {
+const feedbackItems = [
+  {
+    quote:
+      'Memora stopped my random study routine. The revision queue finally feels like a real plan, not guesswork.',
+    name: 'Akhil R',
+    role: 'Engineering Student',
+  },
+  {
+    quote:
+      'Focus Mode + Chronicle made consistency measurable. I can see exactly where I lose momentum each week.',
+    name: 'Nithya M',
+    role: 'Medical Aspirant',
+  },
+  {
+    quote:
+      'DocTags is perfect for mixed resources. My PDFs, videos, and notes now stay attached to the right topic.',
+    name: 'Rahul V',
+    role: 'UPSC Candidate',
+  },
+  {
+    quote:
+      'MemScore trends are unexpectedly useful. I now know what to revise first instead of revising everything.',
+    name: 'Suhani P',
+    role: 'Law Student',
+  },
+  {
+    quote:
+      'The dashboard cards are clean and practical. I can jump from today tasks to analytics in seconds.',
+    name: 'Kiran S',
+    role: 'Product Intern',
+  },
+];
+
+const feedbackItemsSecondary = [
+  {
+    quote:
+      'Revision used to feel random. The queue now knows what I am weak at and what can wait.',
+    name: 'Megha N',
+    role: 'Pharmacy Student',
+  },
+  {
+    quote:
+      'The memory evaluation was surprisingly accurate. My first-week plan actually matched my pace.',
+    name: 'Arjun K',
+    role: 'CA Foundation Prep',
+  },
+  {
+    quote:
+      'I like that it pushes difficult topics back into view without making my day feel overloaded.',
+    name: 'Priya D',
+    role: 'Computer Science Student',
+  },
+  {
+    quote:
+      'Chronicle plus MemScore gives me a clean story of progress instead of random numbers.',
+    name: 'Sandeep T',
+    role: 'GATE Aspirant',
+  },
+  {
+    quote:
+      'Even on hectic days, Quick Review keeps continuity. That consistency changed everything for me.',
+    name: 'Ishita R',
+    role: 'Design Student',
+  },
+];
+
+const memscoreGames = [
+  {
+    title: 'Memory Match',
+    subtitle: 'Card-pair recall game',
+    detail: 'Start with a 10-second preview, then match hidden pairs. Fewer wrong attempts yield a higher score.',
+    stats: ['Preview: 10s', 'Focus: recall accuracy'],
+    icon: Brain,
+  },
+  {
+    title: 'Tile Recall',
+    subtitle: '5-round sequence challenge',
+    detail: 'Remember tile sequences that grow from 3 to 7 steps across rounds, with adaptive reveal timing.',
+    stats: ['Rounds: 5', 'Sequence: 3 -> 7'],
+    icon: Target,
+  },
+  {
+    title: 'Processing Speed',
+    subtitle: 'Timed math response test',
+    detail: 'Answer quick arithmetic prompts under pressure to measure decision speed and sustained concentration.',
+    stats: ['Questions: 10', 'Time: 30s'],
+    icon: Zap,
+  },
+];
+
+const memscoreProcess = [
+  'Complete all 3 games in one continuous evaluation flow.',
+  'Each game outputs a normalized score on a 1-10 scale.',
+  'Scores are combined into your MemScore baseline profile.',
+  'MemScore then drives revision intensity, spacing, and priority queues.',
+];
+
+const FloatingParticles = () => (
+  <div className="absolute inset-0 overflow-hidden pointer-events-none">
+    {[...Array(14)].map((_, i) => (
+      <motion.div
+        key={i}
+        className="absolute w-1 h-1 bg-blue-400/20 rounded-full"
+        initial={{
+          x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1200),
+          y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 800),
+        }}
+        animate={{
+          x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1200),
+          y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 800),
+        }}
+        transition={{
+          duration: Math.random() * 18 + 10,
+          repeat: Infinity,
+          repeatType: 'reverse',
+          ease: 'linear',
+        }}
+      />
+    ))}
+  </div>
+);
+
+const Reveal = ({ children, className = '', delay = 0 }) => {
   const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "-100px" });
+  const isInView = useInView(ref, { once: true, margin: '-90px' });
 
   return (
     <motion.div
       ref={ref}
-      initial={{ opacity: 0, y: 50 }}
-      animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 50 }}
-      transition={{ duration: 0.6, delay }}
+      initial={{ opacity: 0, y: 42, scale: 0.98, filter: 'blur(6px)' }}
+      animate={
+        isInView
+          ? { opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }
+          : { opacity: 0, y: 42, scale: 0.98, filter: 'blur(6px)' }
+      }
+      transition={{ duration: 0.65, delay, ease: [0.16, 1, 0.3, 1] }}
       className={className}
     >
       {children}
@@ -76,64 +285,572 @@ const AnimatedSection = ({ children, className = "", delay = 0 }) => {
   );
 };
 
-function Landing() {
-  const navigate = useNavigate();
-  const { user, logout } = useAuth();
+const CardMedia = ({ media }) => {
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-      // Stay on landing page after logout
-    } catch (error) {
-      console.error('Logout failed:', error);
+  if (media === 'graphnodes') {
+    return (
+      <div className="relative mb-5 h-24 rounded-xl border border-white/12 bg-black/45 overflow-hidden">
+        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 320 110" fill="none" aria-hidden="true">
+          {[
+            'M34 78 L92 48',
+            'M92 48 L146 70',
+            'M92 48 L176 34',
+            'M176 34 L232 58',
+            'M146 70 L232 58',
+            'M232 58 L286 40'
+          ].map((segment, idx) => (
+            <motion.path
+              key={segment}
+              d={segment}
+              stroke="currentColor"
+              className="text-white/35 group-hover:text-[var(--accent)] transition-colors duration-300"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              initial={{ pathLength: 0.2, opacity: 0.2 }}
+              animate={{ pathLength: [0.2, 1, 0.6], opacity: [0.2, 0.65, 0.3] }}
+              transition={{ duration: 3 + idx * 0.2, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          ))}
+        </svg>
+
+        {[
+          { x: 34, y: 78, size: 'h-2 w-2', delay: 0 },
+          { x: 92, y: 48, size: 'h-2.5 w-2.5', delay: 0.15 },
+          { x: 146, y: 70, size: 'h-2 w-2', delay: 0.25 },
+          { x: 176, y: 34, size: 'h-3 w-3', delay: 0.35 },
+          { x: 232, y: 58, size: 'h-2.5 w-2.5', delay: 0.45 },
+          { x: 286, y: 40, size: 'h-2 w-2', delay: 0.55 }
+        ].map((node, idx) => (
+          <motion.div
+            key={`node-${idx}`}
+            className={`absolute rounded-full border border-white/50 bg-white/60 group-hover:bg-[var(--accent)] group-hover:border-[var(--accent)] transition-colors duration-300 ${node.size}`}
+            style={{ left: `${node.x - 5}px`, top: `${node.y - 5}px` }}
+            animate={{ scale: [1, 1.4, 1], opacity: [0.6, 1, 0.65] }}
+            transition={{ duration: 2.2, repeat: Infinity, delay: node.delay, ease: 'easeInOut' }}
+          />
+        ))}
+
+        <motion.div
+          className="absolute right-3 bottom-2 rounded border border-white/18 bg-black/65 px-1.5 py-0.5 text-[8px] uppercase tracking-[0.12em] text-white/60"
+          animate={{ opacity: [0.45, 0.85, 0.45] }}
+          transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
+        >
+          Node map
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (media === 'snapshot') {
+    return (
+      <div className="relative mb-5 h-24 rounded-xl border border-white/12 overflow-hidden bg-black/45">
+        <img src="/dashboard-preview.png" alt="module snapshot" className="h-full w-full object-cover object-top opacity-50" loading="lazy" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/30 to-black/80 group-hover:opacity-65 opacity-90 transition-opacity duration-300" />
+      </div>
+    );
+  }
+
+  if (media === 'wave') {
+    return (
+      <div className="relative mb-5 h-24 rounded-xl border border-white/12 bg-black/45 overflow-hidden">
+        <div className="absolute inset-0 flex items-center justify-center">
+          <motion.div
+            className="relative w-14 h-14 rounded-md border border-white/20 bg-black/75"
+            animate={{ boxShadow: ['0 0 0 rgba(0,0,0,0)', '0 0 22px rgba(255,255,255,0.08)', '0 0 0 rgba(0,0,0,0)'] }}
+            transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <div className="absolute inset-2 rounded-sm border border-white/18" />
+            {[0, 1, 2].map((line) => (
+              <div key={line} className="absolute left-2 right-2 h-px bg-white/18" style={{ top: `${12 + line * 12}px` }} />
+            ))}
+          </motion.div>
+
+          {[0, 1, 2].map((idx) => (
+            <motion.div
+              key={`left-${idx}`}
+              className="absolute h-[2px] rounded-full bg-white/70 group-hover:bg-[var(--accent)] transition-colors duration-300"
+              style={{ left: `${16 + idx * 8}px`, width: `${24 - idx * 4}px`, top: `${30 + idx * 10}px` }}
+              animate={{ x: [-2, -10, -2], opacity: [0.2, 1, 0.2] }}
+              transition={{ duration: 2 + idx * 0.2, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          ))}
+
+          {[0, 1, 2].map((idx) => (
+            <motion.div
+              key={`right-${idx}`}
+              className="absolute h-[2px] rounded-full bg-white/70 group-hover:bg-[var(--accent)] transition-colors duration-300"
+              style={{ right: `${16 + idx * 8}px`, width: `${24 - idx * 4}px`, top: `${30 + idx * 10}px` }}
+              animate={{ x: [2, 10, 2], opacity: [0.2, 1, 0.2] }}
+              transition={{ duration: 2 + idx * 0.2, repeat: Infinity, ease: 'easeInOut', delay: 0.12 }}
+            />
+          ))}
+
+          {[0, 1].map((idx) => (
+            <motion.div
+              key={`top-${idx}`}
+              className="absolute w-[2px] rounded-full bg-white/70 group-hover:bg-[var(--accent)] transition-colors duration-300"
+              style={{ top: `${9 + idx * 2}px`, height: `${16 - idx * 3}px`, left: `${148 + idx * 12}px` }}
+              animate={{ y: [-2, -8, -2], opacity: [0.2, 1, 0.2] }}
+              transition={{ duration: 2.2 + idx * 0.2, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          ))}
+
+          {[0, 1].map((idx) => (
+            <motion.div
+              key={`bottom-${idx}`}
+              className="absolute w-[2px] rounded-full bg-white/70 group-hover:bg-[var(--accent)] transition-colors duration-300"
+              style={{ bottom: `${9 + idx * 2}px`, height: `${16 - idx * 3}px`, left: `${148 + idx * 12}px` }}
+              animate={{ y: [2, 8, 2], opacity: [0.2, 1, 0.2] }}
+              transition={{ duration: 2.2 + idx * 0.2, repeat: Infinity, ease: 'easeInOut', delay: 0.12 }}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (media === 'rings') {
+    return (
+      <div className="relative mb-5 h-24 rounded-xl border border-white/12 bg-black/45 overflow-hidden">
+        <div className="absolute inset-0 px-3 py-2">
+          <div className="text-[9px] uppercase tracking-[0.14em] text-white/55 mb-1">Task Grid</div>
+          <div className="grid grid-cols-2 grid-rows-2 gap-1.5 h-[calc(100%-14px)]">
+            {[1, 2, 3, 4].map((task, idx) => {
+              const done = idx !== 3;
+              return (
+                <motion.div
+                  key={task}
+                  className="rounded border border-white/15 bg-black/55 px-2 py-1.5 flex items-center justify-between"
+                  animate={{ opacity: [0.65, 1, 0.65] }}
+                  transition={{ duration: 2 + idx * 0.18, repeat: Infinity, ease: 'easeInOut' }}
+                >
+                  <span className="text-[8px] text-white/60">Task {task}</span>
+                  {done ? (
+                    <Check className="h-3 w-3 text-emerald-400" />
+                  ) : (
+                    <X className="h-3 w-3 text-red-400" />
+                  )}
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (media === 'pulse') {
+    return (
+      <div className="relative mb-5 h-24 rounded-xl border border-white/12 bg-black/45 overflow-hidden">
+        <div className="absolute inset-0 px-3 py-2">
+          <div className="flex items-start justify-between">
+            <div className="text-[9px] uppercase tracking-[0.14em] text-white/55">Timer</div>
+            <div className="text-[9px] uppercase tracking-[0.14em] text-white/45">Stopwatch</div>
+          </div>
+
+          <div className="mt-1 flex items-end justify-between">
+            <motion.div
+              className="font-mono text-[16px] leading-none text-white/85 group-hover:text-[var(--accent)] transition-colors duration-300"
+              animate={{ opacity: [0.72, 1, 0.72] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              24:59
+            </motion.div>
+            <motion.div
+              className="font-mono text-[12px] leading-none text-white/65"
+              animate={{ opacity: [0.55, 0.95, 0.55] }}
+              transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              00:42:18
+            </motion.div>
+          </div>
+
+          <div className="mt-2 h-[2px] rounded-full bg-white/12 overflow-hidden">
+            <motion.div
+              className="h-full bg-white/55 group-hover:bg-[var(--accent)] transition-colors duration-300"
+              animate={{ width: ['18%', '44%', '61%', '77%'] }}
+              transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          </div>
+
+          <div className="mt-2 flex items-center gap-1.5 text-[8px]">
+            {['15m', '25m', '45m', '60m'].map((preset, i) => (
+              <motion.div
+                key={preset}
+                className="px-1.5 py-0.5 rounded border border-white/16 text-white/65 bg-black/35 group-hover:border-[var(--accent)]/40 transition-colors duration-300"
+                animate={{ opacity: i === 1 ? [0.65, 1, 0.65] : [0.45, 0.7, 0.45] }}
+                transition={{ duration: 1.8 + i * 0.2, repeat: Infinity, ease: 'easeInOut' }}
+              >
+                {preset}
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (media === 'bars') {
+    return (
+      <div className="relative mb-5 h-24 rounded-xl border border-white/12 bg-black/45 overflow-hidden px-4 pt-3 flex items-end gap-2">
+        {[42, 58, 36, 64, 52, 68, 48].map((h, i) => (
+          <motion.div
+            key={i}
+            className="flex-1 border border-white/15 bg-black/60 text-white/70 group-hover:text-[var(--accent)] group-hover:bg-current/50 group-hover:border-current/70 transition-colors duration-300"
+            style={{ height: `${h}%` }}
+            animate={{ height: [`${Math.max(28, h - 10)}%`, `${Math.min(80, h + 8)}%`, `${h}%`] }}
+            transition={{ duration: 2.8 + i * 0.15, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (media === 'timeline') {
+    return (
+      <div className="relative mb-5 h-24 rounded-xl border border-white/12 bg-black/45 overflow-hidden">
+        <div className="absolute left-3 top-2 text-[9px] uppercase tracking-[0.14em] text-white/50">Chronicle</div>
+
+        <div className="absolute left-3 top-6 w-[46%] h-[68%] rounded-md border border-white/12 bg-black/35 p-1.5">
+          <div className="grid grid-cols-7 gap-[2px]">
+            {Array.from({ length: 28 }).map((_, idx) => (
+              <div key={idx} className="h-1 rounded-[2px] bg-white/15" />
+            ))}
+          </div>
+
+          <motion.div
+            className="absolute h-2.5 w-2.5 rounded-sm border border-white/35 bg-white/20 group-hover:bg-[var(--accent)] group-hover:border-[var(--accent)] transition-colors duration-300"
+            animate={{
+              x: [5, 21, 36, 52, 68, 52, 36, 21],
+              y: [9, 9, 9, 18, 27, 36, 36, 27],
+              scale: [1, 1.1, 1.2, 1.55, 1.95, 1.35, 1.1, 1],
+            }}
+            transition={{ duration: 6.2, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        </div>
+
+        <motion.div
+          className="absolute right-3 top-6 w-[46%] h-[68%] rounded-md border border-white/14 bg-black/55 px-2 py-1.5"
+          animate={{ opacity: [0.58, 1, 0.75], scale: [0.97, 1, 0.98] }}
+          transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
+        >
+          <div className="text-[8px] text-white/50 mb-1">Day 12 revisions</div>
+          <div className="space-y-1">
+            {['Math - Vectors', 'Physics - Waves', 'Biology - Cells'].map((item, i) => (
+              <motion.div
+                key={item}
+                className="h-2 rounded-sm bg-white/14 group-hover:bg-[var(--accent)]/35 transition-colors duration-300"
+                animate={{ opacity: [0.35, 0.9, 0.35] }}
+                transition={{ duration: 2.4, repeat: Infinity, delay: i * 0.28, ease: 'easeInOut' }}
+                title={item}
+              />
+            ))}
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (media === 'docstack') {
+    return (
+      <div className="relative mb-5 h-24 rounded-xl border border-white/12 bg-black/45 overflow-hidden flex items-center justify-center">
+        <motion.div className="relative h-14 w-18 border border-white/22 bg-black/60 text-white/70 group-hover:text-[var(--accent)] group-hover:border-current transition-colors duration-300" animate={{ y: [0, -4, 0] }} transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}>
+          <div className="absolute top-3 left-3 right-3 h-px bg-white/35 group-hover:bg-[var(--accent)] transition-colors duration-300" />
+          <div className="absolute top-6 left-3 right-4 h-px bg-white/25 group-hover:bg-[var(--accent)] transition-colors duration-300" />
+          <div className="absolute top-9 left-3 right-5 h-px bg-white/20 group-hover:bg-[var(--accent)] transition-colors duration-300" />
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (media === 'trail') {
+    return (
+      <div className="relative mb-5 h-24 rounded-xl border border-white/12 bg-black/45 overflow-hidden">
+        <div className="absolute inset-0 px-4 py-3 text-[10px] leading-relaxed font-mono text-white/75">
+          <div className="mb-1 overflow-hidden whitespace-nowrap text-white/55">
+            <span>journal.md</span>
+          </div>
+
+          <div className="overflow-hidden whitespace-nowrap text-white/85">
+            <motion.span
+              className="inline-block align-middle"
+              animate={{ width: ['0ch', '32ch', '32ch', '0ch'] }}
+              transition={{ duration: 6.5, repeat: Infinity, times: [0, 0.55, 0.8, 1], ease: 'easeInOut' }}
+              style={{
+                width: '0ch',
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Today achievements: 3 revisions done
+            </motion.span>
+            <motion.span
+              className="inline-block align-middle ml-0.5 text-white/95 group-hover:text-[var(--accent)] transition-colors duration-300"
+              animate={{ opacity: [1, 0, 1] }}
+              transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }}
+            >
+              |
+            </motion.span>
+          </div>
+
+          <div className="mt-2 overflow-hidden whitespace-nowrap text-white/45">
+            <motion.span
+              className="inline-block"
+              animate={{ width: ['0ch', '22ch', '22ch', '0ch'] }}
+              transition={{ duration: 6.5, repeat: Infinity, delay: 0.8, times: [0, 0.58, 0.82, 1], ease: 'easeInOut' }}
+              style={{
+                width: '0ch',
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Next: revise vectors
+            </motion.span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (media === 'zigzag') {
+    return (
+      <div className="relative mb-5 h-24 rounded-xl border border-white/12 bg-black/45 overflow-hidden">
+        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 320 110" fill="none">
+          <motion.path d="M26 78 L82 42 L130 68 L182 34 L230 60 L294 38" stroke="currentColor" className="text-white/65 group-hover:text-[var(--accent)] transition-colors duration-300" strokeWidth="2" strokeLinecap="round" animate={{ opacity: [0.35, 1, 0.35] }} transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }} />
+        </svg>
+      </div>
+    );
+  }
+
+  if (media === 'quickloop') {
+    return (
+      <div className="relative mb-5 h-24 rounded-xl border border-white/12 bg-black/45 overflow-hidden px-3 py-2">
+        <div className="absolute left-3 top-2 text-[9px] uppercase tracking-[0.14em] text-white/55">Quick Queue</div>
+
+        <div className="mt-4 space-y-1.5">
+          {['Due: Vectors', 'Due: React Hooks', 'Due: Thermodynamics'].map((item, idx) => (
+            <motion.div
+              key={item}
+              className="h-4 rounded border border-white/16 bg-black/55 px-2 flex items-center justify-between"
+              animate={{ x: [0, 6, 0], opacity: [0.45, 1, 0.55] }}
+              transition={{ duration: 1.4 + idx * 0.2, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              <span className="text-[8px] text-white/65 truncate">{item}</span>
+              <motion.span
+                className="h-1.5 w-1.5 rounded-full bg-white/65 group-hover:bg-[var(--accent)] transition-colors duration-300"
+                animate={{ scale: [1, 1.4, 1], opacity: [0.5, 1, 0.5] }}
+                transition={{ duration: 1.1, repeat: Infinity, delay: idx * 0.15, ease: 'easeInOut' }}
+              />
+            </motion.div>
+          ))}
+        </div>
+
+        <motion.div
+          className="absolute right-3 bottom-2 text-[8px] uppercase tracking-[0.12em] text-white/55"
+          animate={{ opacity: [0.45, 0.95, 0.45] }}
+          transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+        >
+          burst mode
+        </motion.div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative mb-5 h-24 rounded-xl border border-white/12 bg-black/45 overflow-hidden">
+      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 320 110" fill="none">
+        <motion.path d="M10 72 C 58 32, 92 96, 146 58 C 194 24, 230 88, 278 56 C 292 48, 304 44, 312 40" stroke="currentColor" className="text-white/60 group-hover:text-[var(--accent)] transition-colors duration-300" strokeWidth="2" strokeLinecap="round" animate={{ pathLength: [0.22, 1, 0.3] }} transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }} />
+      </svg>
+    </div>
+  );
+};
+
+const FeatureCard = ({ card, index }) => {
+  const Icon = card.icon;
+  const driftX = index % 2 === 0 ? -24 : 24;
+  const driftRotate = index % 3 === 0 ? -1.5 : 1.5;
+
+  return (
+    <Reveal delay={index * 0.05}>
+      <motion.article
+        initial={{ opacity: 0, x: driftX, y: 32, rotate: driftRotate }}
+        whileInView={{ opacity: 1, x: 0, y: 0, rotate: 0 }}
+        viewport={{ once: true, amount: 0.25 }}
+        transition={{ duration: 0.65, delay: index * 0.03, ease: [0.16, 1, 0.3, 1] }}
+        whileHover={card.hover}
+        style={{ '--accent': card.accentColor }}
+        className="group relative h-full min-h-[320px] rounded-2xl border border-white/14 bg-[#04050a] p-6 overflow-hidden shadow-[0_8px_24px_rgba(0,0,0,0.45)] hover:border-white/28"
+      >
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.014)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.014)_1px,transparent_1px)] bg-[size:34px_34px]" />
+        <motion.div
+          className="absolute -right-8 -top-8 h-24 w-24 rounded-full border border-white/10"
+          animate={{ rotate: [0, 30, 0], scale: [1, 1.08, 1] }}
+          transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        {[0, 1, 2].map((dot) => (
+          <motion.div
+            key={dot}
+            className="absolute h-1 w-1 rounded-full bg-white/75"
+            style={{
+              top: `${18 + dot * 22}%`,
+              left: `${14 + dot * 24}%`,
+            }}
+            animate={{
+              x: [0, 14, -10, 0],
+              y: [0, -8, 10, 0],
+              opacity: [0.25, 0.85, 0.2, 0.6],
+            }}
+            transition={{
+              duration: 6 + dot,
+              repeat: Infinity,
+              ease: 'easeInOut',
+            }}
+          />
+        ))}
+        <div className="relative z-10 h-full flex flex-col">
+          <div className="mb-5 flex items-center justify-between">
+            <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-black/45 group-hover:scale-105 transition-transform duration-300">
+              <Icon className="h-5 w-5 text-white/85" />
+            </div>
+            <div className={`text-[11px] uppercase tracking-[0.16em] ${card.categoryClass}`}>{card.category}</div>
+          </div>
+
+          <CardMedia media={card.media} />
+
+          <h3 className={`text-2xl mb-3 ${card.titleClass}`}>{card.title}</h3>
+          <p className="text-zinc-300 leading-relaxed mb-4">{card.description}</p>
+
+          <ul className="mt-auto space-y-2">
+            {card.points.map((detail) => (
+              <li key={detail} className="text-sm text-zinc-300 flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-white/55" />
+                <span>{detail}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </motion.article>
+    </Reveal>
+  );
+};
+
+function Landing() {
+  const { user } = useAuth();
+  const [activeSection, setActiveSection] = useState('memscore');
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [ctaGlow, setCtaGlow] = useState({ x: 50, y: 50, hovering: false });
+  const heroRef = useRef(null);
+
+  const { scrollYProgress: heroProgress } = useScroll({
+    target: heroRef,
+    offset: ['start start', 'end start'],
+  });
+
+  const heroTitleY = useTransform(heroProgress, [0, 1], [0, -116]);
+  const heroTextY = useTransform(heroProgress, [0, 1], [0, -72]);
+  const heroPreviewY = useTransform(heroProgress, [0, 1], [0, -46]);
+  const heroPreviewScale = useTransform(heroProgress, [0, 1], [1, 0.93]);
+  const heroGlowOpacity = useTransform(heroProgress, [0, 1], [0.5, 0.12]);
+
+  const navItems = [
+    { id: 'memscore', label: 'MemScore' },
+    { id: 'features', label: 'Modules' },
+    { id: 'feedback', label: 'Feedback' },
+    { id: 'pricing', label: 'Pricing' },
+  ];
+
+  useEffect(() => {
+    const sectionIds = navItems.map((item) => item.id);
+
+    const handleScroll = () => {
+      const triggerY = window.scrollY + 140;
+      setIsScrolled(window.scrollY > 10);
+      let current = sectionIds[0];
+
+      sectionIds.forEach((id) => {
+        const section = document.getElementById(id);
+        if (section && triggerY >= section.offsetTop) {
+          current = id;
+        }
+      });
+
+      setActiveSection(current);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToSection = (id) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setActiveSection(id);
     }
   };
 
+  const handleCtaMouseMove = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 100;
+    const y = ((event.clientY - rect.top) / rect.height) * 100;
+    setCtaGlow({ x, y, hovering: true });
+  };
+
+  const handleCtaMouseLeave = () => {
+    setCtaGlow((prev) => ({ ...prev, hovering: false, x: 50, y: 50 }));
+  };
+
   return (
-    <div className="bg-black text-white min-h-screen">
-      {/* Navigation */}
-      <nav className="border-b border-white/10">
+    <div className="bg-black text-white min-h-screen pt-16">
+      <nav className={`fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-md supports-[backdrop-filter]:bg-black/50 transition-colors duration-300 ${
+        isScrolled ? 'border-white/20 bg-black/80' : 'border-white/10 bg-black/65'
+      }`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
               <motion.div
                 className="flex items-center space-x-2 cursor-pointer"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
               >
                 <motion.div
                   whileHover={{ rotate: 360 }}
                   transition={{ duration: 0.5 }}
                   className="w-8 h-8"
                 >
-                  <img
-                    src={logoImg}
-                    alt="Memora Logo"
-                    className="w-full h-full object-cover rounded-lg"
-                  />
+                  <img src={logoImg} alt="Memora Logo" className="w-full h-full object-cover rounded-lg" />
                 </motion.div>
                 <span className="font-semibold text-lg">Memora</span>
               </motion.div>
-              <div className="hidden lg:flex items-center space-x-6">
-                <a href="#features" className="text-gray-400 hover:text-white transition-colors text-sm">
-                  Features
-                </a>
-                <a href="#pricing" className="text-gray-400 hover:text-white transition-colors text-sm">
-                  Pricing
-                </a>
+
+              <div className="hidden lg:flex items-center space-x-2">
+                {navItems.map((item) => {
+                  const isActive = activeSection === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => scrollToSection(item.id)}
+                      className={`px-3 py-2 text-sm transition-colors ${
+                        isActive ? 'text-white font-medium' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
+
             <div className="flex items-center space-x-4">
               {user ? (
-                // Authenticated user
-                <div className="flex items-center space-x-4">
-                  <Link to="/dashboard" className="text-gray-400 hover:text-white transition-colors text-sm">
-                    Dashboard
-                  </Link>
+                <>
+                  <Link to="/dashboard" className="text-gray-400 hover:text-white transition-colors text-sm">Dashboard</Link>
                   <UserProfileDropdown />
-                </div>
+                </>
               ) : (
-                // Not authenticated
                 <>
                   <Link to="/login" className="text-gray-400 hover:text-white transition-colors text-sm">Sign In</Link>
                   <Link to="/signup" className="bg-white text-black px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 transition-colors">
@@ -146,1186 +863,468 @@ function Landing() {
         </div>
       </nav>
 
-      {/* Hero Section with Grid */}
-      <div className="relative min-h-screen overflow-hidden">
-        {/* Animated Gradient Background */}
+      <section ref={heroRef} className="relative min-h-screen overflow-hidden">
         <motion.div
-          className="absolute inset-0 opacity-30"
+          className="absolute inset-0 opacity-40"
           animate={{
             background: [
-              "radial-gradient(600px circle at 0% 0%, rgba(120, 119, 198, 0.3), transparent 50%)",
-              "radial-gradient(600px circle at 100% 100%, rgba(120, 119, 198, 0.3), transparent 50%)",
-              "radial-gradient(600px circle at 0% 100%, rgba(120, 119, 198, 0.3), transparent 50%)",
-              "radial-gradient(600px circle at 100% 0%, rgba(120, 119, 198, 0.3), transparent 50%)",
-              "radial-gradient(600px circle at 0% 0%, rgba(120, 119, 198, 0.3), transparent 50%)"
-            ]
+              'radial-gradient(820px circle at 10% 15%, rgba(55,65,255,0.18), transparent 48%), radial-gradient(900px circle at 90% 25%, rgba(147,51,234,0.14), transparent 52%), linear-gradient(180deg, #02030a 0%, #000000 100%)',
+              'radial-gradient(760px circle at 80% 20%, rgba(59,130,246,0.16), transparent 50%), radial-gradient(900px circle at 20% 70%, rgba(109,40,217,0.12), transparent 55%), linear-gradient(180deg, #02030a 0%, #000000 100%)',
+              'radial-gradient(840px circle at 15% 80%, rgba(59,130,246,0.16), transparent 50%), radial-gradient(900px circle at 85% 60%, rgba(147,51,234,0.12), transparent 54%), linear-gradient(180deg, #02030a 0%, #000000 100%)',
+              'radial-gradient(820px circle at 10% 15%, rgba(55,65,255,0.18), transparent 48%), radial-gradient(900px circle at 90% 25%, rgba(147,51,234,0.14), transparent 52%), linear-gradient(180deg, #02030a 0%, #000000 100%)',
+            ],
           }}
-          transition={{
-            duration: 20,
-            repeat: Infinity,
-            ease: "linear"
-          }}
+          transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
         />
 
-        {/* Floating Particles */}
+        <motion.div
+          className="absolute left-[6%] top-[18%] h-48 w-48 rounded-full bg-cyan-400/20 blur-3xl"
+          style={{ opacity: heroGlowOpacity }}
+          animate={{ x: [0, 42, 0], y: [0, -18, 0] }}
+          transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }}
+        />
+
+        <motion.div
+          className="absolute right-[7%] bottom-[16%] h-56 w-56 rounded-full bg-indigo-400/20 blur-3xl"
+          style={{ opacity: heroGlowOpacity }}
+          animate={{ x: [0, -38, 0], y: [0, 22, 0] }}
+          transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+        />
+
         <FloatingParticles />
 
-        {/* Animated Grid Background */}
-        <motion.div
-          className="absolute inset-0 opacity-20"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 0.2 }}
-          transition={{ duration: 2 }}
-        >
-          <div className="h-full w-full" style={{
-            backgroundImage: `
-              linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
-            `,
-            backgroundSize: '100px 100px'
-          }}>
-          </div>
-        </motion.div>
-
-        {/* Animated Plus signs at grid intersections */}
-        <motion.div
-          className="absolute top-32 left-32"
-          initial={{ scale: 0, rotate: 0 }}
-          animate={{ scale: 1, rotate: 360 }}
-          transition={{ duration: 1, delay: 1.2 }}
-        >
-          <div className="w-3 h-3 relative">
-            <div className="absolute top-1/2 left-0 w-full h-px bg-white/30"></div>
-            <div className="absolute left-1/2 top-0 w-px h-full bg-white/30"></div>
-          </div>
-        </motion.div>
-        <motion.div
-          className="absolute top-64 right-64"
-          initial={{ scale: 0, rotate: 0 }}
-          animate={{ scale: 1, rotate: -360 }}
-          transition={{ duration: 1, delay: 1.4 }}
-        >
-          <div className="w-3 h-3 relative">
-            <div className="absolute top-1/2 left-0 w-full h-px bg-white/30"></div>
-            <div className="absolute left-1/2 top-0 w-px h-full bg-white/30"></div>
-          </div>
-        </motion.div>
-
-        {/* Hero Content */}
-        <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 pb-10">
-          <div className="text-center">
-            <motion.h1
-              className="text-5xl sm:text-6xl lg:text-7xl font-bold leading-tight mb-8"
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
-            >
-              <motion.span
-                className="block"
-                initial={{ opacity: 0, x: -50 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.8, delay: 0.4 }}
-              >
-                Learn smarter, not harder with
-              </motion.span>
-              <motion.span
-                className="block bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent"
-                initial={{ opacity: 0, x: 50 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.8, delay: 0.6 }}
-              >
-                memory-powered learning.
-              </motion.span>
-            </motion.h1>
-
-            <motion.p
-              className="text-xl text-gray-300 mb-12 max-w-4xl mx-auto leading-relaxed"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.8 }}
-            >
-              Master any subject with scientifically-proven spaced repetition. Transform how you learn,
-              remember, and retain knowledge with personalized study schedules that adapt to your progress.
-            </motion.p>
-
-            <motion.div
-              className="flex flex-col sm:flex-row gap-4 justify-center items-center"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 1.0 }}
-            >
-              <motion.div
-                whileHover={{ scale: 1.05, boxShadow: "0 10px 25px rgba(255,255,255,0.1)" }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Link to="/dashboard" className="bg-white text-black px-8 py-3 rounded-md font-medium hover:bg-gray-100 transition-all duration-300 flex items-center group">
-                  <motion.div
-                    animate={{
-                      scale: [1, 1.1, 1],
-                      rotate: [0, 5, -5, 0]
-                    }}
-                    transition={{
-                      duration: 3,
-                      repeat: Infinity,
-                      repeatType: "reverse",
-                      ease: "easeInOut"
-                    }}
-                  >
-                    <Logo size="sm" className="text-black mr-2" variant="blackOutline" />
-                  </motion.div>
-                  Start Learning Free
-                  <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-                </Link>
-              </motion.div>
-              <motion.button
-                className="border border-white/20 text-white px-8 py-3 rounded-md font-medium hover:bg-white/5 transition-all duration-300"
-                whileHover={{ scale: 1.05, borderColor: "rgba(255,255,255,0.4)" }}
-                whileTap={{ scale: 0.95 }}
-              >
-                Get a Demo
-              </motion.button>
-            </motion.div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content Container */}
-      <div className="relative">
-        {/* Grid lines */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="h-full w-full" style={{
-            backgroundImage: `
-              linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
-            `,
-            backgroundSize: '100px 100px'
-          }}>
-          </div>
+        <div className="absolute inset-0 opacity-20">
+          <div
+            className="h-full w-full"
+            style={{
+              backgroundImage:
+                'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)',
+              backgroundSize: '100px 100px',
+            }}
+          />
         </div>
 
-        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-
-          {/* Neuro Engine Deep Dive Section */}
-          <motion.div
-            className="mt-16"
-            initial={{ opacity: 0, y: 100 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-            viewport={{ once: false, margin: "-100px" }}
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-10 text-center">
+          <motion.h1
+            className="text-4xl sm:text-6xl lg:text-[72px] font-semibold tracking-tight leading-[0.98] mb-8"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+            style={{ y: heroTitleY }}
           >
-            <div className="text-center mb-16">
-              <motion.h2
-                className="text-4xl font-bold mb-8"
-                initial={{ opacity: 0, y: 50 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.2 }}
-                viewport={{ once: false }}
-              >
-                Powered by the Neuro Engine
-              </motion.h2>
-              <motion.p
-                className="text-xl text-gray-400 max-w-4xl mx-auto"
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.4 }}
-                viewport={{ once: false }}
-              >
-                Our proprietary algorithm leverages the Ebbinghaus Forgetting Curve to optimize your learning schedule,
-                ensuring maximum retention with minimal effort.
-              </motion.p>
-            </div>
+            <span className="block">Learn smarter, not harder with</span>
+            <span className="block mt-2 relative inline-block">
+              memory-powered learning.
+              <span className="absolute left-1/2 -translate-x-1/2 -bottom-2 h-[5px] w-[68%] rounded-full bg-gradient-to-r from-blue-500 via-blue-400 to-purple-500 opacity-90" />
+            </span>
+          </motion.h1>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-px">
-
-              {/* Forgetting Curve Visualization */}
-              <div className="relative border border-white/20 p-8 bg-black">
-                {/* Corner plus signs */}
-                <div className="absolute -top-1.5 -left-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -top-1.5 -right-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-
-                <h3 className="text-xl font-bold mb-4">The Science Behind Spaced Repetition</h3>
-                <p className="text-gray-400 text-sm mb-8">
-                  Traditional learning wastes time. Our algorithm identifies the optimal moment to review,
-                  just before you forget, maximizing retention efficiency.
-                </p>
-
-                {/* Forgetting curve chart */}
-                <div className="relative h-48 mb-6">
-                  <div className="absolute bottom-0 left-0 w-full h-px bg-white/20"></div>
-                  <div className="absolute bottom-0 left-0 w-px h-full bg-white/20"></div>
-
-                  {/* Traditional curve (declining) */}
-                  <svg className="absolute inset-0 w-full h-full" viewBox="0 0 300 200">
-                    <path d="M 20 40 Q 100 80 150 120 Q 200 150 280 170"
-                          stroke="#ef4444" strokeWidth="2" fill="none" strokeDasharray="5,5" />
-                    <text x="200" y="180" className="text-xs fill-red-400">Traditional Learning</text>
-                  </svg>
-
-                  {/* Spaced repetition curve (maintained) */}
-                  <svg className="absolute inset-0 w-full h-full" viewBox="0 0 300 200">
-                    <path d="M 20 40 Q 60 50 80 45 Q 120 55 140 50 Q 180 60 200 55 Q 240 65 280 60"
-                          stroke="#22c55e" strokeWidth="2" fill="none" />
-                    <text x="150" y="35" className="text-xs fill-green-400">Memora's Approach</text>
-                  </svg>
-
-                  {/* Review points */}
-                  <div className="absolute bottom-8 left-20 w-2 h-2 bg-green-400 rounded-full"></div>
-                  <div className="absolute bottom-6 left-32 w-2 h-2 bg-green-400 rounded-full"></div>
-                  <div className="absolute bottom-5 left-48 w-2 h-2 bg-green-400 rounded-full"></div>
-                  <div className="absolute bottom-4 left-64 w-2 h-2 bg-green-400 rounded-full"></div>
-                </div>
-
-                <div className="text-xs text-gray-500">
-                  <div className="mb-1">Y-axis: Memory Retention</div>
-                  <div>X-axis: Time</div>
-                </div>
-              </div>
-
-              {/* Algorithm Features */}
-              <div className="relative border border-white/20 p-8 bg-black">
-                {/* Corner plus signs */}
-                <div className="absolute -top-1.5 -left-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -top-1.5 -right-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-
-                <h3 className="text-xl font-bold mb-6">Adaptive Intelligence</h3>
-
-                <div className="space-y-6">
-                  <div className="flex items-start space-x-4">
-                    <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <div className="w-3 h-3 bg-blue-400 rounded-full"></div>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold mb-1">Personal Learning Patterns</h4>
-                      <p className="text-gray-400 text-sm">Analyzes your response accuracy and timing to create a unique cognitive profile.</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start space-x-4">
-                    <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <div className="w-3 h-3 bg-green-400 rounded-full"></div>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold mb-1">Dynamic Interval Adjustment</h4>
-                      <p className="text-gray-400 text-sm">Automatically adjusts review intervals based on your performance and retention strength.</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start space-x-4">
-                    <div className="w-8 h-8 bg-purple-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <div className="w-3 h-3 bg-purple-400 rounded-full"></div>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold mb-1">Difficulty Calibration</h4>
-                      <p className="text-gray-400 text-sm">Identifies challenging concepts and increases review frequency to strengthen weak areas.</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start space-x-4">
-                    <div className="w-8 h-8 bg-orange-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <div className="w-3 h-3 bg-orange-400 rounded-full"></div>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold mb-1">Optimal Timing Prediction</h4>
-                      <p className="text-gray-400 text-sm">Predicts the exact moment when memory begins to fade, scheduling reviews for maximum impact.</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          </motion.div>
-
-          {/* Comprehensive Feature Showcase */}
-          <motion.div
-            id="features"
-            className="mt-16"
-            initial={{ opacity: 0, y: 100 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-            viewport={{ once: false, margin: "-100px" }}
+          <motion.p
+            className="text-lg sm:text-xl text-zinc-400 mb-10 max-w-4xl mx-auto leading-relaxed"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.35 }}
+            style={{ y: heroTextY }}
           >
-            <div className="text-center mb-16">
-              <motion.h2
-                className="text-4xl font-bold mb-8"
-                initial={{ opacity: 0, scale: 0.8 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.8, delay: 0.2 }}
-                viewport={{ once: false }}
-              >
-                Your toolkit for accelerated learning.
-              </motion.h2>
-            </div>
+            Master any subject with scientifically-proven spaced repetition. Transform how you learn, remember, and retain knowledge with personalized schedules that adapt to your progress.
+          </motion.p>
 
-            {/* First row of features */}
-            <motion.div
-              className="grid grid-cols-1 lg:grid-cols-3 gap-px mb-px"
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.3 }}
-              viewport={{ once: false }}
-            >
-
-              {/* ReviseBy Feature */}
-              <motion.div
-                className="relative border border-white/20 p-8 bg-black group"
-                initial={{ opacity: 0, y: 80, rotateX: -15 }}
-                whileInView={{ opacity: 1, y: 0, rotateX: 0 }}
-                transition={{ duration: 0.8, delay: 0.1, ease: "easeOut" }}
-                viewport={{ once: false, margin: "-50px" }}
-                whileHover={{
-                  boxShadow: "0 15px 30px rgba(59, 130, 246, 0.2)",
-                  borderColor: "rgba(59, 130, 246, 0.6)",
-                  transition: { duration: 0.15 }
+          <motion.div
+            className="flex flex-col sm:flex-row gap-3 justify-center items-center"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.5 }}
+          >
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+              <Link
+                to="/dashboard"
+                onMouseMove={handleCtaMouseMove}
+                onMouseEnter={() => setCtaGlow((prev) => ({ ...prev, hovering: true }))}
+                onMouseLeave={handleCtaMouseLeave}
+                className="group relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-full border border-zinc-300 px-7 py-2.5 text-sm sm:text-base font-semibold tracking-tight text-zinc-900 bg-white shadow-[0_10px_30px_rgba(0,0,0,0.16),0_1px_0_rgba(255,255,255,0.95)_inset] transition-all duration-300 hover:-translate-y-0.5 hover:border-zinc-400"
+                style={{
+                  '--cta-x': `${ctaGlow.x}%`,
+                  '--cta-y': `${ctaGlow.y}%`,
                 }}
               >
-                {/* Corner plus signs */}
-                <div className="absolute -top-1.5 -left-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -top-1.5 -right-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-
-                <div className="flex items-center mb-4">
-                  <Clock className="w-5 h-5 text-blue-400 mr-2" />
-                  <span className="text-xs text-gray-400 uppercase tracking-wide">Smart Scheduling</span>
-                </div>
-
-                <h3 className="text-lg font-semibold mb-2">ReviseBy deadlines</h3>
-                <p className="text-gray-400 text-sm mb-6">
-                  Automatically schedule optimal review sessions to prevent cramming and ensure long-term retention before critical deadlines.
-                </p>
-
-                <div className="space-y-2 mb-6">
-                  <div className="flex items-center justify-between p-3 bg-gray-900/50 rounded border border-white/10">
-                    <span className="text-sm">Organic Chemistry</span>
-                    <span className="text-xs text-red-400 bg-red-400/10 px-2 py-1 rounded">Due tomorrow</span>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-900/50 rounded border border-white/10">
-                    <span className="text-sm">Statistics Final</span>
-                    <span className="text-xs text-orange-400 bg-orange-400/10 px-2 py-1 rounded">Review in 3 days</span>
-                  </div>
-                </div>
-
-                <button className="w-10 h-10 border border-gray-600 rounded-full flex items-center justify-center text-gray-400 hover:bg-white hover:text-black hover:border-white transition-all duration-300 group-hover:translate-x-1">
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </motion.div>
-
-              {/* DocTags Feature */}
-              <motion.div
-                className="relative border border-white/20 p-8 bg-black group"
-                initial={{ opacity: 0, y: 80, rotateX: -15 }}
-                whileInView={{ opacity: 1, y: 0, rotateX: 0 }}
-                transition={{ duration: 0.8, delay: 0.3, ease: "easeOut" }}
-                viewport={{ once: false, margin: "-50px" }}
-                whileHover={{
-                  boxShadow: "0 15px 30px rgba(34, 197, 94, 0.2)",
-                  borderColor: "rgba(34, 197, 94, 0.6)",
-                  transition: { duration: 0.15 }
-                }}
-              >
-                {/* Corner plus signs */}
-                <div className="absolute -top-1.5 -left-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -top-1.5 -right-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-
-                <div className="flex items-center mb-4">
-                  <FileText className="w-5 h-5 text-green-400 mr-2" />
-                  <span className="text-xs text-gray-400 uppercase tracking-wide">Organization</span>
-                </div>
-
-                <h3 className="text-lg font-semibold mb-2">DocTags management</h3>
-                <p className="text-gray-400 text-sm mb-6">
-                  Attach PDFs, YouTube videos, and Google Drive files with intelligent tagging for instant organization and retrieval.
-                </p>
-
-                <div className="grid grid-cols-2 gap-2 mb-6">
-                  <div className="p-3 bg-gray-900/50 rounded border border-white/10 text-center">
-                    <FileText className="w-6 h-6 text-red-400 mx-auto mb-1" />
-                    <div className="text-xs text-gray-400">PDFs</div>
-                  </div>
-                  <div className="p-3 bg-gray-900/50 rounded border border-white/10 text-center">
-                    <Play className="w-6 h-6 text-red-500 mx-auto mb-1" />
-                    <div className="text-xs text-gray-400">Videos</div>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-1 mb-4">
-                  <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-1 rounded">Theory</span>
-                  <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded">Practice</span>
-                  <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-1 rounded">Research</span>
-                </div>
-
-                <button className="w-10 h-10 border border-gray-600 rounded-full flex items-center justify-center text-gray-400 hover:bg-white hover:text-black hover:border-white transition-all duration-300">
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </motion.div>
-
-              {/* Performance Analytics */}
-              <motion.div
-                className="relative border border-white/20 p-8 bg-black group"
-                initial={{ opacity: 0, y: 80, rotateX: -15 }}
-                whileInView={{ opacity: 1, y: 0, rotateX: 0 }}
-                transition={{ duration: 0.8, delay: 0.5, ease: "easeOut" }}
-                viewport={{ once: false, margin: "-50px" }}
-                whileHover={{
-                  boxShadow: "0 15px 30px rgba(168, 85, 247, 0.2)",
-                  borderColor: "rgba(168, 85, 247, 0.6)",
-                  transition: { duration: 0.15 }
-                }}
-              >
-                {/* Corner plus signs */}
-                <div className="absolute -top-1.5 -left-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -top-1.5 -right-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-
-                <div className="flex items-center mb-4">
-                  <BarChart3 className="w-5 h-5 text-purple-400 mr-2" />
-                  <span className="text-xs text-gray-400 uppercase tracking-wide">Analytics</span>
-                </div>
-
-                <h3 className="text-lg font-semibold mb-2">Performance insights</h3>
-                <p className="text-gray-400 text-sm mb-6">
-                  Track your learning velocity, retention rates, and identify knowledge gaps with detailed analytics and progress visualization.
-                </p>
-
-                {/* Mini chart */}
-                <div className="h-16 mb-4 relative">
-                  <div className="absolute bottom-0 left-0 w-full h-px bg-white/20"></div>
-                  <div className="flex items-end justify-between h-full">
-                    <div className="w-4 bg-blue-400 rounded-t" style={{height: '60%'}}></div>
-                    <div className="w-4 bg-green-400 rounded-t" style={{height: '80%'}}></div>
-                    <div className="w-4 bg-purple-400 rounded-t" style={{height: '45%'}}></div>
-                    <div className="w-4 bg-orange-400 rounded-t" style={{height: '90%'}}></div>
-                    <div className="w-4 bg-cyan-400 rounded-t" style={{height: '70%'}}></div>
-                  </div>
-                </div>
-
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-400">94%</div>
-                  <div className="text-xs text-gray-400">Average Retention</div>
-                </div>
-
-                <button className="w-10 h-10 border border-gray-600 rounded-full flex items-center justify-center text-gray-400 hover:bg-white hover:text-black hover:border-white transition-all duration-300 mt-4">
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </motion.div>
-
-            </motion.div>
-
-            {/* Second row of features */}
-            <motion.div
-              className="grid grid-cols-1 lg:grid-cols-2 gap-px"
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.5 }}
-              viewport={{ once: false }}
-            >
-
-              {/* Advanced Learning Features */}
-              <motion.div
-                className="relative border border-white/20 p-8 bg-black group"
-                initial={{ opacity: 0, x: -80, scale: 0.9 }}
-                whileInView={{ opacity: 1, x: 0, scale: 1 }}
-                transition={{ duration: 0.8, delay: 0.2, ease: "easeOut" }}
-                viewport={{ once: false, margin: "-50px" }}
-                whileHover={{
-                  boxShadow: "0 12px 25px rgba(168, 85, 247, 0.2)",
-                  borderColor: "rgba(168, 85, 247, 0.6)",
-                  transition: { duration: 0.15 }
-                }}
-              >
-                {/* Corner plus signs */}
-                <div className="absolute -top-1.5 -left-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -top-1.5 -right-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-
-                <h3 className="text-xl font-bold mb-6">Advanced learning capabilities</h3>
-
-                <div className="grid grid-cols-2 gap-4 mb-6">
-                  <div className="text-center p-4 border border-white/10 rounded">
-                    <Zap className="w-8 h-8 text-yellow-400 mx-auto mb-2" />
-                    <div className="text-sm font-semibold">Quick Reviews</div>
-                    <div className="text-xs text-gray-400">Micro-learning sessions</div>
-                  </div>
-                  <div className="text-center p-4 border border-white/10 rounded">
-                    <Target className="w-8 h-8 text-red-400 mx-auto mb-2" />
-                    <div className="text-sm font-semibold">Focus Mode</div>
-                    <div className="text-xs text-gray-400">Distraction-free learning</div>
-                  </div>
-                  <div className="text-center p-4 border border-white/10 rounded">
-                    <Users className="w-8 h-8 text-blue-400 mx-auto mb-2" />
-                    <div className="text-sm font-semibold">Study Groups</div>
-                    <div className="text-xs text-gray-400">Collaborative learning</div>
-                  </div>
-                  <div className="text-center p-4 border border-white/10 rounded">
-                    <Smartphone className="w-8 h-8 text-green-400 mx-auto mb-2" />
-                    <div className="text-sm font-semibold">Mobile Sync</div>
-                    <div className="text-xs text-gray-400">Learn anywhere</div>
-                  </div>
-                </div>
-
-                <button className="w-10 h-10 border border-gray-600 rounded-full flex items-center justify-center text-gray-400 hover:bg-white hover:text-black hover:border-white transition-all duration-300">
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </motion.div>
-
-              {/* Integration Ecosystem */}
-              <motion.div
-                className="relative border border-white/20 p-8 bg-black group"
-                initial={{ opacity: 0, x: 80, scale: 0.9 }}
-                whileInView={{ opacity: 1, x: 0, scale: 1 }}
-                transition={{ duration: 0.8, delay: 0.4, ease: "easeOut" }}
-                viewport={{ once: false, margin: "-50px" }}
-                whileHover={{
-                  boxShadow: "0 12px 25px rgba(34, 197, 94, 0.2)",
-                  borderColor: "rgba(34, 197, 94, 0.6)",
-                  transition: { duration: 0.15 }
-                }}
-              >
-                {/* Corner plus signs */}
-                <div className="absolute -top-1.5 -left-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -top-1.5 -right-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-                <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3">
-                  <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                  <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-                </div>
-
-                <h3 className="text-xl font-bold mb-6">Seamless integrations</h3>
-                <p className="text-gray-400 text-sm mb-8">
-                  Connect with your existing workflow. Import from popular platforms and export your progress anywhere.
-                </p>
-
-                <div className="grid grid-cols-3 gap-4 mb-6">
-                  <div className="text-center p-3 bg-gray-900/50 rounded border border-white/10">
-                    <div className="w-8 h-8 bg-red-500 rounded mx-auto mb-2 flex items-center justify-center">
-                      <span className="text-white text-xs font-bold">YT</span>
-                    </div>
-                    <div className="text-xs text-gray-400">YouTube</div>
-                  </div>
-                  <div className="text-center p-3 bg-gray-900/50 rounded border border-white/10">
-                    <div className="w-8 h-8 bg-blue-500 rounded mx-auto mb-2 flex items-center justify-center">
-                      <span className="text-white text-xs font-bold">GD</span>
-                    </div>
-                    <div className="text-xs text-gray-400">Google Drive</div>
-                  </div>
-                  <div className="text-center p-3 bg-gray-900/50 rounded border border-white/10">
-                    <div className="w-8 h-8 bg-purple-500 rounded mx-auto mb-2 flex items-center justify-center">
-                      <span className="text-white text-xs font-bold">N</span>
-                    </div>
-                    <div className="text-xs text-gray-400">Notion</div>
-                  </div>
-                </div>
-
-                <div className="text-center text-sm text-gray-400 mb-4">
-                  + 15 more integrations
-                </div>
-
-                <button className="w-10 h-10 border border-gray-600 rounded-full flex items-center justify-center text-gray-400 hover:bg-white hover:text-black hover:border-white transition-all duration-300">
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </motion.div>
-
+                <span
+                  className="pointer-events-none absolute inset-0 transition-opacity duration-200"
+                  style={{
+                    opacity: ctaGlow.hovering ? 0.75 : 0.25,
+                    background:
+                      'radial-gradient(115px circle at var(--cta-x) var(--cta-y), rgba(255,255,255,0.95), rgba(244,244,245,0.92) 30%, rgba(212,212,216,0.46) 58%, rgba(212,212,216,0.08) 78%, rgba(255,255,255,0) 90%)',
+                  }}
+                />
+                <span className="pointer-events-none absolute inset-[1px] rounded-full border border-zinc-200/80" />
+                <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/55 via-transparent to-zinc-100/35" />
+                <span className="relative z-10 text-zinc-900">Start Learning Free</span>
+                <ArrowRight className="relative z-10 w-4.5 h-4.5 text-zinc-700 transition-transform duration-300 group-hover:translate-x-0.5" />
+              </Link>
             </motion.div>
           </motion.div>
 
-          {/* Complex Feature Showcase - Vercel Style */}
           <motion.div
-            className="grid grid-cols-1 lg:grid-cols-3 gap-px mt-px"
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.7 }}
-            viewport={{ once: false }}
+            className="mt-12 sm:mt-14"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.65 }}
+            style={{ y: heroPreviewY, scale: heroPreviewScale }}
           >
+            <div className="relative max-w-6xl mx-auto rounded-2xl p-[1px] bg-gradient-to-r from-blue-500/70 via-white/35 to-purple-500/70 shadow-[0_0_32px_rgba(56,189,248,0.16)]">
+              <div className="relative bg-black/85 rounded-2xl overflow-hidden border border-white/10">
+                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-blue-300/80 to-transparent" />
+                <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-purple-300/80 to-transparent" />
+                <div className="pointer-events-none absolute -inset-24 bg-[radial-gradient(circle_at_50%_0%,rgba(59,130,246,0.18),transparent_55%),radial-gradient(circle_at_50%_100%,rgba(147,51,234,0.16),transparent_55%)]" />
 
-            {/* Neuro Engine Card */}
-            <motion.div
-              className="relative border border-white/20 p-8 bg-black group"
-              initial={{ opacity: 0, y: 80, rotateX: -15 }}
-              whileInView={{ opacity: 1, y: 0, rotateX: 0 }}
-              transition={{ duration: 0.8, delay: 0.1, ease: "easeOut" }}
-              viewport={{ once: false, margin: "-50px" }}
-              whileHover={{
-                boxShadow: "0 15px 30px rgba(168, 85, 247, 0.2)",
-                borderColor: "rgba(168, 85, 247, 0.6)",
-                transition: { duration: 0.15 }
-              }}
-            >
-              {/* Corner plus signs */}
-              <div className="absolute -top-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
+                <img
+                  src="/dashboard-preview.png"
+                  alt="Memora dashboard preview"
+                  className="relative z-10 w-full h-[280px] sm:h-[380px] lg:h-[500px] object-cover object-top"
+                  loading="lazy"
+                />
+
+                <motion.div
+                  className="pointer-events-none absolute inset-0 z-20 bg-gradient-to-b from-white/[0.04] via-transparent to-black/50"
+                  animate={{ opacity: [0.35, 0.15, 0.35] }}
+                  transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut' }}
+                />
               </div>
-              <div className="absolute -top-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-
-              <div className="flex items-center mb-4">
-                <div className="w-2 h-2 bg-purple-400 rounded-full mr-2"></div>
-                <span className="text-xs text-gray-400 uppercase tracking-wide">Intelligence</span>
-              </div>
-
-              <h3 className="text-xl font-bold mb-2">Neuro Engine</h3>
-              <h4 className="text-lg text-gray-300 mb-4">powers your learning.</h4>
-
-              <p className="text-gray-400 text-sm mb-8">
-                AI-powered spaced repetition that adapts to your patterns.
-              </p>
-
-              {/* Visual representation */}
-              <div className="relative h-32 mb-6">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-16 h-16 border border-white/20 rounded-full flex items-center justify-center">
-                    <Brain className="w-8 h-8 text-white" />
-                  </div>
-                  {/* Orbiting dots */}
-                  <div className="absolute w-24 h-24 border border-white/10 rounded-full animate-spin" style={{animationDuration: '10s'}}>
-                    <div className="absolute -top-1 left-1/2 w-2 h-2 bg-blue-400 rounded-full transform -translate-x-1/2"></div>
-                  </div>
-                  <div className="absolute w-32 h-32 border border-white/5 rounded-full animate-spin" style={{animationDuration: '15s', animationDirection: 'reverse'}}>
-                    <div className="absolute -top-1 left-1/2 w-2 h-2 bg-green-400 rounded-full transform -translate-x-1/2"></div>
-                  </div>
-                </div>
-              </div>
-
-              <button className="w-10 h-10 border border-gray-600 rounded-full flex items-center justify-center text-gray-400 hover:bg-white hover:text-black hover:border-white transition-all duration-300">
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </motion.div>
-
-            {/* MemScore Analytics Card */}
-            <motion.div
-              className="relative border border-white/20 p-8 bg-black group"
-              initial={{ opacity: 0, y: 80, rotateX: -15 }}
-              whileInView={{ opacity: 1, y: 0, rotateX: 0 }}
-              transition={{ duration: 0.8, delay: 0.3, ease: "easeOut" }}
-              viewport={{ once: false, margin: "-50px" }}
-              whileHover={{
-                boxShadow: "0 15px 30px rgba(34, 197, 94, 0.2)",
-                borderColor: "rgba(34, 197, 94, 0.6)",
-                transition: { duration: 0.15 }
-              }}
-            >
-              {/* Corner plus signs */}
-              <div className="absolute -top-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -top-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-
-              <div className="space-y-6">
-                {/* Header */}
-                <div className="text-center">
-                  <div className="text-xs text-gray-400 mb-2">Your Memory Intelligence</div>
-                  <div className="text-2xl font-bold text-green-400 mb-1">MemScore</div>
-                </div>
-
-                {/* Main Score Display */}
-                <div className="flex items-center justify-center space-x-6">
-                  {/* Circular progress indicator */}
-                  <div className="relative w-16 h-16">
-                    <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 64 64">
-                      <circle cx="32" cy="32" r="24" stroke="currentColor" strokeWidth="6" fill="none" className="text-gray-800" />
-                      <circle cx="32" cy="32" r="24" stroke="currentColor" strokeWidth="6" fill="none" strokeLinecap="round" className="text-green-400" strokeDasharray={`${9 * 1.5} 150`} />
-                    </svg>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="text-2xl font-bold text-green-400">9</div>
-                    </div>
-                  </div>
-
-                  {/* Score Details */}
-                  <div className="text-left">
-                    <div className="text-sm text-gray-300 mb-1">Excellent Memory</div>
-                    <div className="text-xs text-gray-400">Top 15% of learners</div>
-                    <div className="flex items-center mt-2">
-                      <div className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></div>
-                      <span className="text-xs text-green-400">Active Learning</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Stats Grid */}
-                <div className="grid grid-cols-2 gap-4 text-center">
-                  <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                    <div className="text-lg font-bold text-blue-400">92%</div>
-                    <div className="text-xs text-gray-400">Retention Rate</div>
-                  </div>
-                  <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                    <div className="text-lg font-bold text-purple-400">2.3x</div>
-                    <div className="text-xs text-gray-400">Learning Speed</div>
-                  </div>
-                </div>
-
-                {/* Progress Indicators */}
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-gray-400">Memory Strength</span>
-                    <span className="text-xs text-green-400">Strong</span>
-                  </div>
-                  <div className="w-full bg-gray-800 rounded-full h-1.5">
-                    <div className="bg-gradient-to-r from-green-500 to-green-400 h-1.5 rounded-full" style={{width: '90%'}}></div>
-                  </div>
-                </div>
-              </div>
-
-              <button className="w-10 h-10 border border-gray-600 rounded-full flex items-center justify-center text-gray-400 hover:bg-white hover:text-black hover:border-white transition-all duration-300 mt-4">
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </motion.div>
-
-            {/* Chronicle Learning Journey Card */}
-            <motion.div
-              className="relative border border-white/20 p-8 bg-black group"
-              initial={{ opacity: 0, y: 80, rotateX: -15 }}
-              whileInView={{ opacity: 1, y: 0, rotateX: 0 }}
-              transition={{ duration: 0.8, delay: 0.5, ease: "easeOut" }}
-              viewport={{ once: false, margin: "-50px" }}
-              whileHover={{
-                boxShadow: "0 15px 30px rgba(59, 130, 246, 0.2)",
-                borderColor: "rgba(59, 130, 246, 0.6)",
-                transition: { duration: 0.15 }
-              }}
-            >
-              {/* Corner plus signs */}
-              <div className="absolute -top-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -top-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-
-              <div className="text-center mb-6">
-                <Calendar className="w-8 h-8 text-white mx-auto mb-2" />
-                <div className="text-xs text-gray-400">Chronicle</div>
-              </div>
-
-              {/* Grid pattern visualization */}
-              <div className="grid grid-cols-5 gap-1 mb-6">
-                {Array.from({length: 25}).map((_, i) => (
-                  <div key={i} className={`w-3 h-3 rounded-sm ${
-                    i < 15 ? 'bg-blue-400' :
-                    i < 20 ? 'bg-green-400' :
-                    'bg-gray-700'
-                  }`}></div>
-                ))}
-              </div>
-
-              <div className="space-y-2 text-xs text-gray-400">
-                <div className="flex items-center">
-                  <div className="w-2 h-2 bg-blue-400 rounded-full mr-2"></div>
-                  <span>Completed Sessions</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-2 h-2 bg-green-400 rounded-full mr-2"></div>
-                  <span>Active Learning</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-2 h-2 bg-gray-700 rounded-full mr-2"></div>
-                  <span>Upcoming</span>
-                </div>
-              </div>
-
-              <button className="w-10 h-10 border border-gray-600 rounded-full flex items-center justify-center text-gray-400 hover:bg-white hover:text-black hover:border-white transition-all duration-300 mt-4">
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </motion.div>
-
+            </div>
           </motion.div>
-
         </div>
-      </div>
+      </section>
 
-      {/* Testimonials Section */}
-      <motion.div
-        className="relative py-20"
-        initial={{ opacity: 0, y: 100 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, ease: "easeOut" }}
-        viewport={{ once: false, margin: "-100px" }}
-      >
-        <div className="absolute inset-0 opacity-10">
-          <div className="h-full w-full" style={{
-            backgroundImage: `
-              linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
-            `,
-            backgroundSize: '100px 100px'
-          }}>
-          </div>
-        </div>
+      <section id="memscore" className="relative py-16 sm:py-20 border-y border-white/10 scroll-mt-24 overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_20%,rgba(59,130,246,0.14),transparent_40%),radial-gradient(circle_at_88%_80%,rgba(14,165,233,0.12),transparent_42%)]" />
+        <div className="absolute inset-0 opacity-30 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:52px_52px]" />
 
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-8">Trusted by learners worldwide</h2>
-            <p className="text-xl text-gray-400 max-w-3xl mx-auto">
-              See how Memora has transformed the learning experience for students, professionals, and lifelong learners.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-
-            {/* Testimonial 1 */}
-            <div className="relative border border-white/20 p-8 bg-black rounded-lg">
-              <div className="absolute -top-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -top-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-
-              <blockquote className="text-lg text-gray-300 mb-6 leading-relaxed">
-                "Switching to Memora transformed our medical school study group, reducing our collective study time from 6 hours daily to 2 hours while achieving 95% retention rates on board exams. The ReviseBy feature alone prevented three all-nighters before our anatomy final."
-              </blockquote>
-              <div className="flex items-center space-x-4">
-                <div className="w-12 h-12 border border-white/20 rounded-full flex items-center justify-center overflow-hidden">
-                  <span className="text-white font-bold text-lg">S</span>
-                </div>
-                <div>
-                  <div className="text-white font-semibold">Sarah Chen</div>
-                  <div className="text-gray-400 text-sm">4th Year Medical Student, Stanford University School of Medicine</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Testimonial 2 */}
-            <div className="relative border border-white/20 p-8 bg-black rounded-lg">
-              <div className="absolute -top-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -top-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-
-              <blockquote className="text-lg text-gray-300 mb-6 leading-relaxed">
-                "As a software engineer preparing for technical interviews, Memora's algorithm helped me retain complex data structures and algorithms effortlessly. I landed my dream job at Google after just 3 months of consistent practice. The MemScore tracking kept me motivated throughout."
-              </blockquote>
-              <div className="flex items-center space-x-4">
-                <div className="w-12 h-12 border border-white/20 rounded-full flex items-center justify-center">
-                  <span className="text-white font-bold text-lg">M</span>
-                </div>
-                <div>
-                  <div className="text-white font-semibold">Marcus Rodriguez</div>
-                  <div className="text-gray-400 text-sm">Senior Software Engineer, Google</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Testimonial 3 */}
-            <div className="relative border border-white/20 p-8 bg-black rounded-lg">
-              <div className="absolute -top-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -top-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-
-              <blockquote className="text-lg text-gray-300 mb-6 leading-relaxed">
-                "Learning Mandarin seemed impossible until I discovered Memora. The DocTags feature let me organize video lessons, PDFs, and audio files seamlessly. After 8 months, I achieved HSK Level 4 proficiency. The Chronicle feature showed my incredible progress journey."
-              </blockquote>
-              <div className="flex items-center space-x-4">
-                <div className="w-12 h-12 border border-white/20 rounded-full flex items-center justify-center">
-                  <span className="text-white font-bold text-lg">A</span>
-                </div>
-                <div>
-                  <div className="text-white font-semibold">Aisha Patel</div>
-                  <div className="text-gray-400 text-sm">International Business Consultant</div>
-                </div>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Final CTA section */}
-      <div className="relative py-20">
-        <div className="absolute inset-0 opacity-10">
-          <div className="h-full w-full" style={{
-            backgroundImage: `
-              linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
-            `,
-            backgroundSize: '100px 100px'
-          }}>
-          </div>
-        </div>
-
-        <div id="pricing" className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-px">
-
-            {/* Ready to learn */}
-            <div className="relative border border-white/20 p-8">
-              {/* Corner plus signs */}
-              <div className="absolute -top-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -top-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-
-              <h3 className="text-xl font-semibold mb-4">Ready to optimize your learning?</h3>
-              <p className="text-gray-400 mb-8">Start building with a free account. Upgrade to Pro for advanced analytics and team features.</p>
-
-              <div className="space-y-4">
-                <button className="w-full bg-white text-black px-6 py-3 rounded-md font-medium hover:bg-gray-100 transition-colors">
-                  Start Learning
-                </button>
-                <button className="w-full border border-white/20 text-white px-6 py-3 rounded-md font-medium hover:bg-white/5 transition-colors">
-                  Talk to an Expert
-                </button>
-              </div>
-            </div>
-
-            {/* Explore Memora Pro */}
-            <div className="relative border border-white/20 p-8">
-              {/* Corner plus signs */}
-              <div className="absolute -top-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -top-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-              <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3">
-                <div className="absolute top-1/2 left-0 w-full h-px bg-white/40"></div>
-                <div className="absolute left-1/2 top-0 w-px h-full bg-white/40"></div>
-              </div>
-
-              <h3 className="text-xl font-semibold mb-4">Explore Memora Pro</h3>
-              <p className="text-gray-400 mb-8">with enhanced analytics, team collaboration, and priority support for serious learners.</p>
-
-              <button className="border border-white/20 text-white px-6 py-3 rounded-md font-medium hover:bg-white/5 transition-colors">
-                Explore Pro Features
-              </button>
-            </div>
-
-          </div>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <footer className="relative border-t border-white/10 py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
-            <div>
-              <div className="flex items-center space-x-2 mb-4">
-                <Logo size="sm" className="text-white" />
-                <span className="font-semibold">Memora</span>
-              </div>
-              <p className="text-gray-400 text-sm">
-                Intelligent spaced repetition for optimized learning and memory retention.
+          <Reveal className="mb-10 sm:mb-12">
+            <div className="max-w-3xl">
+              <p className="text-xs uppercase tracking-[0.18em] text-blue-200/85 mb-3">Memory Evaluation</p>
+              <h2 className="text-3xl sm:text-5xl font-semibold tracking-tight mb-4">
+                A clean <span className="text-blue-200">3-step baseline</span> before your first schedule.
+              </h2>
+              <p className="text-zinc-400 text-base sm:text-lg leading-relaxed">
+                Memora evaluates recall accuracy, sequence memory, and response speed first. The resulting <span className="text-cyan-100">MemScore</span> becomes your personal scheduling signal, not a generic default.
               </p>
             </div>
-            <div>
-              <h4 className="font-semibold mb-3">Product</h4>
-              <div className="space-y-2 text-sm text-gray-400">
-                <a href="#" className="block hover:text-white transition-colors">Features</a>
-                <a href="#" className="block hover:text-white transition-colors">Pricing</a>
-                <a href="#" className="block hover:text-white transition-colors">Enterprise</a>
-                <a href="#" className="block hover:text-white transition-colors">API</a>
+          </Reveal>
+
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+            <Reveal className="xl:col-span-4">
+              <motion.aside
+                initial={{ opacity: 0, y: 24 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.25 }}
+                transition={{ duration: 0.55, ease: 'easeOut' }}
+                className="h-full rounded-2xl border border-white/14 bg-black/60 backdrop-blur-sm p-5 sm:p-6"
+              >
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-white/5">
+                    <Clock className="h-4.5 w-4.5 text-blue-200" />
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-semibold tracking-tight text-zinc-100">Evaluation Flow</h3>
+                </div>
+
+                <div className="space-y-3">
+                  {memscoreProcess.map((step, idx) => (
+                    <div key={step} className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3.5">
+                      <div className="flex items-start gap-3">
+                        <span className="mt-0.5 inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-blue-200/30 text-[11px] text-blue-100">
+                          {idx + 1}
+                        </span>
+                        <p className="text-sm leading-relaxed text-zinc-300">{step}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 rounded-xl border border-blue-200/20 bg-blue-300/5 px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-blue-100/70 mb-1.5">Result</p>
+                  <p className="text-sm text-zinc-300">MemScore drives first revision spacing, queue pressure, and daily recommendation order.</p>
+                </div>
+              </motion.aside>
+            </Reveal>
+
+            <div className="xl:col-span-8 space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {memscoreGames.map((game, index) => {
+                  const Icon = game.icon;
+
+                  return (
+                    <Reveal key={game.title} delay={index * 0.05}>
+                      <motion.article
+                        initial={{ opacity: 0, y: 24 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true, amount: 0.25 }}
+                        transition={{ duration: 0.55, delay: index * 0.04, ease: 'easeOut' }}
+                        whileHover={{ y: -4 }}
+                        className="group h-full rounded-2xl border border-white/14 bg-black/60 backdrop-blur-sm p-5"
+                      >
+                        <div className="mb-3 flex items-center justify-between">
+                          <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-white/5">
+                            <Icon className="h-4.5 w-4.5 text-zinc-100" />
+                          </div>
+                          <span className={`text-[10px] uppercase tracking-[0.14em] ${index === 0 ? 'text-cyan-200/80' : index === 1 ? 'text-indigo-200/80' : 'text-emerald-200/80'}`}>
+                            Stage {index + 1}
+                          </span>
+                        </div>
+
+                        <h3 className="text-xl font-semibold tracking-tight mb-1.5 text-zinc-100">{game.title}</h3>
+                        <p className={`text-sm mb-3 ${index === 0 ? 'text-cyan-200/80' : index === 1 ? 'text-indigo-200/80' : 'text-emerald-200/80'}`}>{game.subtitle}</p>
+                        <p className="text-sm text-zinc-300 leading-relaxed mb-4">{game.detail}</p>
+
+                        <div className="flex flex-wrap gap-2 mt-auto">
+                          {game.stats.map((item) => (
+                            <span key={item} className="text-[11px] px-2.5 py-1 rounded-full border border-white/12 text-zinc-200 bg-white/[0.03]">
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      </motion.article>
+                    </Reveal>
+                  );
+                })}
               </div>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-3">Resources</h4>
-              <div className="space-y-2 text-sm text-gray-400">
-                <a href="#" className="block hover:text-white transition-colors">Docs</a>
-                <a href="#" className="block hover:text-white transition-colors">Guides</a>
-                <a href="#" className="block hover:text-white transition-colors">Blog</a>
-                <a href="#" className="block hover:text-white transition-colors">Community</a>
-              </div>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-3">Company</h4>
-              <div className="space-y-2 text-sm text-gray-400">
-                <a href="#" className="block hover:text-white transition-colors">About</a>
-                <a href="#" className="block hover:text-white transition-colors">Contact</a>
-                <a href="#" className="block hover:text-white transition-colors">Privacy</a>
-                <a href="#" className="block hover:text-white transition-colors">Terms</a>
-              </div>
-            </div>
-          </div>
-          <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row justify-between items-center">
-            <p className="text-gray-400 text-sm">© 2025 Memora. All rights reserved.</p>
-            <div className="flex space-x-6 mt-4 md:mt-0">
-              <a href="#" className="text-gray-400 hover:text-white transition-colors">
-                <span className="sr-only">GitHub</span>
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 0C4.477 0 0 4.484 0 10.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0110 4.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.203 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.942.359.31.678.921.678 1.856 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0020 10.017C20 4.484 15.522 0 10 0z" clipRule="evenodd" />
-                </svg>
-              </a>
-              <a href="#" className="text-gray-400 hover:text-white transition-colors">
-                <span className="sr-only">Twitter</span>
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M6.29 18.251c7.547 0 11.675-6.253 11.675-11.675 0-.178 0-.355-.012-.53A8.348 8.348 0 0020 3.92a8.19 8.19 0 01-2.357.646 4.118 4.118 0 001.804-2.27 8.224 8.224 0 01-2.605.996 4.107 4.107 0 00-6.993 3.743 11.65 11.65 0 01-8.457-4.287 4.106 4.106 0 001.27 5.477A4.073 4.073 0 01.8 7.713v.052a4.105 4.105 0 003.292 4.022 4.095 4.095 0 01-1.853.07 4.108 4.108 0 003.834 2.85A8.233 8.233 0 010 16.407a11.616 11.616 0 006.29 1.84" />
-                </svg>
-              </a>
+
+              <Reveal>
+                <motion.div
+                  initial={{ opacity: 0, y: 24 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, amount: 0.25 }}
+                  transition={{ duration: 0.55, ease: 'easeOut' }}
+                  className="rounded-2xl border border-white/14 bg-black/60 backdrop-blur-sm p-5 sm:p-6"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-5">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.14em] text-blue-200/80 mb-2">Live Memory Signal</p>
+                      <h4 className="text-2xl sm:text-3xl font-semibold tracking-tight">Baseline composition preview</h4>
+                    </div>
+                    <div className="rounded-full border border-white/15 px-3 py-1 text-xs text-zinc-300 bg-white/[0.03]">
+                      Updates after all stages complete
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+                      <p className="text-[10px] uppercase tracking-[0.13em] text-cyan-200/75">Memory</p>
+                      <p className="text-2xl font-semibold mt-1 text-cyan-100">8.4</p>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+                      <p className="text-[10px] uppercase tracking-[0.13em] text-indigo-200/75">Recall</p>
+                      <p className="text-2xl font-semibold mt-1 text-indigo-100">7.9</p>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+                      <p className="text-[10px] uppercase tracking-[0.13em] text-emerald-200/75">Speed</p>
+                      <p className="text-2xl font-semibold mt-1 text-emerald-100">8.1</p>
+                    </div>
+                    <div className="rounded-xl border border-blue-200/25 bg-blue-300/10 p-3.5">
+                      <p className="text-[10px] uppercase tracking-[0.13em] text-blue-100/75">MemScore</p>
+                      <p className="text-2xl font-semibold mt-1 text-blue-100">8.2</p>
+                    </div>
+                  </div>
+                </motion.div>
+              </Reveal>
             </div>
           </div>
         </div>
-      </footer>
+      </section>
+
+      <section id="features" className="relative py-20 sm:py-24 scroll-mt-24">
+        <div className="absolute inset-0 opacity-18 bg-[radial-gradient(circle_at_18%_8%,rgba(255,255,255,0.07),transparent_34%),radial-gradient(circle_at_85%_78%,rgba(255,255,255,0.05),transparent_36%)]" />
+
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <Reveal className="text-center mb-14">
+            <p className="text-xs uppercase tracking-[0.18em] text-blue-300/80 mb-3">Platform Modules</p>
+            <h2 className="text-4xl sm:text-5xl font-semibold tracking-tight mb-4">Everything in one place.</h2>
+            <p className="max-w-3xl mx-auto text-zinc-400 text-lg leading-relaxed">
+              Nine focused modules, one clean grid. No noisy infographics, just a structured product surface that explains exactly how Memora works.
+            </p>
+          </Reveal>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {featureCards.map((card, index) => (
+              <FeatureCard key={card.title} card={card} index={index} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="feedback" className="relative py-20 border-y border-white/10 overflow-hidden scroll-mt-24">
+        <div className="absolute inset-0 opacity-10 bg-[linear-gradient(180deg,rgba(59,130,246,0.25),transparent_40%,rgba(147,51,234,0.25))]" />
+
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <Reveal className="mb-10">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-purple-300/80 mb-3">Feedback</p>
+              <h3 className="text-3xl sm:text-4xl font-semibold tracking-tight">What learners say after switching to Memora</h3>
+            </div>
+          </Reveal>
+
+          <div className="relative overflow-hidden">
+            <div className="pointer-events-none absolute inset-y-0 left-0 w-20 bg-gradient-to-r from-black to-transparent z-10" />
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-20 bg-gradient-to-l from-black to-transparent z-10" />
+
+            <motion.div
+              className="flex gap-5 w-max"
+              animate={{ x: ['0%', '-50%'] }}
+              transition={{ duration: 32, ease: 'linear', repeat: Infinity }}
+            >
+              {[...feedbackItems, ...feedbackItems].map((item, index) => {
+                let nameTone =
+                  index % 3 === 0
+                    ? 'text-blue-100'
+                    : index % 3 === 1
+                      ? 'text-violet-100'
+                      : 'text-cyan-100';
+
+                if (item.name === 'Rahul V') {
+                  nameTone = 'text-cyan-100';
+                }
+                if (item.name === 'Kiran S') {
+                  nameTone = 'text-blue-100';
+                }
+
+                return (
+                  <motion.article
+                    key={`${item.name}-${index}`}
+                    whileHover={{ y: -3, scale: 1.005 }}
+                    className="w-[320px] sm:w-[360px] rounded-2xl border border-white/15 bg-black p-6"
+                  >
+                    <p className="text-zinc-200 leading-relaxed mb-6">{item.quote}</p>
+                    <div className="text-sm">
+                      <div className={`font-semibold ${nameTone}`}>{item.name}</div>
+                      <div className="text-zinc-400">{item.role}</div>
+                    </div>
+                  </motion.article>
+                );
+              })}
+            </motion.div>
+          </div>
+
+          <div className="relative overflow-hidden mt-5">
+            <div className="pointer-events-none absolute inset-y-0 left-0 w-20 bg-gradient-to-r from-black to-transparent z-10" />
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-20 bg-gradient-to-l from-black to-transparent z-10" />
+
+            <motion.div
+              className="flex gap-5 w-max"
+              animate={{ x: ['-50%', '0%'] }}
+              transition={{ duration: 34, ease: 'linear', repeat: Infinity }}
+            >
+              {[...feedbackItemsSecondary, ...feedbackItemsSecondary].map((item, index) => {
+                return (
+                  <motion.article
+                    key={`${item.name}-secondary-${index}`}
+                    whileHover={{ y: -3, scale: 1.005 }}
+                    className="w-[320px] sm:w-[360px] rounded-2xl border border-white/15 bg-gradient-to-b from-cyan-400/5 to-black p-6"
+                  >
+                    <p className="text-zinc-200 leading-relaxed mb-6">{item.quote}</p>
+                    <div className="text-sm">
+                      <div className="font-semibold text-cyan-100">{item.name}</div>
+                      <div className="text-zinc-400">{item.role}</div>
+                    </div>
+                  </motion.article>
+                );
+              })}
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      <section id="pricing" className="relative py-20 sm:py-24 scroll-mt-24">
+        <div className="absolute inset-0 opacity-15 bg-[radial-gradient(circle_at_50%_0%,rgba(59,130,246,0.25),transparent_35%)]" />
+
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <Reveal className="text-center mb-12">
+            <p className="text-xs uppercase tracking-[0.18em] text-blue-300/80 mb-3">Pricing</p>
+            <h3 className="text-4xl sm:text-5xl font-semibold tracking-tight mb-4">Choose your learning momentum</h3>
+            <p className="max-w-3xl mx-auto text-zinc-400 text-lg">
+              Start free. Upgrade when you want deeper analytics, smarter automation, and collaboration features.
+            </p>
+          </Reveal>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <motion.div
+              whileHover={{ y: -8 }}
+              initial={{ opacity: 0, y: 28 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.25 }}
+              transition={{ duration: 0.55, ease: 'easeOut' }}
+              className="rounded-2xl border border-white/12 bg-[#04050a] p-7"
+            >
+              <div className="flex items-center justify-between mb-5">
+                <h4 className="text-2xl font-semibold">Starter</h4>
+                <Users className="w-5 h-5 text-blue-300" />
+              </div>
+              <p className="text-zinc-400 mb-5">For solo learners building consistency.</p>
+              <div className="text-4xl font-semibold mb-6">$0<span className="text-lg text-zinc-400">/mo</span></div>
+              <ul className="space-y-3 text-zinc-300 mb-7">
+                <li>MemScore evaluation</li>
+                <li>Topics, Chronicle, Journal</li>
+                <li>Basic analytics + Focus Mode</li>
+              </ul>
+              <Link to="/signup" className="inline-flex items-center justify-center w-full rounded-full border border-white/20 py-3 font-semibold hover:bg-white/8 transition-colors">
+                Start Free
+              </Link>
+            </motion.div>
+
+            <motion.div
+              whileHover={{ y: -10, scale: 1.01 }}
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.25 }}
+              transition={{ duration: 0.58, delay: 0.08, ease: 'easeOut' }}
+              className="rounded-2xl p-[1px] bg-gradient-to-br from-blue-500/70 via-white/30 to-purple-500/70 shadow-[0_0_34px_rgba(59,130,246,0.2)]"
+            >
+              <div className="rounded-2xl border border-white/15 bg-[#04050a] p-7 h-full">
+                <div className="flex items-center justify-between mb-5">
+                  <h4 className="text-2xl font-semibold">Pro</h4>
+                  <span className="text-xs uppercase tracking-[0.15em] text-blue-200 bg-blue-500/20 px-3 py-1 rounded-full">Popular</span>
+                </div>
+                <p className="text-zinc-400 mb-5">For ambitious learners optimizing outcomes.</p>
+                <div className="text-4xl font-semibold mb-6">$9<span className="text-lg text-zinc-400">/mo</span></div>
+                <ul className="space-y-3 text-zinc-300 mb-7">
+                  <li>Everything in Starter</li>
+                  <li>Advanced retention analytics</li>
+                  <li>Auto GitHub journal sync</li>
+                  <li>Priority Neuro scheduling</li>
+                </ul>
+                <Link to="/signup" className="inline-flex items-center justify-center w-full rounded-full bg-white text-black py-3 font-semibold hover:bg-zinc-100 transition-colors">
+                  Get Pro
+                </Link>
+              </div>
+            </motion.div>
+
+            <motion.div
+              whileHover={{ y: -8 }}
+              initial={{ opacity: 0, y: 28 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.25 }}
+              transition={{ duration: 0.55, delay: 0.16, ease: 'easeOut' }}
+              className="rounded-2xl border border-white/12 bg-[#04050a] p-7"
+            >
+              <div className="flex items-center justify-between mb-5">
+                <h4 className="text-2xl font-semibold">Team</h4>
+                <Brain className="w-5 h-5 text-purple-300" />
+              </div>
+              <p className="text-zinc-400 mb-5">For clubs, cohorts, and coaching teams.</p>
+              <div className="text-4xl font-semibold mb-6">$19<span className="text-lg text-zinc-400">/user/mo</span></div>
+              <ul className="space-y-3 text-zinc-300 mb-7">
+                <li>Everything in Pro</li>
+                <li>Shared topic libraries</li>
+                <li>Group progress views</li>
+                <li>Role-based workspace controls</li>
+              </ul>
+              <button className="inline-flex items-center justify-center w-full rounded-full border border-white/20 py-3 font-semibold hover:bg-white/8 transition-colors">
+                Contact Team Sales
+              </button>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      <PublicFooter />
     </div>
   );
 }

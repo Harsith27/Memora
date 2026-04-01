@@ -1,22 +1,589 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  BarChart3, TrendingUp, Clock, Target, Brain, Calendar,
-  FileText, BookOpen, Settings, PanelLeft, PanelLeftClose,
-  Award, Zap, Activity, Users, ChevronUp, ChevronDown,
-  Eye, CheckCircle, XCircle, RotateCcw, Timer, Flame, GitBranch,
+  BarChart3, Brain, Calendar,
+  FileText, BookOpen, PanelLeft, PanelLeftClose,
+  Eye, RotateCcw, GitBranch, TrendingUp,
   Linkedin, Twitter, Instagram, Globe
 } from 'lucide-react';
+import {
+  Area,
+  AreaChart as RechartsAreaChart,
+  Bar,
+  BarChart as RechartsBarChart,
+  Cell,
+  CartesianGrid,
+  Legend,
+  Pie,
+  PieChart,
+  PolarAngleAxis,
+  PolarGrid,
+  Radar,
+  RadarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from 'recharts';
 import { useAuth } from '../contexts/AuthContext';
 import Logo from '../components/Logo';
 import Toast from '../components/Toast';
-import MemScoreChart from '../components/MemScoreChart';
-import ProgressRing from '../components/ProgressRing';
-import SimpleBarChart from '../components/SimpleBarChart';
-import DailyUsageTracker from '../components/DailyUsageTracker';
 import apiService from '../services/api';
 import ShadcnSelect from '../components/ShadcnSelect';
+import docTagsService from '../services/docTagsService';
+
+const ANALYTICS_TOOLTIP_STYLE = {
+  backgroundColor: '#000000',
+  border: '1px solid rgba(148,163,184,0.35)',
+  borderRadius: '10px',
+  color: '#e2e8f0'
+};
+
+const ANALYTICS_TOOLTIP_LABEL_STYLE = { color: '#f3f4f6' };
+const ANALYTICS_TOOLTIP_ITEM_STYLE = { color: '#cbd5e1' };
+
+const AreaTrendChart = ({ data = [], series = [], height = 220 }) => {
+  if (!Array.isArray(data) || data.length === 0 || series.length === 0) {
+    return (
+      <div className="h-56 rounded-lg border border-white/10 bg-white/[0.02] flex items-center justify-center">
+        <p className="text-sm text-gray-500">No trend data available</p>
+      </div>
+    );
+  }
+
+  const width = 900;
+  const padding = { top: 16, right: 12, bottom: 34, left: 12 };
+  const chartHeight = height;
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = chartHeight - padding.top - padding.bottom;
+
+  const maxValue = Math.max(
+    ...data.flatMap((point) => series.map((s) => Number(point[s.key]) || 0)),
+    1
+  );
+
+  const getX = (index) => {
+    if (data.length === 1) return padding.left + plotWidth / 2;
+    return padding.left + (index / (data.length - 1)) * plotWidth;
+  };
+
+  const getY = (value) => {
+    const numeric = Number(value) || 0;
+    return padding.top + plotHeight - (numeric / maxValue) * plotHeight;
+  };
+
+  const buildLine = (key) => {
+    return data
+      .map((point, index) => `${index === 0 ? 'M' : 'L'} ${getX(index)} ${getY(point[key])}`)
+      .join(' ');
+  };
+
+  const buildArea = (key) => {
+    const line = buildLine(key);
+    const firstX = getX(0);
+    const lastX = getX(data.length - 1);
+    const baseY = padding.top + plotHeight;
+    return `${line} L ${lastX} ${baseY} L ${firstX} ${baseY} Z`;
+  };
+
+  const labelStride = Math.max(1, Math.floor(data.length / 7));
+
+  return (
+    <div className="space-y-3">
+      <div className="h-[230px] rounded-lg border border-white/10 bg-white/[0.02] p-2">
+        <svg viewBox={`0 0 ${width} ${chartHeight}`} className="w-full h-full">
+          {[0, 0.25, 0.5, 0.75, 1].map((step) => {
+            const y = padding.top + plotHeight - plotHeight * step;
+            return (
+              <line
+                key={step}
+                x1={padding.left}
+                y1={y}
+                x2={padding.left + plotWidth}
+                y2={y}
+                stroke="rgba(148,163,184,0.12)"
+                strokeWidth="1"
+              />
+            );
+          })}
+
+          <defs>
+            {series.map((s) => (
+              <linearGradient key={`gradient-${s.key}`} id={`gradient-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={s.color} stopOpacity="0.35" />
+                <stop offset="100%" stopColor={s.color} stopOpacity="0.02" />
+              </linearGradient>
+            ))}
+          </defs>
+
+          {series.map((s) => (
+            <path key={`area-${s.key}`} d={buildArea(s.key)} fill={`url(#gradient-${s.key})`} />
+          ))}
+
+          {series.map((s) => (
+            <path
+              key={`line-${s.key}`}
+              d={buildLine(s.key)}
+              fill="none"
+              stroke={s.color}
+              strokeWidth="2"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          ))}
+        </svg>
+      </div>
+
+      <div className="flex items-center justify-between text-xs text-gray-500 px-1">
+        {data.map((point, index) => (
+          (index % labelStride === 0 || index === data.length - 1) ? (
+            <span key={`${point.label}-${index}`}>{point.label}</span>
+          ) : null
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-4 text-xs text-gray-300">
+        {series.map((s) => (
+          <div key={`legend-${s.key}`} className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: s.color }} />
+            <span>{s.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const formatShortDate = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+const InteractiveActivityAreaChart = ({ data = [] }) => {
+  if (!Array.isArray(data) || data.length === 0) {
+    return (
+      <div className="rounded-xl border border-white/20 bg-black p-6">
+        <div className="h-72 rounded-lg border border-white/10 bg-white/[0.02] flex items-center justify-center">
+          <p className="text-sm text-gray-500">No activity data available</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-white/20 bg-black overflow-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 border-b border-white/10 px-5 py-5">
+        <div className="grid flex-1 gap-1">
+          <h3 className="text-2xl font-semibold text-white">Activity Intelligence</h3>
+          <p className="text-sm text-gray-400">Revisions, focus minutes, and topics added over time</p>
+        </div>
+      </div>
+
+      <div className="px-2 sm:px-4 pt-4 pb-3">
+        <div className="h-[320px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <RechartsAreaChart data={data} margin={{ top: 10, right: 18, left: 6, bottom: 8 }}>
+              <defs>
+                <linearGradient id="fillRevisions" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#93c5fd" stopOpacity={0.58} />
+                  <stop offset="95%" stopColor="#93c5fd" stopOpacity={0.06} />
+                </linearGradient>
+                <linearGradient id="fillFocusMinutes" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.52} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.05} />
+                </linearGradient>
+                <linearGradient id="fillTopicsAdded" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#1d4ed8" stopOpacity={0.48} />
+                  <stop offset="95%" stopColor="#1d4ed8" stopOpacity={0.04} />
+                </linearGradient>
+              </defs>
+
+              <CartesianGrid vertical={false} stroke="rgba(148,163,184,0.14)" />
+              <XAxis
+                dataKey="date"
+                tickLine={false}
+                axisLine={false}
+                minTickGap={28}
+                tickMargin={10}
+                tick={{ fill: 'rgba(148,163,184,0.86)', fontSize: 12 }}
+                tickFormatter={formatShortDate}
+              />
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                width={36}
+                tick={{ fill: 'rgba(148,163,184,0.72)', fontSize: 11 }}
+              />
+              <Tooltip
+                contentStyle={ANALYTICS_TOOLTIP_STYLE}
+                labelStyle={ANALYTICS_TOOLTIP_LABEL_STYLE}
+                itemStyle={ANALYTICS_TOOLTIP_ITEM_STYLE}
+                labelFormatter={(value) => formatShortDate(value)}
+                formatter={(value, name) => {
+                  if (name === 'Focus Minutes') return [`${value} min`, name];
+                  return [value, name];
+                }}
+              />
+
+              <Area type="natural" dataKey="topicsAdded" name="Topics Added" stroke="#1d4ed8" fill="url(#fillTopicsAdded)" strokeWidth={2} stackId="activity" />
+              <Area type="natural" dataKey="focusMinutes" name="Focus Minutes" stroke="#3b82f6" fill="url(#fillFocusMinutes)" strokeWidth={2} stackId="activity" />
+              <Area type="natural" dataKey="revisions" name="Revisions" stroke="#93c5fd" fill="url(#fillRevisions)" strokeWidth={2} stackId="activity" />
+
+              <Legend
+                verticalAlign="bottom"
+                iconType="circle"
+                wrapperStyle={{ paddingTop: 10, color: '#cbd5e1', fontSize: 12 }}
+              />
+            </RechartsAreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DifficultyLongBarChart = ({ data = [] }) => {
+  const chartData = Array.isArray(data)
+    ? data.map((item, index) => ({
+      label: item.label,
+      topics: Number(item.count || 0),
+      percentage: Number(item.percentage || 0),
+      fill: ['#93c5fd', '#3b82f6', '#2563eb', '#1d4ed8', '#1e40af'][index] || '#3b82f6'
+    }))
+    : [];
+
+  const totalTopics = chartData.reduce((sum, item) => sum + item.topics, 0);
+  const dominantBand = [...chartData].sort((a, b) => b.topics - a.topics)[0];
+  const dominantShare = totalTopics > 0 && dominantBand
+    ? ((dominantBand.topics / totalTopics) * 100).toFixed(1)
+    : '0.0';
+
+  if (chartData.length === 0) {
+    return (
+      <div className="rounded-xl border border-white/20 bg-black p-6">
+        <div className="h-56 rounded-lg border border-white/10 bg-white/[0.02] flex items-center justify-center">
+          <p className="text-sm text-gray-500">No difficulty data available</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-white/20 bg-black p-6">
+      <div className="mb-5">
+        <h3 className="text-lg font-semibold text-white">Difficulty Distribution</h3>
+        <p className="text-sm text-gray-400 mt-1">Difficulty distribution across all topics</p>
+      </div>
+
+      <div className="h-[300px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <RechartsBarChart data={chartData} layout="vertical" margin={{ top: 2, right: 6, left: 2, bottom: 2 }}>
+            <YAxis
+              dataKey="label"
+              type="category"
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: 'rgba(148,163,184,0.74)', fontSize: 13 }}
+              width={80}
+            />
+            <XAxis type="number" hide />
+            <Tooltip
+              cursor={false}
+              contentStyle={ANALYTICS_TOOLTIP_STYLE}
+              labelStyle={ANALYTICS_TOOLTIP_LABEL_STYLE}
+              itemStyle={ANALYTICS_TOOLTIP_ITEM_STYLE}
+              labelFormatter={(value) => `Difficulty: ${value}`}
+              formatter={(value, name, item) => [
+                `${Number(value || 0).toLocaleString()} topics (${Number(item?.payload?.percentage || 0).toFixed(1)}%)`,
+                'Count'
+              ]}
+            />
+            <Bar
+              dataKey="topics"
+              radius={6}
+              barSize={42}
+              background={{ fill: 'rgba(255,255,255,0.07)', radius: 6 }}
+            />
+          </RechartsBarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-white/10">
+        <div className="flex items-center gap-2 leading-none font-medium text-white">
+          <span>Highest concentration in {dominantBand?.label || 'N/A'} ({dominantShare}%)</span>
+          <TrendingUp className="h-4 w-4 text-blue-300" />
+        </div>
+        <div className="leading-none text-gray-400 mt-3 text-sm">
+          Showing live difficulty distribution across {totalTopics} topic{totalTopics === 1 ? '' : 's'}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ResourceDistributionPieCard = ({ data = [] }) => {
+  const chartData = Array.isArray(data)
+    ? data.filter((item) => Number(item?.value || 0) > 0)
+    : [];
+
+  if (chartData.length === 0) {
+    return (
+      <div className="rounded-xl border border-white/20 bg-black p-6">
+        <div className="h-[280px] rounded-lg border border-white/10 bg-white/[0.02] flex items-center justify-center">
+          <p className="text-sm text-gray-500">No resource data available</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-white/20 bg-black p-6">
+      <div className="mb-4">
+        <h3 className="text-lg font-semibold text-white">Resource Distribution</h3>
+        <p className="text-sm text-gray-400 mt-1">Files, workspaces, mindmaps, and total topics</p>
+      </div>
+
+      <div className="h-[300px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Tooltip
+              contentStyle={ANALYTICS_TOOLTIP_STYLE}
+              labelStyle={ANALYTICS_TOOLTIP_LABEL_STYLE}
+              itemStyle={ANALYTICS_TOOLTIP_ITEM_STYLE}
+              formatter={(value) => [Number(value || 0).toLocaleString(), 'Count']}
+            />
+            <Pie
+              data={chartData}
+              dataKey="value"
+              nameKey="label"
+              cx="50%"
+              cy="50%"
+              outerRadius={110}
+              labelLine={{ stroke: 'rgba(148,163,184,0.7)', strokeWidth: 1 }}
+              label={({ x, y, value }) => (
+                <text x={x} y={y} fill="#f8fafc" fontSize={14} textAnchor="middle" dominantBaseline="central">
+                  {Number(value || 0).toLocaleString()}
+                </text>
+              )}
+            >
+              {chartData.map((entry) => (
+                <Cell key={entry.key} fill={entry.color} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+        {chartData.map((entry) => (
+          <div key={`legend-${entry.key}`} className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.02] px-2 py-1.5">
+            <div className="flex items-center gap-2 text-gray-300">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
+              <span>{entry.label}</span>
+            </div>
+            <span className="text-white font-medium">{Number(entry.value || 0).toLocaleString()}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const HealthActionRadarCard = ({ data = [], rangeLabel = '' }) => {
+  const topFactor = [...data].sort((a, b) => b.score - a.score)[0];
+
+  if (!Array.isArray(data) || data.length === 0) {
+    return (
+      <div className="rounded-xl border border-white/20 bg-black p-6">
+        <div className="h-[280px] rounded-lg border border-white/10 bg-white/[0.02] flex items-center justify-center">
+          <p className="text-sm text-gray-500">No health action data available</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-white/20 bg-black p-6">
+      <div className="text-center mb-4">
+        <h3 className="text-lg font-semibold text-white">Radar Chart - Dots</h3>
+        <p className="text-sm text-gray-400 mt-1">Action profile for learning health factors</p>
+      </div>
+
+      <div className="h-[300px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <RadarChart data={data} margin={{ top: 10, right: 16, bottom: 10, left: 16 }}>
+            <PolarGrid stroke="rgba(148,163,184,0.22)" />
+            <PolarAngleAxis
+              dataKey="label"
+              tick={{ fill: 'rgba(148,163,184,0.86)', fontSize: 12 }}
+            />
+            <Tooltip
+              cursor={false}
+              contentStyle={ANALYTICS_TOOLTIP_STYLE}
+              labelStyle={ANALYTICS_TOOLTIP_LABEL_STYLE}
+              itemStyle={ANALYTICS_TOOLTIP_ITEM_STYLE}
+              formatter={(value, name, item) => [
+                `${Number(value).toFixed(1)}% (${item?.payload?.count || 0})`,
+                item?.payload?.label || name
+              ]}
+            />
+            <Radar
+              dataKey="score"
+              fill="#93c5fd"
+              fillOpacity={0.58}
+              stroke="#93c5fd"
+              strokeWidth={2}
+              dot={{
+                r: 4,
+                fill: '#93c5fd',
+                fillOpacity: 1
+              }}
+            />
+          </RadarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-white/10">
+        <div className="flex items-center gap-2 leading-none font-medium text-white">
+          <span>Strongest signal: {topFactor?.label || 'N/A'} ({topFactor?.score?.toFixed(1) || '0.0'}%)</span>
+          <TrendingUp className="h-4 w-4 text-blue-300" />
+        </div>
+        <div className="leading-none text-gray-400 mt-3 text-sm">
+          {rangeLabel || 'Current window'}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ConsistencyInteractiveBarCard = ({
+  data = [],
+  activeMetric = 'minutes',
+  onMetricChange,
+  range = '28d',
+  onRangeChange,
+  currentStreak = 0,
+  totalTopics = 0
+}) => {
+  const rangeDays = range === '7d' ? 7 : range === '14d' ? 14 : 28;
+  const chartData = data.slice(-rangeDays);
+
+  const totals = {
+    minutes: chartData.reduce((sum, day) => sum + Number(day.minutes || 0), 0),
+    reviews: chartData.reduce((sum, day) => sum + Number(day.reviews || 0), 0)
+  };
+
+  const activeDays = chartData.filter((day) => Number(day.minutes || 0) > 0 || Number(day.reviews || 0) > 0).length;
+
+  const rangeOptions = [
+    { value: '28d', label: 'Last 28 days' },
+    { value: '14d', label: 'Last 14 days' },
+    { value: '7d', label: 'Last 7 days' }
+  ];
+
+  if (!Array.isArray(data) || data.length === 0) {
+    return (
+      <div className="rounded-xl border border-white/20 bg-black p-6">
+        <div className="h-[260px] rounded-lg border border-white/10 bg-white/[0.02] flex items-center justify-center">
+          <p className="text-sm text-gray-500">No consistency data available</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-white/20 bg-black overflow-hidden">
+      <div className="flex flex-col md:flex-row md:items-stretch border-b border-white/10">
+        <div className="flex-1 px-6 pt-5 pb-4">
+          <h3 className="text-lg font-semibold text-white">Bar Chart - Interactive</h3>
+          <p className="text-sm text-gray-400 mt-1">Focus and review cadence for the selected period</p>
+          <div className="mt-3">
+            <ShadcnSelect
+              value={range}
+              onChange={onRangeChange}
+              options={rangeOptions}
+              className="w-44"
+            />
+          </div>
+        </div>
+
+        <div className="flex border-t md:border-t-0 md:border-l border-white/10">
+          {[
+            { key: 'minutes', label: 'Focus Minutes' },
+            { key: 'reviews', label: 'Reviews' }
+          ].map((item) => (
+            <button
+              key={item.key}
+              onClick={() => onMetricChange(item.key)}
+              className={`relative flex flex-1 flex-col justify-center gap-1 px-6 py-4 text-left border-l border-white/10 transition-colors ${
+                activeMetric === item.key ? 'bg-white/[0.04]' : 'hover:bg-white/[0.02]'
+              }`}
+            >
+              <span className="text-xs text-gray-400">{item.label}</span>
+              <span className="text-xl leading-none font-bold text-white">
+                {item.key === 'minutes' ? `${totals.minutes.toLocaleString()}m` : totals.reviews.toLocaleString()}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="px-2 sm:px-4 pt-4 pb-4">
+        <div className="h-[250px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <RechartsBarChart data={chartData} margin={{ left: 10, right: 10, top: 8, bottom: 4 }}>
+              <CartesianGrid vertical={false} stroke="rgba(148,163,184,0.14)" />
+              <XAxis
+                dataKey="key"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                minTickGap={24}
+                tick={{ fill: 'rgba(148,163,184,0.86)', fontSize: 12 }}
+                tickFormatter={(value) => {
+                  const date = new Date(value);
+                  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                }}
+              />
+              <Tooltip
+                cursor={{ fill: 'rgba(59,130,246,0.08)' }}
+                contentStyle={ANALYTICS_TOOLTIP_STYLE}
+                labelStyle={ANALYTICS_TOOLTIP_LABEL_STYLE}
+                itemStyle={ANALYTICS_TOOLTIP_ITEM_STYLE}
+                labelFormatter={(value) => {
+                  const date = new Date(value);
+                  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                }}
+                formatter={(value) => {
+                  if (activeMetric === 'minutes') return [`${value} min`, 'Focus Minutes'];
+                  return [value, 'Reviews'];
+                }}
+              />
+              <Bar
+                dataKey={activeMetric}
+                fill={activeMetric === 'minutes' ? '#3b82f6' : '#60a5fa'}
+                radius={[4, 4, 0, 0]}
+                maxBarSize={34}
+              />
+            </RechartsBarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between text-sm">
+          <div className="flex items-center gap-2 text-white font-medium">
+            <span>{activeDays} active day{activeDays === 1 ? '' : 's'}</span>
+            <TrendingUp className="h-4 w-4 text-blue-300" />
+          </div>
+          <div className="text-gray-400">
+            Streak {currentStreak} days · {totalTopics} total topics
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const Analytics = () => {
   const navigate = useNavigate();
@@ -47,12 +614,20 @@ const Analytics = () => {
       monthlyProgress: []
     },
     difficultyBreakdown: [],
-    recentActivity: []
+    recentActivity: [],
+    rawTopics: [],
+    rawDueTopics: [],
+    rawUpcomingTopics: [],
+    rawFocusSessions: [],
+    rawDocTags: [],
+    mindmapCount: 0
   });
 
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [timeRange, setTimeRange] = useState('7d'); // 7d, 30d, 90d, all
+  const [consistencyBarRange, setConsistencyBarRange] = useState('28d');
+  const [consistencyBarMetric, setConsistencyBarMetric] = useState('minutes');
   const userStorageKey = user?.id || user?._id || user?.email || 'guest';
 
   const getRangeDays = () => {
@@ -74,51 +649,32 @@ const Analytics = () => {
     return [];
   };
 
+  const getReviewTimestamp = (topic) => {
+    return topic?.lastReviewed || topic?.lastReviewDate || null;
+  };
+
+  const getSuccessRatePercent = (topic) => {
+    const explicit = Number(topic?.successRate);
+    if (Number.isFinite(explicit) && explicit > 0) return explicit;
+
+    const averagePerformance = Number(topic?.averagePerformance);
+    if (Number.isFinite(averagePerformance) && averagePerformance > 0) {
+      return averagePerformance * 100;
+    }
+
+    return 0;
+  };
+
   // Sidebar navigation items
   const sidebarItems = [
     { icon: Brain, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
+    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
     { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
-    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
     { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
     { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
-    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" }
+    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" }
   ];
-
-  // Handle sidebar navigation
-  const handleSidebarClick = (item) => {
-    if (item.label === "Analytics") return;
-
-    if (item.label === "Dashboard") {
-      navigate('/dashboard');
-      return;
-    }
-
-    if (item.label === "DocTags") {
-      navigate('/doctags');
-      return;
-    }
-
-    if (item.label === "Journal") {
-      navigate('/journal');
-      return;
-    }
-
-    if (item.label === "Mindmaps") {
-      navigate('/mindmaps');
-      return;
-    }
-
-    if (item.label === "Graph Mode") {
-      navigate('/graph');
-      return;
-    }
-
-    if (item.label === "Chronicle") {
-      navigate('/chronicle');
-      return;
-    }
-  };
 
   // Quick actions for Analytics
   const quickActions = [
@@ -153,6 +709,7 @@ const Analytics = () => {
       let dueTopicsResponse = { success: false, topics: [] };
       let upcomingResponse = { success: false, topics: [] };
       let memScoreResponse = { success: false, data: [] };
+      let docTagsResponse = { success: false, docTags: [] };
 
       try {
         topicsResponse = await apiService.getTopics();
@@ -194,10 +751,25 @@ const Analytics = () => {
         }
       }
 
+      try {
+        docTagsResponse = await docTagsService.getDocTags({ limit: 1000 });
+      } catch (error) {
+        console.warn('Failed to load DocTags:', error);
+      }
+
       // Process overview data with safe defaults
       const totalTopics = (topicsResponse.success && topicsResponse.topics) ? topicsResponse.topics.length : 0;
       const dueToday = (dueTopicsResponse.success && dueTopicsResponse.topics) ? dueTopicsResponse.topics.length : 0;
       const upcomingTopics = (upcomingResponse.success && upcomingResponse.topics) ? upcomingResponse.topics : [];
+      const allDocTags = Array.isArray(docTagsResponse?.docTags) ? docTagsResponse.docTags : [];
+
+      let mindmapCount = 0;
+      try {
+        const savedMindmaps = JSON.parse(localStorage.getItem(`memora_mindmaps_${userStorageKey}`) || '[]');
+        mindmapCount = Array.isArray(savedMindmaps) ? savedMindmaps.length : 0;
+      } catch (error) {
+        console.warn('Failed to parse saved mindmaps:', error);
+      }
 
       // Calculate study streak and other metrics
       const studyStreak = calculateStudyStreak();
@@ -237,7 +809,13 @@ const Analytics = () => {
         topicPerformance,
         studyPatterns: finalStudyPatterns,
         difficultyBreakdown,
-        recentActivity: generateRecentActivity((topicsResponse.success && topicsResponse.topics) ? topicsResponse.topics : [])
+        recentActivity: generateRecentActivity((topicsResponse.success && topicsResponse.topics) ? topicsResponse.topics : []),
+        rawTopics: (topicsResponse.success && topicsResponse.topics) ? topicsResponse.topics : [],
+        rawDueTopics: (dueTopicsResponse.success && dueTopicsResponse.topics) ? dueTopicsResponse.topics : [],
+        rawUpcomingTopics: (upcomingResponse.success && upcomingResponse.topics) ? upcomingResponse.topics : [],
+        rawFocusSessions: getFocusSessions(),
+        rawDocTags: allDocTags,
+        mindmapCount
       });
 
     } catch (error) {
@@ -306,8 +884,8 @@ const Analytics = () => {
         title: topic.title,
         difficulty: topic.difficulty || 1,
         reviewCount: topic.reviewCount || 0,
-        successRate: topic.successRate || 0,
-        lastReviewed: topic.lastReviewDate,
+        successRate: getSuccessRatePercent(topic),
+        lastReviewed: getReviewTimestamp(topic),
         nextReview: topic.nextReviewDate,
         memScore: topic.memScore || 0
       }))
@@ -428,14 +1006,14 @@ const Analytics = () => {
     if (!Array.isArray(topics)) return [];
 
     return topics
-      .filter(topic => topic && topic.lastReviewDate && topic._id && topic.title)
-      .sort((a, b) => new Date(b.lastReviewDate) - new Date(a.lastReviewDate))
+      .filter(topic => topic && getReviewTimestamp(topic) && topic._id && topic.title)
+      .sort((a, b) => new Date(getReviewTimestamp(b)) - new Date(getReviewTimestamp(a)))
       .slice(0, 5)
       .map(topic => ({
         id: topic._id,
         title: topic.title,
         action: 'Reviewed',
-        date: topic.lastReviewDate,
+        date: getReviewTimestamp(topic),
         result: topic.lastReviewResult || 'completed'
       }));
   };
@@ -467,39 +1045,350 @@ const Analytics = () => {
     // In a real app, this would generate and download a PDF report
   };
 
-  const formatTime = (milliseconds) => {
-    const hours = Math.floor(milliseconds / (1000 * 60 * 60));
-    const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));
-    
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
+  const rangeDays = getRangeDays();
+  const rawTopics = analyticsData.rawTopics || [];
+  const rawDueTopics = analyticsData.rawDueTopics || [];
+  const rawUpcomingTopics = analyticsData.rawUpcomingTopics || [];
+  const rawFocusSessions = analyticsData.rawFocusSessions || [];
+
+  const withinRange = (value, days) => {
+    const time = new Date(value).getTime();
+    if (Number.isNaN(time)) return false;
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    return time >= cutoff;
+  };
+
+  const focusTrendData = useMemo(() => {
+    const days = Math.min(rangeDays, 90);
+    const byDate = new Map();
+
+    for (let i = days - 1; i >= 0; i -= 1) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const key = date.toISOString().split('T')[0];
+      byDate.set(key, {
+        key,
+        label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        minutes: 0,
+        reviews: 0
+      });
     }
-    return `${minutes}m`;
-  };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+    rawFocusSessions.forEach((session) => {
+      const timestamp = session?.date || session?.endTime || session?.startTime;
+      if (!timestamp) return;
+      const key = new Date(timestamp).toISOString().split('T')[0];
+      const row = byDate.get(key);
+      if (!row) return;
+      row.minutes += Math.round((session.duration || 0) / 60000);
     });
-  };
 
-  const dailyActivity = analyticsData.studyPatterns?.dailyActivity || [];
-  const totalWeeklyMinutes = dailyActivity.reduce((sum, day) => sum + (day.minutes || 0), 0);
-  const totalWeeklySessions = dailyActivity.reduce((sum, day) => sum + (day.sessions || 0), 0);
-  const activeDays = dailyActivity.filter(day => (day.minutes || 0) > 0).length;
-  const bestDayMinutes = dailyActivity.length > 0
-    ? Math.max(...dailyActivity.map(day => day.minutes || 0))
-    : 0;
-  const avgDailyMinutes = dailyActivity.length > 0
-    ? Math.round(totalWeeklyMinutes / dailyActivity.length)
-    : 0;
-  const avgSessionMinutes = totalWeeklySessions > 0
-    ? Math.round(totalWeeklyMinutes / totalWeeklySessions)
-    : 0;
-  const productivityScore = Math.round(((activeDays / Math.max(dailyActivity.length, 1)) * 100 + Math.min(totalWeeklySessions * 10, 100)) / 2);
+    rawTopics.forEach((topic) => {
+      const reviewTimestamp = getReviewTimestamp(topic);
+      if (!reviewTimestamp) return;
+      const key = new Date(reviewTimestamp).toISOString().split('T')[0];
+      const row = byDate.get(key);
+      if (!row) return;
+      row.reviews += 1;
+    });
+
+    return Array.from(byDate.values());
+  }, [rawFocusSessions, rawTopics, rangeDays]);
+
+  const activityTimelineData = useMemo(() => {
+    const days = 120;
+    const byDate = new Map();
+
+    for (let i = days - 1; i >= 0; i -= 1) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const key = date.toISOString().split('T')[0];
+
+      byDate.set(key, {
+        date: key,
+        label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        revisions: 0,
+        focusMinutes: 0,
+        topicsAdded: 0
+      });
+    }
+
+    rawFocusSessions.forEach((session) => {
+      const timestamp = session?.date || session?.endTime || session?.startTime;
+      if (!timestamp) return;
+
+      const key = new Date(timestamp).toISOString().split('T')[0];
+      const row = byDate.get(key);
+      if (!row) return;
+
+      row.focusMinutes += Math.round((session.duration || 0) / 60000);
+    });
+
+    rawTopics.forEach((topic) => {
+      const reviewTimestamp = getReviewTimestamp(topic);
+      if (reviewTimestamp) {
+        const reviewKey = new Date(reviewTimestamp).toISOString().split('T')[0];
+        const reviewRow = byDate.get(reviewKey);
+        if (reviewRow) reviewRow.revisions += 1;
+      }
+
+      if (topic?.createdAt) {
+        const createdKey = new Date(topic.createdAt).toISOString().split('T')[0];
+        const createdRow = byDate.get(createdKey);
+        if (createdRow) createdRow.topicsAdded += 1;
+      }
+    });
+
+    return Array.from(byDate.values());
+  }, [rawFocusSessions, rawTopics]);
+
+  const activityChartDays = timeRange === '7d'
+    ? 7
+    : timeRange === '30d'
+      ? 30
+      : timeRange === '90d'
+        ? 90
+        : activityTimelineData.length;
+
+  const activityChartRangeLabel = timeRange === 'all' ? 'All' : `${activityChartDays}d`;
+
+  const interactiveAreaData = activityTimelineData.slice(-activityChartDays);
+
+  const activityChartSummary = useMemo(() => {
+    return interactiveAreaData.reduce(
+      (acc, row) => {
+        acc.revisions += Number(row.revisions || 0);
+        acc.focusMinutes += Number(row.focusMinutes || 0);
+        acc.topicsAdded += Number(row.topicsAdded || 0);
+        return acc;
+      },
+      { revisions: 0, focusMinutes: 0, topicsAdded: 0 }
+    );
+  }, [interactiveAreaData]);
+
+  const focusSessionsInRange = useMemo(() => {
+    return rawFocusSessions.filter((session) => {
+      const timestamp = session?.date || session?.endTime || session?.startTime;
+      return timestamp ? withinRange(timestamp, rangeDays) : false;
+    });
+  }, [rawFocusSessions, rangeDays]);
+
+  const totalFocusMinutes = focusTrendData.reduce((sum, day) => sum + day.minutes, 0);
+  const totalFocusSessions = focusSessionsInRange.length;
+  const activeFocusDays = focusTrendData.filter(day => day.minutes > 0).length;
+  const avgFocusSessionMinutes = totalFocusSessions > 0 ? Math.round(totalFocusMinutes / totalFocusSessions) : 0;
+
+  const retentionTrendData = useMemo(() => {
+    const history = (analyticsData.memScoreHistory || []).slice(-20);
+    return history.map((entry, index) => ({
+      label: entry.label || new Date(entry.date || Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      score: Number(entry.score || 0),
+      index: index + 1
+    }));
+  }, [analyticsData.memScoreHistory]);
+
+  const difficultyMixData = useMemo(() => {
+    const labels = {
+      1: 'Very Easy',
+      2: 'Easy',
+      3: 'Medium',
+      4: 'Hard',
+      5: 'Very Hard'
+    };
+
+    return [1, 2, 3, 4, 5].map((level) => {
+      const match = analyticsData.difficultyBreakdown.find(item => item.difficulty === level);
+      return {
+        difficulty: level,
+        label: labels[level],
+        count: match?.count || 0,
+        percentage: match?.percentage || 0
+      };
+    });
+  }, [analyticsData.difficultyBreakdown]);
+
+  const resourceDistributionData = useMemo(() => {
+    const docTags = analyticsData.rawDocTags || [];
+    const filesCount = docTags.filter((item) => item?.type === 'document').length;
+    const workspacesCount = docTags.filter((item) => item?.type === 'folder').length;
+    const mindmapsCount = Number(analyticsData.mindmapCount || 0);
+    const topicsCount = Number(analyticsData.overview.totalTopics || 0);
+
+    return [
+      { key: 'files', label: 'Files', value: filesCount, color: '#82b5ff' },
+      { key: 'workspaces', label: 'Workspaces', value: workspacesCount, color: '#3b82f6' },
+      { key: 'mindmaps', label: 'Mindmaps', value: mindmapsCount, color: '#2563eb' },
+      { key: 'topics', label: 'Total Topics', value: topicsCount, color: '#1d4ed8' }
+    ];
+  }, [analyticsData.rawDocTags, analyticsData.mindmapCount, analyticsData.overview.totalTopics]);
+
+  const consistencyData = useMemo(() => {
+    const days = 28;
+    const map = new Map();
+
+    for (let i = days - 1; i >= 0; i -= 1) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const key = date.toISOString().split('T')[0];
+      map.set(key, {
+        key,
+        label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        day: date.toLocaleDateString('en-US', { weekday: 'short' }),
+        intensity: 0,
+        minutes: 0,
+        reviews: 0
+      });
+    }
+
+    rawFocusSessions.forEach((session) => {
+      const timestamp = session?.date || session?.endTime || session?.startTime;
+      if (!timestamp) return;
+      const key = new Date(timestamp).toISOString().split('T')[0];
+      const row = map.get(key);
+      if (!row) return;
+      row.minutes += Math.round((session.duration || 0) / 60000);
+    });
+
+    rawTopics.forEach((topic) => {
+      const reviewTimestamp = getReviewTimestamp(topic);
+      if (!reviewTimestamp) return;
+      const key = new Date(reviewTimestamp).toISOString().split('T')[0];
+      const row = map.get(key);
+      if (!row) return;
+      row.reviews += 1;
+    });
+
+    const result = Array.from(map.values()).map((day) => {
+      const intensity = Math.min(100, day.minutes * 2 + day.reviews * 12);
+      return { ...day, intensity };
+    });
+
+    return result;
+  }, [rawFocusSessions, rawTopics]);
+
+  const journalActionStats = useMemo(() => {
+    const stats = {
+      reviewed: 0,
+      fastReviewed: 0,
+      skipped: 0,
+      deleted: 0,
+      created: 0
+    };
+
+    const consumeActivities = (activities = []) => {
+      activities.forEach((entry) => {
+        const text = String(entry || '').toLowerCase();
+        if (text.includes('reviewed "')) {
+          stats.reviewed += 1;
+          if (text.includes(' - easy')) {
+            stats.fastReviewed += 1;
+          }
+        }
+        if (text.includes('skipped "')) stats.skipped += 1;
+        if (text.includes('deleted "')) stats.deleted += 1;
+        if (text.includes('added topic:')) stats.created += 1;
+      });
+    };
+
+    if (timeRange === 'all') {
+      const keyPattern = new RegExp(`^activities_\\d{4}-\\d{2}-\\d{2}_${userStorageKey}$`);
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (!key || !keyPattern.test(key)) continue;
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) consumeActivities(parsed);
+        } catch (error) {
+          // Ignore malformed activity entries.
+        }
+      }
+      return stats;
+    }
+
+    for (let i = 0; i < rangeDays; i += 1) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const dayKey = date.toISOString().split('T')[0];
+      const storageKey = `activities_${dayKey}_${userStorageKey}`;
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) continue;
+
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) consumeActivities(parsed);
+      } catch (error) {
+        // Ignore malformed activity entries.
+      }
+    }
+
+    return stats;
+  }, [rangeDays, timeRange, userStorageKey]);
+
+  const healthRadarData = useMemo(() => {
+    const now = Date.now();
+    const pastCutoff = now - rangeDays * 24 * 60 * 60 * 1000;
+    const futureCutoff = now + rangeDays * 24 * 60 * 60 * 1000;
+
+    const inPastWindow = (value) => {
+      const time = new Date(value).getTime();
+      if (Number.isNaN(time)) return false;
+      return time >= pastCutoff && time <= now;
+    };
+
+    const inDueWindow = (value) => {
+      const time = new Date(value).getTime();
+      if (Number.isNaN(time)) return false;
+      return time <= futureCutoff;
+    };
+
+    const completedFastCount = rawTopics.filter((topic) => {
+      const reviews = Number(topic?.reviewCount || 0);
+      const success = getSuccessRatePercent(topic);
+      if (!(reviews > 0 && success >= 80)) return false;
+      const reviewTimestamp = getReviewTimestamp(topic);
+      return reviewTimestamp ? inPastWindow(reviewTimestamp) : false;
+    }).length;
+
+    const reviewedCount = rawTopics.filter((topic) => {
+      const reviewTimestamp = getReviewTimestamp(topic);
+      if (!reviewTimestamp) return false;
+      return Number(topic?.reviewCount || 0) > 0 && inPastWindow(reviewTimestamp);
+    }).length;
+
+    const dueCount = [...rawDueTopics, ...rawUpcomingTopics].filter((topic) => {
+      return topic?.nextReviewDate ? inDueWindow(topic.nextReviewDate) : false;
+    }).length;
+
+    const skippedCount = journalActionStats.skipped;
+
+    const deletedCount = journalActionStats.deleted;
+
+    const createdCount = rawTopics.filter((topic) => {
+      return topic?.createdAt ? inPastWindow(topic.createdAt) : false;
+    }).length;
+
+    const factors = [
+      { key: 'completedFast', label: 'Completed Fast', count: Math.max(completedFastCount, journalActionStats.fastReviewed) },
+      { key: 'reviewed', label: 'Reviewed', count: Math.max(reviewedCount, journalActionStats.reviewed) },
+      { key: 'due', label: 'Due', count: dueCount },
+      { key: 'skipped', label: 'Skipped', count: skippedCount },
+      { key: 'deleted', label: 'Deleted', count: deletedCount },
+      { key: 'created', label: 'Created', count: Math.max(createdCount, journalActionStats.created) }
+    ];
+
+    const maxCount = Math.max(...factors.map((item) => item.count), 1);
+
+    return factors.map((item) => ({
+      ...item,
+      score: Number(((item.count / maxCount) * 100).toFixed(1))
+    }));
+  }, [rawTopics, rawDueTopics, rawUpcomingTopics, rangeDays, journalActionStats]);
+
+  const healthRangeLabel = timeRange === 'all'
+    ? 'Based on all-time analytics data'
+    : `Based on the last ${rangeDays} days`;
 
   const timeRangeOptions = [
     { value: '7d', label: 'Last 7 days' },
@@ -508,44 +1397,26 @@ const Analytics = () => {
     { value: 'all', label: 'All time' }
   ];
 
-  const overviewCards = [
-    {
-      label: 'Total Topics',
-      value: analyticsData.overview.totalTopics,
-      icon: Brain,
-      iconColor: 'text-blue-400'
-    },
-    {
-      label: 'Due Today',
-      value: analyticsData.overview.studiedToday,
-      icon: Target,
-      iconColor: 'text-red-400'
-    },
-    {
-      label: 'Study Streak',
-      value: analyticsData.overview.currentStreak,
-      icon: Flame,
-      iconColor: 'text-orange-400'
-    },
-    {
-      label: 'Study Time (Range)',
-      value: formatTime(analyticsData.overview.totalStudyTime),
-      icon: Clock,
-      iconColor: 'text-green-400'
-    },
-    {
-      label: 'Avg MemScore',
-      value: Number(analyticsData.overview.averageMemScore || 0).toFixed(1),
-      icon: Award,
-      iconColor: 'text-purple-400'
-    },
-    {
-      label: 'Completion',
-      value: `${Number(analyticsData.overview.completionRate || 0).toFixed(0)}%`,
-      icon: CheckCircle,
-      iconColor: 'text-cyan-400'
-    }
-  ];
+  const velocitySummary = {
+    reviewed: focusTrendData.reduce((sum, day) => sum + day.reviews, 0),
+    avgPerDay: focusTrendData.length ? (focusTrendData.reduce((sum, day) => sum + day.reviews, 0) / focusTrendData.length).toFixed(1) : '0.0',
+    sessions: totalFocusSessions,
+    completion: `${Number(analyticsData.overview.completionRate || 0).toFixed(0)}%`
+  };
+
+  const formatMinutes = (minutes = 0) => {
+    const safeMinutes = Math.max(0, Math.round(minutes));
+    const hours = Math.floor(safeMinutes / 60);
+    const rem = safeMinutes % 60;
+    return hours > 0 ? `${hours}h ${rem}m` : `${rem}m`;
+  };
+
+  const recentFocusData = focusTrendData.slice(-Math.min(focusTrendData.length, 45));
+  const recentReviewData = focusTrendData.slice(-Math.min(focusTrendData.length, 14));
+  const retentionAreaData = retentionTrendData.length > 0
+    ? retentionTrendData
+    : [{ label: 'Now', score: Number(analyticsData.overview.averageMemScore || 0) }];
+  const consistencyActiveDays = consistencyData.filter(day => day.intensity > 0).length;
 
   if (isLoading) {
     return (
@@ -673,269 +1544,54 @@ const Analytics = () => {
               </div>
             </div>
           ) : (
-            <div className="space-y-6">
-              {/* Overview Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-                {overviewCards.map((card) => (
-                  <div key={card.label} className="bg-white/5 border border-white/10 rounded-lg p-4 hover:bg-white/10 hover:border-white/20 transition-all duration-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-400">{card.label}</p>
-                        <p className="text-2xl font-bold text-white">{card.value}</p>
-                      </div>
-                      <card.icon className={`w-8 h-8 ${card.iconColor}`} />
-                    </div>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <section className="xl:col-span-2 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-lg border border-white/20 bg-black p-3">
+                    <p className="text-xs text-gray-400">Revisions ({activityChartRangeLabel})</p>
+                    <p className="text-2xl font-semibold text-white">{activityChartSummary.revisions}</p>
                   </div>
-                ))}
-              </div>
+                  <div className="rounded-lg border border-white/20 bg-black p-3">
+                    <p className="text-xs text-gray-400">Focus time ({activityChartRangeLabel})</p>
+                    <p className="text-2xl font-semibold text-white">{formatMinutes(activityChartSummary.focusMinutes)}</p>
+                  </div>
+                  <div className="rounded-lg border border-white/20 bg-black p-3">
+                    <p className="text-xs text-gray-400">Topics added ({activityChartRangeLabel})</p>
+                    <p className="text-2xl font-semibold text-white">{activityChartSummary.topicsAdded}</p>
+                  </div>
+                </div>
 
-              {/* Charts Row */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* MemScore Chart */}
-                <MemScoreChart
-                  data={analyticsData.memScoreHistory}
-                  currentScore={analyticsData.overview.averageMemScore}
+                <InteractiveActivityAreaChart
+                  data={interactiveAreaData}
                 />
+              </section>
 
-                {/* Daily Activity Chart */}
-                <div className="bg-black border border-white/20 rounded-xl p-6">
-                  <h3 className="text-lg font-semibold text-white mb-6">Daily Study Activity</h3>
-                  <div className="space-y-4">
-                    {dailyActivity.map((day, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between"
-                      >
-                        <div className="flex items-center space-x-4 flex-1">
-                          <span className="text-sm text-gray-400 w-10 font-medium">{day.day}</span>
-                          <div className="flex-1 bg-gray-800 rounded-full h-3 hover:bg-gray-700 transition-colors duration-200">
-                            <div
-                              className="bg-blue-500 h-3 rounded-full transition-all duration-300 hover:bg-blue-400"
-                              style={{ width: `${Math.min((day.sessions / 5) * 100, 100)}%` }}
-                            />
-                          </div>
-                        </div>
-                        <div className="text-right ml-4">
-                          <span className="text-sm text-white font-medium">
-                            {day.sessions} {day.sessions === 1 ? 'session' : 'sessions'}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              <section>
+                <DifficultyLongBarChart data={difficultyMixData} />
+              </section>
 
-              </div>
+              <section>
+                <ResourceDistributionPieCard data={resourceDistributionData} />
+              </section>
 
-              {/* Performance Analysis */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Topic Performance */}
-                <div className="bg-black border border-white/20 rounded-xl p-6">
-                  <h3 className="text-lg font-semibold text-white mb-6">Top Performing Topics</h3>
-                  <div className="space-y-4">
-                    {analyticsData.topicPerformance.slice(0, 5).map((topic, index) => (
-                      <div
-                        key={topic.id}
-                        className="flex items-center justify-between p-4 bg-white/5 rounded-lg hover:bg-white/10 transition-colors duration-200"
-                      >
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-3">
-                            <span className="text-sm font-medium text-white truncate">
-                              {topic.title}
-                            </span>
-                            <span className={`text-xs px-2 py-1 rounded ${getDifficultyColor(topic.difficulty)} bg-white/10`}>
-                              {getDifficultyLabel(topic.difficulty)}
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-6 mt-2">
-                            <span className="text-xs text-gray-400">
-                              Reviews: {topic.reviewCount}
-                            </span>
-                            <span className="text-xs text-gray-400">
-                              Success: {Number(topic.successRate || 0).toFixed(0)}%
-                            </span>
-                          </div>
-                        </div>
-                        <div className="text-right ml-4">
-                          <div className="text-lg font-medium text-blue-400">
-                            {Number(topic.memScore || 0).toFixed(1)}
-                          </div>
-                          <div className="text-xs text-gray-400">MemScore</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              <section>
+                <ConsistencyInteractiveBarCard
+                  data={consistencyData}
+                  activeMetric={consistencyBarMetric}
+                  onMetricChange={setConsistencyBarMetric}
+                  range={consistencyBarRange}
+                  onRangeChange={setConsistencyBarRange}
+                  currentStreak={analyticsData.overview.currentStreak}
+                  totalTopics={analyticsData.overview.totalTopics}
+                />
+              </section>
 
-                {/* Difficulty Breakdown */}
-                <div className="bg-black border border-white/20 rounded-xl p-6">
-                  <h3 className="text-lg font-semibold text-white mb-6">Difficulty Distribution</h3>
-                  <div className="space-y-5">
-                    {analyticsData.difficultyBreakdown.map((item) => (
-                      <div
-                        key={item.difficulty}
-                        className="space-y-3"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className={`text-sm font-medium ${getDifficultyColor(item.difficulty)}`}>
-                            {item.label}
-                          </span>
-                          <span className="text-sm text-gray-400">
-                            {item.count} topics
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-800 rounded-full h-3 hover:bg-gray-700 transition-colors duration-200">
-                          <div
-                            className={`h-3 rounded-full transition-all duration-300 ${
-                              item.difficulty === 1 ? 'bg-green-500 hover:bg-green-400' :
-                              item.difficulty === 2 ? 'bg-blue-500 hover:bg-blue-400' :
-                              item.difficulty === 3 ? 'bg-yellow-500 hover:bg-yellow-400' :
-                              item.difficulty === 4 ? 'bg-orange-500 hover:bg-orange-400' :
-                              'bg-red-500 hover:bg-red-400'
-                            }`}
-                            style={{ width: `${item.percentage}%` }}
-                          />
-                        </div>
-                        <div className="text-xs text-gray-400">
-                          {item.percentage.toFixed(1)}%
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Recent Activity */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Daily Usage Tracker */}
-                <DailyUsageTracker data={dailyActivity} userStorageKey={userStorageKey} />
-
-                {/* Comprehensive Activity Graph - Full Width */}
-                <div className="bg-black border border-white/20 rounded-xl p-6">
-                  <h3 className="text-lg font-semibold text-white mb-4">Comprehensive Activity Overview</h3>
-
-                  {/* Activity Metrics Row */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div className="text-center p-3 rounded-lg hover:bg-blue-500/10 transition-colors duration-200">
-                      <div className="text-2xl font-bold text-blue-400">
-                        {totalWeeklyMinutes}m
-                      </div>
-                      <div className="text-xs text-gray-400">Total This Week</div>
-                    </div>
-                    <div className="text-center p-3 rounded-lg hover:bg-green-500/10 transition-colors duration-200">
-                      <div className="text-2xl font-bold text-green-400">
-                        {avgDailyMinutes}m
-                      </div>
-                      <div className="text-xs text-gray-400">Daily Average</div>
-                    </div>
-                    <div className="text-center p-3 rounded-lg hover:bg-purple-500/10 transition-colors duration-200">
-                      <div className="text-2xl font-bold text-purple-400">
-                        {bestDayMinutes}m
-                      </div>
-                      <div className="text-xs text-gray-400">Best Day</div>
-                    </div>
-                    <div className="text-center p-3 rounded-lg hover:bg-orange-500/10 transition-colors duration-200">
-                      <div className="text-2xl font-bold text-orange-400">
-                        {activeDays}
-                      </div>
-                      <div className="text-xs text-gray-400">Active Days</div>
-                    </div>
-                  </div>
-
-                  {/* Enhanced Activity Chart */}
-                  <div className="space-y-4">
-                    <h4 className="text-sm font-medium text-gray-300">Daily Study Pattern (Last 7 Days)</h4>
-                    <div className="grid grid-cols-7 gap-2">
-                      {dailyActivity.map((day, index) => {
-                        const maxMinutes = Math.max(bestDayMinutes, 60);
-                        const height = day.minutes > 0 ? Math.max((day.minutes / maxMinutes) * 100, 10) : 5;
-
-                        return (
-                          <div
-                            key={index}
-                            className="flex flex-col items-center space-y-2"
-                          >
-                            <div className="text-xs text-gray-400">{day.day}</div>
-                            <div className="relative w-full h-24 bg-gray-800 rounded-lg overflow-hidden hover:bg-gray-700 transition-colors duration-200">
-                              <div
-                                className={`absolute bottom-0 w-full rounded-lg transition-all duration-500 ${
-                                  day.minutes > 0 ? 'bg-gradient-to-t from-blue-600 to-blue-400 hover:from-blue-500 hover:to-blue-300' : 'bg-gray-700'
-                                }`}
-                                style={{ height: `${height}%` }}
-                              />
-                              {day.minutes > 0 && (
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                  <span className="text-xs font-medium text-white">
-                                    {day.minutes}m
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                            <div className="text-xs text-gray-500">{day.sessions} sessions</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Focus Mode Integration */}
-                  <div className="mt-4 pt-4 border-t border-white/10">
-                    <h4 className="text-base font-medium text-gray-200 mb-3">Focus Mode & Study Statistics</h4>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      <div className="bg-white/5 rounded-lg p-3 hover:bg-white/10 transition-colors duration-200">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <div>
-                            <Timer className="w-4 h-4 text-blue-400" />
-                          </div>
-                          <span className="text-xs text-gray-300">Total Focus</span>
-                        </div>
-                        <div className="text-lg font-bold text-white">
-                          {formatTime(analyticsData.overview.totalStudyTime)}
-                        </div>
-                        <div className="text-xs text-gray-500">All sessions</div>
-                      </div>
-                      <div className="bg-white/5 rounded-lg p-3 hover:bg-white/10 transition-colors duration-200">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <div>
-                            <Zap className="w-4 h-4 text-yellow-400" />
-                          </div>
-                          <span className="text-xs text-gray-300">Sessions</span>
-                        </div>
-                        <div className="text-lg font-bold text-white">
-                          {totalWeeklySessions}
-                        </div>
-                        <div className="text-xs text-gray-500">This week</div>
-                      </div>
-                      <div className="bg-white/5 rounded-lg p-3 hover:bg-white/10 transition-colors duration-200">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <div>
-                            <Activity className="w-4 h-4 text-green-400" />
-                          </div>
-                          <span className="text-xs text-gray-300">Avg Session</span>
-                        </div>
-                        <div className="text-lg font-bold text-white">
-                          {avgSessionMinutes}m
-                        </div>
-                        <div className="text-xs text-gray-500">Per session</div>
-                      </div>
-                      <div className="bg-white/5 rounded-lg p-3 hover:bg-white/10 transition-colors duration-200">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <div>
-                            <Target className="w-4 h-4 text-purple-400" />
-                          </div>
-                          <span className="text-xs text-gray-300">Score</span>
-                        </div>
-                        <div className="text-lg font-bold text-white">
-                          {productivityScore}%
-                        </div>
-                        <div className="text-xs text-gray-500">Productivity</div>
-                      </div>
-                    </div>
-
-
-                  </div>
-                </div>
-              </div>
+              <section>
+                <HealthActionRadarCard
+                  data={healthRadarData}
+                  rangeLabel={healthRangeLabel}
+                />
+              </section>
             </div>
           )}
         </div>

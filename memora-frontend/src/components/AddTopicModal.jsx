@@ -4,16 +4,20 @@ import { BookOpen, Tag, Target, Plus, X, AlertCircle, Upload, Link, FileText, Ca
 import Modal from './Modal';
 import journalService from '../services/journalService';
 import ResourceBrowser from './ResourceBrowser';
+import docTagsService from '../services/docTagsService';
+import ShadcnSelect from './ShadcnSelect';
 
 const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
   const [formData, setFormData] = useState({
     title: '',
     content: '',
     difficulty: 3,
+    deadlineDate: '',
+    deadlineType: 'soft',
+    estimatedMinutes: 30,
     externalLinks: [], // Will store all resources (links, files, etc.)
-    learnedDate: new Date().toISOString().split('T')[0] // Today's date in YYYY-MM-DD format
   });
-  const [newLink, setNewLink] = useState({ title: '', url: '', type: 'youtube' });
+  const [newLink, setNewLink] = useState({ title: '', url: '', type: 'link' });
   const [errors, setErrors] = useState({});
   const [showResourceBrowser, setShowResourceBrowser] = useState(false);
 
@@ -49,6 +53,11 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
     } else if (formData.content.length > 10000) {
       newErrors.content = 'Content must be less than 10,000 characters';
     }
+
+    const estimatedMinutes = Number(formData.estimatedMinutes);
+    if (!Number.isFinite(estimatedMinutes) || estimatedMinutes < 5 || estimatedMinutes > 480) {
+      newErrors.estimatedMinutes = 'Estimated minutes must be between 5 and 480';
+    }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -60,21 +69,7 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
     if (!validateForm()) return;
 
     try {
-      console.log('Submitting topic data:', formData);
-      console.log('Current localStorage token:', localStorage.getItem('accessToken'));
-
-      // Test API connectivity first
-      try {
-        const healthResponse = await fetch('http://localhost:3001/api/health');
-        console.log('Health check response:', healthResponse.status);
-      } catch (healthError) {
-        console.error('Health check failed:', healthError);
-        setErrors({ submit: 'Cannot connect to server. Please check if the backend is running.' });
-        return;
-      }
-
       await onSubmit(formData);
-      console.log('Topic created successfully');
 
       // Log activity to journal
       journalService.logTopicAdded(formData);
@@ -82,11 +77,6 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
       handleClose();
     } catch (error) {
       console.error('Error creating topic:', error);
-      console.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
-      });
       setErrors({ submit: error.message || 'Failed to create topic. Please try again.' });
     }
   };
@@ -96,10 +86,12 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
       title: '',
       content: '',
       difficulty: 3,
+      deadlineDate: '',
+      deadlineType: 'soft',
+      estimatedMinutes: 30,
       externalLinks: [],
-      learnedDate: new Date().toISOString().split('T')[0]
     });
-    setNewLink({ title: '', url: '', type: 'youtube' });
+    setNewLink({ title: '', url: '', type: 'link' });
     setErrors({});
     onClose();
   };
@@ -108,11 +100,12 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
 
   const addExternalLink = () => {
     if (newLink.title.trim() && newLink.url.trim()) {
+      const normalizedType = newLink.type === 'link' ? 'website' : newLink.type;
       setFormData(prev => ({
         ...prev,
-        externalLinks: [...prev.externalLinks, { ...newLink, addedAt: new Date() }]
+        externalLinks: [...prev.externalLinks, { ...newLink, type: normalizedType, addedAt: new Date() }]
       }));
-      setNewLink({ title: '', url: '', type: 'youtube' });
+      setNewLink({ title: '', url: '', type: 'link' });
     }
   };
 
@@ -125,26 +118,8 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
 
   // File upload function
   const uploadFiles = async (files) => {
-    const formData = new FormData();
-    Array.from(files).forEach(file => {
-      formData.append('files', file);
-    });
-
     try {
-      const response = await fetch('/api/doctags/upload', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        },
-        body: formData
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to upload files');
-      }
-
-      const data = await response.json();
-      return data.files;
+      return await docTagsService.uploadFiles(files);
     } catch (error) {
       console.error('File upload error:', error);
       throw error;
@@ -269,149 +244,183 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
           </div>
         </div>
 
-        {/* Learned Date */}
+        {/* Deadline */}
         <div>
           <label className="flex items-center space-x-2 text-sm font-medium text-gray-300 mb-2">
             <Calendar className="w-4 h-4" />
-            <span>Date Learned</span>
+            <span>Deadline Date</span>
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              type="date"
+              value={formData.deadlineDate}
+              onChange={(e) => setFormData(prev => ({ ...prev, deadlineDate: e.target.value }))}
+              className="w-full px-3 py-2 bg-black border border-white/10 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors"
+              min={new Date().toISOString().split('T')[0]}
+            />
+            <ShadcnSelect
+              value={formData.deadlineType}
+              onChange={(value) => setFormData(prev => ({ ...prev, deadlineType: value }))}
+              options={[
+                { value: 'soft', label: 'Soft Deadline' },
+                { value: 'hard', label: 'Hard Deadline' }
+              ]}
+            />
+          </div>
+          <p className="text-xs text-gray-400 mt-1">
+            Leave empty if this topic has no fixed deadline.
+          </p>
+        </div>
+
+        {/* Estimated Minutes */}
+        <div>
+          <label className="flex items-center space-x-2 text-sm font-medium text-gray-300 mb-2">
+            <Calendar className="w-4 h-4" />
+            <span>Estimated Revision Minutes</span>
           </label>
           <input
-            type="date"
-            value={formData.learnedDate}
-            onChange={(e) => setFormData(prev => ({ ...prev, learnedDate: e.target.value }))}
+            type="number"
+            min="5"
+            max="480"
+            step="5"
+            value={formData.estimatedMinutes}
+            onChange={(e) => setFormData(prev => ({ ...prev, estimatedMinutes: e.target.value }))}
             className="w-full px-3 py-2 bg-black border border-white/10 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors"
-            max={new Date().toISOString().split('T')[0]} // Can't select future dates
           />
+          {errors.estimatedMinutes && (
+            <p className="mt-1 text-sm text-red-400 flex items-center space-x-1">
+              <AlertCircle className="w-4 h-4" />
+              <span>{errors.estimatedMinutes}</span>
+            </p>
+          )}
           <p className="text-xs text-gray-400 mt-1">
-            When did you first learn this topic? (Default: Today)
+            Used by scheduler to avoid overloading a day.
           </p>
         </div>
 
         {/* Resources & Links */}
         <div>
-          <label className="flex items-center space-x-2 text-sm font-medium text-gray-300 mb-4">
+          <label className="flex items-center space-x-2 text-sm font-medium text-gray-300 mb-3">
             <Link className="w-4 h-4" />
             <span>Resources & Links</span>
             <span className="text-gray-500 text-xs">(optional)</span>
           </label>
 
           {/* Add Resource Section */}
-          <div className="bg-black border border-white/20 rounded-lg p-4 mb-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-              <input
-                type="text"
-                placeholder="Resource title (e.g., 'React Tutorial')"
-                value={newLink.title}
-                onChange={(e) => setNewLink(prev => ({ ...prev, title: e.target.value }))}
-                className="bg-black border border-white/20 rounded px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
-              />
-              <select
+          <div className="bg-black border border-white/20 rounded-lg p-4 mb-4 space-y-3">
+            {/* Type Selection Dropdown */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-400">Add:</span>
+              <ShadcnSelect
                 value={newLink.type}
-                onChange={(e) => setNewLink(prev => ({ ...prev, type: e.target.value }))}
-                className="bg-black border border-white/20 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-              >
-                <option value="youtube">YouTube</option>
-                <option value="google_drive">Google Drive</option>
-                <option value="notion">Notion</option>
-                <option value="github">GitHub</option>
-                <option value="pdf">PDF Document</option>
-                <option value="website">Website</option>
-                <option value="file">File Upload</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-
-            <div className="flex space-x-2 mb-3">
-              <input
-                type="url"
-                placeholder="https://... or paste any link"
-                value={newLink.url}
-                onChange={(e) => setNewLink(prev => ({ ...prev, url: e.target.value }))}
-                className="flex-1 bg-black border border-white/20 rounded px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                onChange={(value) => setNewLink(prev => ({ ...prev, type: value, url: '' }))}
+                options={[
+                  { value: 'link', label: '📎 Link (YouTube, Website, etc.)' },
+                  { value: 'file', label: '📁 File (PDF, Images, Documents)' }
+                ]}
+                className="flex-1"
               />
-              <button
-                type="button"
-                onClick={addExternalLink}
-                disabled={!newLink.title.trim() || !newLink.url.trim()}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
             </div>
 
-            {/* File Upload and Browse Options */}
-            <div className="border-t border-white/10 pt-3 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+            {/* Conditional Input Fields */}
+            {newLink.type === 'link' ? (
+              // Link Input
+              <div className="space-y-2">
                 <input
-                type="file"
-                id="file-upload"
-                multiple
-                accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.mp4,.mp3"
-                onChange={async (e) => {
-                  const files = Array.from(e.target.files);
-                  if (files.length === 0) return;
-
-                  try {
-                    // Upload files to server
-                    const uploadedFiles = await uploadFiles(files);
-
-                    // Add uploaded files to external links
-                    uploadedFiles.forEach(file => {
-                      if (formData.externalLinks.length < 10) {
-                        setFormData(prev => ({
-                          ...prev,
-                          externalLinks: [...prev.externalLinks, {
-                            title: file.originalName,
-                            url: file.url,
-                            type: 'other', // Use 'other' instead of 'file' for now
-                            fileType: file.fileType,
-                            size: file.size,
-                            isFile: true, // Add flag to identify files
-                            addedAt: new Date()
-                          }]
-                        }));
-                      }
-                    });
-                  } catch (error) {
-                    console.error('File upload failed:', error);
-                    setErrors({ submit: 'Failed to upload files. Please try again.' });
-                  }
-
-                  e.target.value = ''; // Reset input
-                }}
-                className="hidden"
-              />
-                <label
-                  htmlFor="file-upload"
-                  className="flex items-center justify-center space-x-2 px-4 py-2 bg-gray-800 border border-white/20 rounded-lg text-gray-400 hover:text-white hover:border-white/40 cursor-pointer transition-colors"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>Upload Files</span>
-                </label>
-
+                  type="text"
+                  placeholder="Link title (e.g., 'React Tutorial')"
+                  value={newLink.title}
+                  onChange={(e) => setNewLink(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
+                <input
+                  type="url"
+                  placeholder="https://example.com"
+                  value={newLink.url}
+                  onChange={(e) => setNewLink(prev => ({ ...prev, url: e.target.value }))}
+                  className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
                 <button
                   type="button"
-                  onClick={() => setShowResourceBrowser(true)}
-                  className="flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600/20 border border-blue-500/30 rounded-lg text-blue-400 hover:text-blue-300 hover:border-blue-400/50 transition-colors"
+                  onClick={addExternalLink}
+                  disabled={!newLink.title.trim() || !newLink.url.trim()}
+                  className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm font-medium"
                 >
-                  <FolderOpen className="w-4 h-4" />
-                  <span>Browse Existing</span>
+                  <Plus className="w-4 h-4 inline mr-2" />
+                  Add Link
                 </button>
               </div>
-            </div>
+            ) : (
+              // File Upload
+              <div className="space-y-2">
+                <input
+                  type="file"
+                  id="file-upload"
+                  multiple
+                  accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.gif,.mp4,.mp3,.zip"
+                  onChange={async (e) => {
+                    const files = Array.from(e.target.files);
+                    if (files.length === 0) return;
+
+                    try {
+                      const uploadedFiles = await uploadFiles(files);
+
+                      uploadedFiles.forEach(file => {
+                        if (formData.externalLinks.length < 10) {
+                          setFormData(prev => ({
+                            ...prev,
+                            externalLinks: [...prev.externalLinks, {
+                              title: file.originalName,
+                              url: file.url,
+                              type: 'file',
+                              fileType: file.fileType,
+                              size: file.size,
+                              isFile: true,
+                              addedAt: new Date()
+                            }]
+                          }));
+                        }
+                      });
+                    } catch (error) {
+                      console.error('File upload failed:', error);
+                      setErrors({ submit: 'Failed to upload files. Please try again.' });
+                    }
+
+                    e.target.value = '';
+                  }}
+                  className="hidden"
+                />
+                <label
+                  htmlFor="file-upload"
+                  className="block w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium text-center cursor-pointer border border-blue-600 hover:border-blue-700"
+                >
+                  <Upload className="w-4 h-4 inline mr-2" />
+                  Choose Files to Upload
+                </label>
+                <p className="text-xs text-gray-400 text-center">PDF, Images, Videos, Documents</p>
+              </div>
+            )}
+
+            {/* Browse or Add from Existing */}
+            <button
+              type="button"
+              onClick={() => setShowResourceBrowser(true)}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-gray-800/50 border border-white/10 hover:border-white/20 rounded-lg text-gray-400 hover:text-gray-300 transition-colors text-sm"
+            >
+              <FolderOpen className="w-4 h-4" />
+              <span>Browse Existing Resources</span>
+            </button>
           </div>
 
           {/* Resources List */}
           {formData.externalLinks.length > 0 && (
             <div className="space-y-2">
-              <h4 className="text-sm font-medium text-gray-300 mb-2">Added Resources</h4>
+              <h4 className="text-sm font-medium text-gray-300">Added Resources ({formData.externalLinks.length}/10)</h4>
               {formData.externalLinks.map((link, index) => (
-                <div key={index} className="flex items-center justify-between bg-black border border-white/20 rounded-lg p-3">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-blue-600/20 rounded-lg flex items-center justify-center">
-                      {link.type === 'youtube' ? (
-                        <span className="text-red-400 text-xs font-bold">YT</span>
-                      ) : link.isFile || link.type === 'file' ? (
+                <div key={index} className="flex items-center justify-between bg-black border border-white/10 rounded-lg p-3 hover:border-white/20 transition-colors">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div className="w-7 h-7 bg-white/10 rounded flex items-center justify-center flex-shrink-0">
+                      {link.type === 'file' || link.isFile ? (
                         link.fileType === 'pdf' ? (
                           <span className="text-red-400 text-xs font-bold">PDF</span>
                         ) : link.fileType === 'image' ? (
@@ -419,31 +428,27 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
                         ) : link.fileType === 'video' ? (
                           <span className="text-purple-400 text-xs font-bold">VID</span>
                         ) : (
-                          <FileText className="w-4 h-4 text-blue-400" />
+                          <FileText className="w-3 h-3 text-blue-400" />
                         )
                       ) : (
-                        <Link className="w-4 h-4 text-blue-400" />
+                        <Link className="w-3 h-3 text-blue-400" />
                       )}
                     </div>
-                    <div>
-                      <p className="text-sm text-white">{link.title}</p>
-                      <p className="text-xs text-gray-400 capitalize">{link.type.replace('_', ' ')}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-white truncate">{link.title}</p>
+                      <p className="text-xs text-gray-500 capitalize">{link.type === 'file' ? 'File' : 'Link'}</p>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => removeExternalLink(index)}
-                    className="p-1 text-gray-400 hover:text-red-400 transition-colors"
+                    className="p-1 text-gray-400 hover:text-red-400 transition-colors flex-shrink-0"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               ))}
             </div>
-          )}
-
-          {formData.externalLinks.length >= 10 && (
-            <p className="text-sm text-yellow-400 mt-2">Maximum 10 resources allowed</p>
           )}
         </div>
 

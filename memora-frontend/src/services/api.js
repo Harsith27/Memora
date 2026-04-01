@@ -293,6 +293,17 @@ class ApiService {
     return this.post('/topics/move-overdue');
   }
 
+  async hardSkipTodayTopics() {
+    return this.post('/topics/skip-today');
+  }
+
+  async updateTopicRevisionDate(id, nextReviewDate, reason = 'manual_timeline_edit') {
+    return this.request(`/topics/${id}/revision-date`, {
+      method: 'PATCH',
+      body: JSON.stringify({ nextReviewDate, reason }),
+    });
+  }
+
   // Journal methods
   async getJournalEntry(date) {
     return this.get(`/journal/${date}`);
@@ -316,6 +327,14 @@ class ApiService {
 
   async deleteJournalEntry(date) {
     return this.delete(`/journal/${date}`);
+  }
+
+  // Mindmaps AI generation
+  async generateMindmapWithAI(topic, options = {}) {
+    return this.post('/mindmaps/generate-ai', {
+      topic,
+      ...options
+    });
   }
 
   // Health check

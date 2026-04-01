@@ -147,25 +147,7 @@ export const TimerProvider = ({ children }) => {
       dispatch({ type: TIMER_ACTIONS.COMPLETE_TIMER });
       dispatch({ type: TIMER_ACTIONS.COMPLETE_SESSION });
 
-      // Save session to localStorage for Analytics
-      const sessionData = {
-        startTime: new Date(Date.now() - (state.initialTime * 1000)), // Calculate start time
-        endTime: new Date(),
-        duration: state.initialTime * 1000, // Convert seconds to milliseconds
-        completed: true,
-        date: new Date().toISOString(),
-        timerMode: state.timerMode,
-        studyMethod: state.studyMethod
-      };
-
-      try {
-        const existingSessions = JSON.parse(localStorage.getItem('focus_sessions_harsith') || '[]');
-        const updatedSessions = [sessionData, ...existingSessions.slice(0, 19)]; // Keep last 20
-        localStorage.setItem('focus_sessions_harsith', JSON.stringify(updatedSessions));
-        console.log('Session saved to localStorage:', sessionData);
-      } catch (error) {
-        console.warn('Failed to save session:', error);
-      }
+      // Session persistence is handled by FocusMode with user-scoped keys.
 
       // Auto-start next session for Pomodoro
       if (state.studyMethod === 'pomodoro' && state.currentSession < state.totalSessions) {

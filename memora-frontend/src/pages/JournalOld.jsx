@@ -12,11 +12,30 @@ import Dialog from '../components/Dialog';
 import { useAuth } from '../contexts/AuthContext';
 import apiService from '../services/api';
 
+const escapeHtml = (value = '') => {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
+const sanitizeUrl = (url = '') => {
+  const trimmed = url.trim();
+  if (/^https?:\/\//i.test(trimmed) || /^mailto:/i.test(trimmed)) {
+    return trimmed;
+  }
+  return '#';
+};
+
 // Simple markdown to HTML converter
 const parseMarkdown = (markdown) => {
   if (!markdown) return '';
 
-  let html = markdown
+  const escapedMarkdown = escapeHtml(markdown);
+
+  let html = escapedMarkdown
     // Headers
     .replace(/^### (.*$)/gim, '<h3 class="text-lg font-semibold text-white mb-3 mt-6">$1</h3>')
     .replace(/^## (.*$)/gim, '<h2 class="text-xl font-semibold text-white mb-4 mt-8">$1</h2>')
@@ -35,7 +54,7 @@ const parseMarkdown = (markdown) => {
     .replace(/`(.*?)`/g, '<code class="bg-gray-800 text-green-400 px-2 py-1 rounded text-sm">$1</code>')
 
     // Links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-blue-400 hover:text-blue-300 underline" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => `<a href="${sanitizeUrl(url)}" class="text-blue-400 hover:text-blue-300 underline" target="_blank" rel="noopener noreferrer">${text}</a>`)
 
     // Horizontal rules
     .replace(/^---$/gim, '<hr class="border-white/20 my-6">')
@@ -106,10 +125,9 @@ const Journal = () => {
   const sidebarItems = [
     { icon: Brain, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
-    { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
-    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
     { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
-    { icon: Settings, label: "Settings", active: location.pathname === "/settings", path: "/settings" }
+    { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
+    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" }
   ];
 
   // Quick actions for Journal
@@ -182,18 +200,14 @@ const Journal = () => {
   };
 
   const loadTodayEntry = () => {
-    console.log('📖 Journal: Loading today\'s entry...');
     const today = new Date().toISOString().split('T')[0];
     const saved = localStorage.getItem(getUserStorageKey(`journal_${today}`));
-    console.log('📖 Journal: Found saved entry:', !!saved);
 
     if (saved) {
       setTodayEntry(saved);
-      console.log('📖 Journal: Loaded saved entry');
     } else {
       // Generate initial entry with activities
       generateInitialEntry();
-      console.log('📖 Journal: Generated initial entry');
     }
   };
 
@@ -252,7 +266,6 @@ ${todayActivities.length > 0 ? todayActivities.map(activity => `- ${activity}`).
   };
 
   const refreshEntry = () => {
-    console.log('🔄 Journal: Refreshing entry...');
     loadTodayEntry();
     loadTodayActivities();
     showToast('Journal refreshed!');

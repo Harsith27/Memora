@@ -64,10 +64,7 @@ export const useTopics = () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('useTopics: Creating topic with data:', topicData);
-      console.log('useTopics: Current token in localStorage:', localStorage.getItem('accessToken'));
       const response = await apiService.createTopic(topicData);
-      console.log('useTopics: API response:', response);
       if (response.success) {
         // Refresh the topics lists
         await Promise.all([
@@ -80,12 +77,7 @@ export const useTopics = () => {
         throw new Error(response.message || 'Failed to create topic');
       }
     } catch (err) {
-      console.error('useTopics: Failed to create topic:', err);
-      console.error('useTopics: Error details:', {
-        message: err.message,
-        stack: err.stack,
-        name: err.name
-      });
+      console.error('Failed to create topic:', err);
       setError(err.message);
       throw err;
     } finally {
@@ -153,7 +145,7 @@ export const useTopics = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiService.reviewTopic(id, { quality, responseTime });
+      const response = await apiService.reviewTopic(id, quality, responseTime);
       if (response.success) {
         // Remove from due topics and refresh lists
         setDueTopics(prev => prev.filter(topic => topic._id !== id));

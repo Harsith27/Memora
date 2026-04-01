@@ -1,6 +1,5 @@
 import React from 'react';
 import logoImg from '../assets/logo.jpg';
-import logoBlackOutline from '../assets/logoblackoutline.png';
 
 const Logo = ({ size = 'md', className = '', variant = 'default' }) => {
   const sizeClasses = {
@@ -9,7 +8,7 @@ const Logo = ({ size = 'md', className = '', variant = 'default' }) => {
     lg: 'w-12 h-12',
   };
 
-  const logoSrc = variant === 'blackOutline' ? logoBlackOutline : logoImg;
+  const logoSrc = logoImg;
 
   return (
     <div className={`${sizeClasses[size]} ${className} rounded-lg overflow-hidden`}>

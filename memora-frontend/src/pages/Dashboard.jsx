@@ -1,16 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Brain, Calendar, BarChart3, Settings, FileText, BookOpen,
   Plus, Flame, Zap, ArrowLeft, CheckCircle, Target, Clock, Edit3, Trash2, SkipForward, Loader, GitBranch,
   Twitter, Github, Mail, Globe, Heart, Linkedin, Instagram, Menu, PanelLeftClose, PanelLeft,
-  Save, X
+  Save, X, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import Logo from '../components/Logo';
 import AddTopicModal from '../components/AddTopicModal';
 import EditTopicModal from '../components/EditTopicModal';
 import Toast from '../components/Toast';
-import MemScoreChart from '../components/MemScoreChart';
 import ProgressRing from '../components/ProgressRing';
 import Dialog from '../components/Dialog';
 import MinimalistTimer from '../components/MinimalistTimer';
@@ -38,6 +37,18 @@ const Dashboard = () => {
       5: 'text-red-400'
     };
     return colors[difficulty] || 'text-gray-400';
+  };
+
+  const getDifficultyLabel = (difficulty) => {
+    const labels = {
+      1: 'Very Easy',
+      2: 'Easy',
+      3: 'Medium',
+      4: 'Hard',
+      5: 'Very Hard'
+    };
+
+    return labels[Number(difficulty)] || 'Medium';
   };
 
   // Motivational quotes collection
@@ -103,6 +114,14 @@ const Dashboard = () => {
   const [processingTopics, setProcessingTopics] = useState(new Set());
   const [workloadData, setWorkloadData] = useState([]);
   const [showAllUpcoming, setShowAllUpcoming] = useState(false);
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [selectedDateKey, setSelectedDateKey] = useState(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
 
   // Dialog state
   const [dialog, setDialog] = useState({
@@ -324,6 +343,41 @@ const Dashboard = () => {
     }
   };
 
+  const handleHardSkipToday = () => {
+    showDialog({
+      type: 'confirm',
+      title: 'Hard Skip Today',
+      message: 'This will move all topics scheduled for today to the next best available days. Continue?',
+      confirmText: 'Skip Today',
+      cancelText: 'Cancel',
+      showCancel: true,
+      onConfirm: async () => {
+        try {
+          showToast('Rebalancing today\'s topics...', 'info');
+          const response = await apiService.hardSkipTodayTopics();
+
+          if (response.success) {
+            await fetchAllTopicsAndCalculate();
+
+            if (response.moved > 0) {
+              const unresolvedText = response.unresolved > 0
+                ? ` (${response.unresolved} unresolved)`
+                : '';
+              showToast(`Moved ${response.moved} topic${response.moved === 1 ? '' : 's'}${unresolvedText}`, 'success');
+            } else {
+              showToast('No topics scheduled for today', 'info');
+            }
+          } else {
+            showToast(response.message || 'Failed to skip today topics', 'error');
+          }
+        } catch (error) {
+          console.error('Failed hard skip today:', error);
+          showToast(error.message || 'Failed to skip today topics', 'error');
+        }
+      }
+    });
+  };
+
   // Handle topic review (Mark Done button)
   const handleTopicReview = async (topicId, quality = 3) => {
     if (processingTopics.has(topicId)) return; // Prevent double-clicks
@@ -447,6 +501,9 @@ const Dashboard = () => {
         try {
           const response = await apiService.deleteTopic(topicId);
           if (response.success) {
+            if (topic) {
+              journalService.logTopicDeleted(topic);
+            }
             await fetchAllTopicsAndCalculate();
             setToast({
               show: true,
@@ -507,6 +564,32 @@ const Dashboard = () => {
     }
   };
 
+  const handleRescheduleFromEdit = async (topicId, selectedDate, reason = 'edit_topic_timeline') => {
+    try {
+      const response = await apiService.updateTopicRevisionDate(topicId, selectedDate, reason);
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to update revision date');
+      }
+
+      await fetchAllTopicsAndCalculate();
+
+      setEditingTopic((prev) => {
+        if (!prev || prev._id !== topicId) return prev;
+        return {
+          ...prev,
+          nextReviewDate: response.topic?.nextReviewDate || prev.nextReviewDate,
+          rescheduleCount: response.topic?.rescheduleCount ?? prev.rescheduleCount
+        };
+      });
+
+      showToast(`Revision moved to ${new Date(response.topic.nextReviewDate).toLocaleDateString('en-GB')}`, 'success');
+      return response;
+    } catch (error) {
+      console.error('Failed to update revision timeline from edit:', error);
+      throw error;
+    }
+  };
+
   // Handle fast review for upcoming topics
   const handleFastReview = async (topicId) => {
     try {
@@ -530,32 +613,114 @@ const Dashboard = () => {
     }
   };
 
-  // Handle topic click to show future revision dates
-  const handleTopicClick = (topic) => {
-    const nextReviewDate = new Date(topic.nextReviewDate);
-    const currentDate = new Date();
-    const daysUntilReview = Math.ceil((nextReviewDate - currentDate) / (1000 * 60 * 60 * 24));
+  const clampValue = (value, min, max) => Math.min(max, Math.max(min, value));
 
-    // Calculate approximate future review dates based on spaced repetition
-    const futureReviews = [];
-    let currentInterval = topic.interval || 1;
-    let currentEaseFactor = topic.easeFactor || 2.5;
-    let reviewDate = new Date(nextReviewDate);
+  const getDaysUntilDate = (value) => {
+    if (!value) return null;
+    const date = new Date(value);
+    const now = new Date();
+    const diff = date.getTime() - now.getTime();
+    return Math.ceil(diff / (24 * 60 * 60 * 1000));
+  };
 
-    for (let i = 0; i < 5; i++) {
-      futureReviews.push(new Date(reviewDate));
-      currentInterval = Math.round(currentInterval * currentEaseFactor);
-      reviewDate = new Date(reviewDate.getTime() + currentInterval * 24 * 60 * 60 * 1000);
+  const getV2TimelinePreview = (topic, memScore) => {
+    const difficulty = clampValue(Number(topic?.difficulty) || 3, 1, 5);
+
+    const baseRevisionCountByDifficulty = {
+      1: 3,
+      2: 4,
+      3: 5,
+      4: 6,
+      5: 7
+    };
+
+    const basePeriodDaysByDifficulty = {
+      1: 15,
+      2: 30,
+      3: 45,
+      4: 60,
+      5: 75
+    };
+
+    const safeMemScore = clampValue(Number(memScore) || 0, 0, 10);
+    let memScoreBoost = 0;
+    if (difficulty > 1 && safeMemScore < 9) {
+      memScoreBoost = safeMemScore >= 6 ? 1 : 2;
     }
 
-    const reviewDatesText = futureReviews
-      .map((date, index) => `${index + 1}. ${date.toLocaleDateString('en-GB')} (${index === 0 ? daysUntilReview : Math.ceil((date - currentDate) / (1000 * 60 * 60 * 24))} days)`)
+    const targetRevisionCount = (baseRevisionCountByDifficulty[difficulty] || 5) + memScoreBoost;
+    const targetPeriodDays = basePeriodDaysByDifficulty[difficulty] || 45;
+
+    const daysUntilDeadline = getDaysUntilDate(topic?.deadlineDate);
+    let effectivePeriodDays = targetPeriodDays;
+
+    if (daysUntilDeadline !== null) {
+      const boundedDays = Math.max(1, daysUntilDeadline);
+      if (topic?.deadlineType === 'hard') {
+        effectivePeriodDays = Math.min(targetPeriodDays, boundedDays);
+      } else {
+        effectivePeriodDays = Math.min(targetPeriodDays, Math.max(1, Math.round(boundedDays * 0.85)));
+      }
+    }
+
+    const minimumRevisionCount = difficulty >= 4 ? 3 : 2;
+    let plannedRevisionCount = targetRevisionCount;
+
+    if (topic?.deadlineType === 'hard' && topic?.deadlineDate && effectivePeriodDays < targetPeriodDays) {
+      const compressionScale = Math.max(0.55, effectivePeriodDays / targetPeriodDays);
+      plannedRevisionCount = Math.round(plannedRevisionCount * compressionScale);
+    }
+
+    plannedRevisionCount = clampValue(plannedRevisionCount, minimumRevisionCount, targetRevisionCount);
+
+    const baseGapDays = Math.max(1, Math.round(effectivePeriodDays / Math.max(1, plannedRevisionCount)));
+    const previewSteps = Math.max(1, Math.min(5, plannedRevisionCount));
+
+    const previewDates = [];
+    let cursor = topic?.nextReviewDate ? new Date(topic.nextReviewDate) : new Date();
+    cursor.setHours(8, 0, 0, 0);
+
+    const hardDeadline = topic?.deadlineType === 'hard' && topic?.deadlineDate
+      ? new Date(topic.deadlineDate)
+      : null;
+
+    if (hardDeadline) {
+      hardDeadline.setHours(8, 0, 0, 0);
+    }
+
+    for (let i = 0; i < previewSteps; i += 1) {
+      const normalized = new Date(cursor);
+
+      if (hardDeadline && normalized > hardDeadline) {
+        previewDates.push(new Date(hardDeadline));
+      } else {
+        previewDates.push(normalized);
+      }
+
+      cursor = new Date(cursor.getTime() + baseGapDays * 24 * 60 * 60 * 1000);
+    }
+
+    return {
+      previewDates,
+      targetRevisionCount,
+      plannedRevisionCount,
+      effectivePeriodDays
+    };
+  };
+
+  // Handle topic click to show future revision dates
+  const handleTopicClick = (topic) => {
+    const currentDate = new Date();
+    const preview = getV2TimelinePreview(topic, user?.memScore);
+
+    const reviewDatesText = preview.previewDates
+      .map((date, index) => `${index + 1}. ${date.toLocaleDateString('en-GB')} (${Math.ceil((date - currentDate) / (1000 * 60 * 60 * 24))} days)`)
       .join('\n');
 
     showDialog({
       type: 'info',
-      title: `📅 Future Review Schedule`,
-      message: `Topic: "${topic.title}"\n\n${reviewDatesText}\n\nNote: Dates may change based on your performance during reviews.`,
+      title: `📅 V2 Review Timeline`,
+      message: `Topic: "${topic.title}"\n\n${reviewDatesText}\n\nPlanned revisions: ${preview.plannedRevisionCount}/${preview.targetRevisionCount}\nWindow: ${preview.effectivePeriodDays} days\n\nUse Edit Topic and then Reschedule to change the timeline.`,
       confirmText: 'Got it'
     });
   };
@@ -685,15 +850,16 @@ const Dashboard = () => {
   const sidebarItems = [
     { icon: Brain, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
+    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
     { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
-    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
     { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
     { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
-    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" }
+    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" }
   ];
 
   const quickActions = [
     { icon: Plus, label: "Add Topic", action: () => setShowAddTopicModal(true), primary: true },
+    { icon: SkipForward, label: "Hard Skip Today", action: handleHardSkipToday, primary: false },
     { icon: Zap, label: "Quick Review", action: () => showDialog({
       type: 'info',
       title: 'Quick Review',
@@ -784,6 +950,135 @@ const Dashboard = () => {
       day: 'numeric'
     });
   };
+
+  const toLocalDateKey = (value) => {
+    const date = value instanceof Date ? value : new Date(value);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const allReviewTopics = useMemo(() => [...dueTopics, ...upcomingTopics], [dueTopics, upcomingTopics]);
+
+  const nextSevenCalendar = useMemo(() => {
+    const today = new Date();
+    const todayKey = toLocalDateKey(today);
+    const start = new Date(today);
+    // Always render full weeks from Sunday to Saturday.
+    start.setDate(start.getDate() - start.getDay() + weekOffset * 7);
+    start.setHours(0, 0, 0, 0);
+
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(start);
+      date.setDate(start.getDate() + index);
+      const dayKey = toLocalDateKey(date);
+
+      const topicsForDay = allReviewTopics.filter((topic) => {
+        if (!topic?.nextReviewDate) return false;
+        const topicDateKey = toLocalDateKey(topic.nextReviewDate);
+
+        // Include overdue in today's bucket only for the current week view.
+        if (weekOffset === 0 && dayKey === todayKey) {
+          return topicDateKey <= todayKey;
+        }
+
+        return topicDateKey === dayKey;
+      });
+
+      const topicCount = topicsForDay.length;
+      const color = topicCount === 0
+        ? 'bg-gray-500'
+        : topicCount <= 2
+          ? 'bg-green-500'
+          : topicCount <= 4
+            ? 'bg-blue-500'
+            : topicCount <= 6
+              ? 'bg-yellow-500'
+              : 'bg-red-500';
+
+      return {
+        date: dayKey,
+        dayLabel: date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
+        dateLabel: date.toLocaleDateString('en-US', { day: '2-digit' }),
+        monthLabel: date.toLocaleDateString('en-US', { month: 'short' }),
+        isToday: dayKey === todayKey,
+        topics: topicsForDay,
+        topicCount,
+        color
+      };
+    });
+  }, [allReviewTopics, weekOffset]);
+
+  const weekRangeLabel = useMemo(() => {
+    if (nextSevenCalendar.length === 0) return 'Next 7 Days';
+
+    const first = new Date(`${nextSevenCalendar[0].date}T00:00:00`);
+    const last = new Date(`${nextSevenCalendar[nextSevenCalendar.length - 1].date}T00:00:00`);
+
+    const sameMonth = first.getMonth() === last.getMonth() && first.getFullYear() === last.getFullYear();
+    const startDay = first.toLocaleDateString('en-US', { day: '2-digit' });
+    const endDay = last.toLocaleDateString('en-US', { day: '2-digit' });
+    const startMonth = first.toLocaleDateString('en-US', { month: 'short' });
+    const endMonth = last.toLocaleDateString('en-US', { month: 'short' });
+
+    if (sameMonth) {
+      return `${startMonth} ${startDay} - ${endDay}`;
+    }
+
+    return `${startMonth} ${startDay} - ${endMonth} ${endDay}`;
+  }, [nextSevenCalendar]);
+
+  const selectedDayData = useMemo(() => {
+    if (!nextSevenCalendar.length) return null;
+    return nextSevenCalendar.find(day => day.date === selectedDateKey) || nextSevenCalendar[0];
+  }, [nextSevenCalendar, selectedDateKey]);
+
+  const selectedDayTopics = selectedDayData?.topics || [];
+  const selectedDayTopicsPreview = selectedDayTopics.slice(0, 3);
+
+  useEffect(() => {
+    if (nextSevenCalendar.length === 0) return;
+
+    const existsInWeek = nextSevenCalendar.some(day => day.date === selectedDateKey);
+    if (!existsInWeek) {
+      setSelectedDateKey(nextSevenCalendar[0].date);
+    }
+  }, [nextSevenCalendar, selectedDateKey]);
+
+  const todayTopicMix = useMemo(() => {
+    const buckets = {
+      veryEasy: 0,
+      easy: 0,
+      medium: 0,
+      hard: 0,
+      veryHard: 0
+    };
+
+    dueTopics.forEach((topic) => {
+      const difficulty = Number(topic.difficulty) || 0;
+
+      if (difficulty === 1) buckets.veryEasy += 1;
+      else if (difficulty === 2) buckets.easy += 1;
+      else if (difficulty === 3) buckets.medium += 1;
+      else if (difficulty === 4) buckets.hard += 1;
+      else buckets.veryHard += 1;
+    });
+
+    const bars = [
+      { label: 'V.Easy', value: buckets.veryEasy, color: 'bg-green-500' },
+      { label: 'Easy', value: buckets.easy, color: 'bg-emerald-500' },
+      { label: 'Medium', value: buckets.medium, color: 'bg-yellow-500' },
+      { label: 'Hard', value: buckets.hard, color: 'bg-orange-500' },
+      { label: 'V.Hard', value: buckets.veryHard, color: 'bg-red-500' }
+    ];
+
+    return {
+      bars,
+      total: bars.reduce((sum, bar) => sum + bar.value, 0),
+      max: Math.max(...bars.map(bar => bar.value), 1)
+    };
+  }, [dueTopics]);
 
   const isGraphMode = location.pathname === '/graph';
 
@@ -900,11 +1195,13 @@ const Dashboard = () => {
               {/* Focus Mode Button */}
               <button
                 onClick={() => navigate('/focus')}
-                className="px-2 sm:px-3 py-1 rounded-full text-xs font-medium transition-all duration-300 bg-white/10 text-gray-300 hover:bg-white/20"
+                className="group relative inline-flex items-center gap-1.5 sm:gap-2 h-8 sm:h-9 px-2.5 sm:px-4 rounded-full border border-cyan-300/30 bg-gradient-to-r from-cyan-500/12 via-sky-500/8 to-blue-500/12 text-cyan-100 text-xs font-semibold tracking-wide shadow-[0_8px_24px_rgba(56,189,248,0.18)] hover:border-cyan-200/45 hover:from-cyan-500/20 hover:to-blue-500/20 transition-all duration-300 active:scale-[0.98]"
                 title="Open Focus Mode (Press F)"
               >
-                <span className="hidden sm:inline">🎯 Focus Mode</span>
-                <span className="sm:hidden">🎯</span>
+                <span className="absolute inset-0 rounded-full bg-gradient-to-r from-white/8 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                <Target className="relative w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-200" />
+                <span className="relative hidden sm:inline">Focus Mode</span>
+                <span className="relative sm:hidden">Focus</span>
               </button>
 
               {/* User Profile Dropdown */}
@@ -1000,7 +1297,7 @@ const Dashboard = () => {
                               <div className="flex items-center space-x-4 text-xs text-gray-500">
                                 <div className="flex items-center space-x-1">
                                   <Target className={`w-3 h-3 ${getDifficultyColor(topic.difficulty)}`} />
-                                  <span className={getDifficultyColor(topic.difficulty)}>Difficulty: {topic.difficulty}/5</span>
+                                  <span className={getDifficultyColor(topic.difficulty)}>{getDifficultyLabel(topic.difficulty)} ({topic.difficulty}/5)</span>
                                 </div>
                                 <div className="flex items-center space-x-1">
                                   <Clock className="w-3 h-3" />
@@ -1184,7 +1481,7 @@ const Dashboard = () => {
                             <div className="flex items-center space-x-3 text-xs text-gray-500 mt-1">
                               <div className="flex items-center space-x-1">
                                 <Target className={`w-3 h-3 ${getDifficultyColor(topic.difficulty)}`} />
-                                <span className={getDifficultyColor(topic.difficulty)}>Diff: {topic.difficulty}/5</span>
+                                <span className={getDifficultyColor(topic.difficulty)}>{getDifficultyLabel(topic.difficulty)} ({topic.difficulty}/5)</span>
                               </div>
                               <div className="flex items-center space-x-1">
                                 <Clock className="w-3 h-3" />
@@ -1304,103 +1601,115 @@ const Dashboard = () => {
             </div>
 
             {/* Next 7 Days */}
-            <div className="bg-black border border-white/20 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-white">Next 7 Days</h3>
-                <div className="flex gap-2">
-                  {/* Move Overdue Button - always show if there might be overdue topics */}
-                  <button
-                    onClick={handleMoveOverdueTopics}
-                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg transition-colors"
-                    title="Move overdue topics to today"
-                  >
-                    Move Overdue
-                  </button>
-                  {nextSevenDaysData.some(day => day.isCrowded) && (
-                    <button
-                      onClick={() => handlePreventCrowding(new Date())}
-                      className="px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white text-xs rounded-lg transition-colors"
-                      title="Redistribute crowded topics"
-                    >
-                      Fix Crowding
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="space-y-3">
-                {nextSevenDaysData.length > 0 ? (
-                  nextSevenDaysData.map((day) => (
-                    <div key={day.day} className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <span className="text-sm font-medium w-8 text-white">{day.day}</span>
-                        <div className="flex items-center space-x-2">
-                          <span className="text-sm text-gray-400">
-                            {day.topics} {day.topics === 1 ? 'topic' : 'topics'}
-                          </span>
-                          {day.isCrowded && (
-                            <span className="text-xs text-orange-400 font-medium">
-                              (Crowded!)
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <div
-                          className={`w-3 h-3 rounded-full ${day.color}`}
-                          title={`${day.topics} topics on ${day.day} - ${day.crowdingLevel} load (Avg difficulty: ${day.averageDifficulty?.toFixed(1) || 'N/A'})${day.isCrowded ? ' - CROWDED!' : ''}`}
-                        ></div>
-                        {day.isCrowded && (
-                          <button
-                            onClick={() => handlePreventCrowding(new Date(day.date))}
-                            className="text-orange-400 hover:text-orange-300 transition-colors"
-                            title="Redistribute this day's topics"
-                          >
-                            <Target className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-4">
-                    <p className="text-gray-400 text-sm mb-1">No scheduled reviews</p>
-                    <p className="text-gray-500 text-xs">Add topics and study to see your upcoming schedule</p>
-                  </div>
-                )}
+            <div className="bg-black border border-white/20 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <button
+                  onClick={() => setWeekOffset(prev => Math.max(prev - 1, 0))}
+                  disabled={weekOffset === 0}
+                  className="p-1 text-gray-400 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Previous week"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <h3 className="text-sm sm:text-base font-semibold text-white whitespace-nowrap tracking-tight">{weekRangeLabel}</h3>
+                <button
+                  onClick={() => setWeekOffset(prev => prev + 1)}
+                  className="p-1 text-gray-400 hover:text-white transition-colors"
+                  aria-label="Next week"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
               </div>
 
-              {/* Legend */}
-              <div className="mt-4 pt-3 border-t border-white/10">
-                <div className="text-xs text-gray-400">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center space-x-4">
-                      <div className="flex items-center space-x-1">
-                        <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                        <span>Light</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                        <span>Medium</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
-                        <span>Heavy</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                        <span>Crowded</span>
-                      </div>
+              <div className="grid grid-cols-7 gap-1 mb-3">
+                {nextSevenCalendar.map((day) => (
+                  <button
+                    key={day.date}
+                    onClick={() => setSelectedDateKey(day.date)}
+                    className={`min-w-0 rounded-md px-1 py-1 text-center border transition-colors ${
+                      selectedDayData?.date === day.date
+                        ? 'border-white/20 bg-white/5'
+                        : 'border-transparent hover:border-white/20 hover:bg-white/5'
+                    }`}
+                  >
+                    <p className="text-[8px] tracking-wide text-gray-400 mb-0.5">{day.dayLabel}</p>
+                    <div className="h-1.5 mb-0.5 flex items-center justify-center">
+                      {day.topicCount > 0 ? <span className={`w-1.5 h-1.5 rounded-full ${day.color}`} /> : null}
                     </div>
-                  </div>
-                  <div className="text-center text-gray-500">
-                    Thresholds adjust based on topic difficulty levels
-                  </div>
+                    <p className={`text-sm leading-none tabular-nums ${day.isToday ? 'text-white font-semibold' : 'text-gray-500 font-medium'}`}>
+                      {day.dateLabel}
+                    </p>
+                  </button>
+                ))}
+              </div>
+
+              <div className="border-t border-white/10 pt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="ml-1 text-[11px] sm:text-xs font-medium text-gray-100">
+                    {selectedDayData ? `${selectedDayData.dayLabel} ${selectedDayData.dateLabel} ${selectedDayData.monthLabel}` : 'Selected day'} topics
+                  </h4>
+                  <span className="text-xs text-gray-400">
+                    {selectedDayTopics.length} {selectedDayTopics.length === 1 ? 'topic' : 'topics'}
+                  </span>
+                </div>
+
+                <div className="h-44 overflow-y-auto pr-1 space-y-2">
+                  {selectedDayTopicsPreview.length > 0 ? (
+                    selectedDayTopicsPreview.map((topic, index) => (
+                      <div
+                        key={topic._id || topic.id || `${selectedDayData?.date || 'day'}-${index}`}
+                        className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"
+                      >
+                        <p className="text-sm text-gray-300 truncate">{topic.title || 'Untitled topic'}</p>
+                        <p className="text-xs text-gray-400">Difficulty {topic.difficulty || '-'}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-3 text-center">
+                      <p className="text-xs text-gray-400">No topics scheduled for this day.</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
-            {/* MemScore Trend */}
-            <MemScoreChart currentScore={user?.memScore} />
+            {/* Today's Topics Mini Graph */}
+            <div className="bg-black border border-white/20 rounded-xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white">Today's Topic Mix</h3>
+                <span className="text-xs text-gray-400">
+                  {todayTopicMix.total} {todayTopicMix.total === 1 ? 'topic' : 'topics'} due
+                </span>
+              </div>
+
+              {todayTopicMix.total > 0 ? (
+                <>
+                  <div className="grid grid-cols-5 gap-2 items-end h-28">
+                    {todayTopicMix.bars.map((bar) => (
+                      <div key={bar.label} className="flex flex-col items-center">
+                        <div className="h-20 w-full max-w-[30px] rounded-md bg-white/5 border border-white/10 flex items-end overflow-hidden">
+                          <div
+                            className={`w-full ${bar.color}`}
+                            style={{ height: `${(bar.value / todayTopicMix.max) * 100}%` }}
+                            title={`${bar.label}: ${bar.value}`}
+                          />
+                        </div>
+                        <span className="mt-2 text-[10px] text-gray-400">{bar.label}</span>
+                        <span className="text-xs text-white">{bar.value}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <p className="text-xs text-gray-500 mt-4 text-center">
+                    Better than MemScore trend here because this card answers what to tackle right now.
+                  </p>
+                </>
+              ) : (
+                <div className="h-28 rounded-lg border border-white/10 bg-white/[0.03] flex items-center justify-center">
+                  <p className="text-sm text-gray-400">No topics due today.</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
           )}
@@ -1501,6 +1810,7 @@ const Dashboard = () => {
           setEditingTopic(null);
         }}
         onSubmit={handleEditTopicSubmit}
+        onReschedule={handleRescheduleFromEdit}
         topic={editingTopic}
         loading={topicsLoading}
       />

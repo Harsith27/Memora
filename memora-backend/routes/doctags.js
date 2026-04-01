@@ -32,12 +32,14 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
   fileFilter: function (req, file, cb) {
-    // Allow common file types
-    const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx|txt|mp4|mp3|zip|rar/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
+    // Allow common file types, accounting for browser-specific mimetype variations.
+    const allowedExtensions = /\.(jpeg|jpg|png|gif|webp|pdf|doc|docx|txt|rtf|mp4|webm|mp3|wav|zip|rar)$/i;
+    const allowedMimeTypes = /^(image\/(jpeg|jpg|png|gif|webp)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document|zip|x-rar-compressed)|text\/plain|video\/(mp4|webm)|audio\/(mpeg|mp3|wav))$/i;
 
-    if (mimetype && extname) {
+    const extname = allowedExtensions.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedMimeTypes.test(file.mimetype);
+
+    if (mimetype || extname) {
       return cb(null, true);
     } else {
       cb(new Error('Invalid file type. Only images, documents, videos, and archives are allowed.'));
@@ -79,7 +81,6 @@ router.post('/cleanup-duplicates', authenticateToken, async (req, res) => {
         for (let i = 1; i < group.length; i++) {
           await DocTag.findByIdAndUpdate(group[i]._id, { isActive: false });
           deletedCount++;
-          console.log(`Deleted duplicate DocTag: ${group[i].name} (${group[i]._id})`);
         }
       }
     }
@@ -115,11 +116,8 @@ router.get('/health', (req, res) => {
 // Helper function to sync Topics to DocTags
 const syncTopicsToDocTags = async (userId) => {
   try {
-    console.log('Syncing Topics to DocTags for user:', userId);
-
     // Get all active topics for the user
     const topics = await Topic.find({ userId, isActive: true });
-    console.log('Found topics:', topics.length);
 
     // Create a "Topics" folder if it doesn't exist
     let topicsFolder = await DocTag.findOne({
@@ -142,7 +140,6 @@ const syncTopicsToDocTags = async (userId) => {
         parentId: null
       });
       await topicsFolder.save();
-      console.log('Created Topics folder');
     }
 
     // Sync each topic that has attachments or external links
@@ -174,7 +171,6 @@ const syncTopicsToDocTags = async (userId) => {
           });
 
           await newDocTag.save();
-          console.log('Created DocTag for topic:', topic.title);
         } else {
           // Update existing DocTag with latest attachments/links
           existingDocTag.attachments = topic.attachments || [];
@@ -182,12 +178,9 @@ const syncTopicsToDocTags = async (userId) => {
           existingDocTag.description = topic.content ? topic.content.substring(0, 500) : '';
           existingDocTag.tags = topic.tags || [];
           await existingDocTag.save();
-          console.log('Updated DocTag for topic:', topic.title);
         }
       }
     }
-
-    console.log('Topic sync completed');
   } catch (error) {
     console.error('Error syncing topics to DocTags:', error);
   }
@@ -262,10 +255,6 @@ router.post('/upload', authenticateToken, upload.array('files', 5), async (req, 
  */
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    console.log('DocTags GET request received');
-    console.log('Query params:', req.query);
-    console.log('User ID:', req.user?.id);
-
     const { parentId, type, category, search, limit = 50, page = 1 } = req.query;
     const userId = req.user.id;
 
@@ -289,9 +278,10 @@ router.get('/', authenticateToken, async (req, res) => {
         type,
         category,
         limit: parseInt(limit)
-      });
+      }).populate('linkedTopicId', 'title');
     } else {
       docTagsQuery = DocTag.find(query)
+        .populate('linkedTopicId', 'title')
         .sort({ type: -1, name: 1 }) // Folders first, then documents, alphabetically
         .limit(parseInt(limit))
         .skip((parseInt(page) - 1) * parseInt(limit));
@@ -299,9 +289,6 @@ router.get('/', authenticateToken, async (req, res) => {
 
     const docTags = await docTagsQuery;
     const total = await DocTag.countDocuments(query);
-
-    console.log('DocTags found:', docTags.length);
-    console.log('Total count:', total);
 
     res.json({
       success: true,
@@ -422,12 +409,22 @@ router.post('/',
       .withMessage('Type must be either folder or document'),
     body('description')
       .optional()
-      .isLength({ max: 1000 })
-      .withMessage('Description cannot exceed 1000 characters'),
+      .isLength({ max: 5000 })
+      .withMessage('Description cannot exceed 5000 characters'),
     body('parentId')
-      .optional()
-      .isMongoId()
+      .optional({ nullable: true, values: 'falsy' })
+      .custom((value) => {
+        if (value === null || value === '' || value === undefined) return true;
+        return /^[0-9a-fA-F]{24}$/.test(String(value));
+      })
       .withMessage('Parent ID must be a valid MongoDB ObjectId'),
+    body('linkedTopicId')
+      .optional({ nullable: true })
+      .custom((value) => {
+        if (value === null || value === '' || value === undefined) return true;
+        return /^[0-9a-fA-F]{24}$/.test(value);
+      })
+      .withMessage('Linked topic ID must be a valid MongoDB ObjectId'),
     body('category')
       .optional()
       .isIn(['Science', 'Mathematics', 'History', 'Language', 'Technology', 'Arts', 'Business', 'Personal', 'Research', 'Other'])
@@ -452,8 +449,24 @@ router.post('/',
       const docTagData = {
         ...req.body,
         userId,
+        linkedTopicId: req.body.linkedTopicId || null,
         parentId: req.body.parentId || null
       };
+
+      if (docTagData.linkedTopicId) {
+        const linkedTopic = await Topic.findOne({
+          _id: docTagData.linkedTopicId,
+          userId,
+          isActive: true
+        });
+
+        if (!linkedTopic) {
+          return res.status(400).json({
+            success: false,
+            message: 'Linked topic not found for this user'
+          });
+        }
+      }
 
       // If creating a document, ensure it has at least one attachment or external link
       if (req.body.type === 'document' && 
@@ -514,6 +527,13 @@ router.put('/:id',
       .optional()
       .isIn(['Science', 'Mathematics', 'History', 'Language', 'Technology', 'Arts', 'Business', 'Personal', 'Research', 'Other'])
       .withMessage('Invalid category'),
+    body('linkedTopicId')
+      .optional({ nullable: true })
+      .custom((value) => {
+        if (value === null || value === '' || value === undefined) return true;
+        return /^[0-9a-fA-F]{24}$/.test(value);
+      })
+      .withMessage('Linked topic ID must be a valid MongoDB ObjectId'),
     body('tags')
       .optional()
       .isArray()
@@ -548,6 +568,25 @@ router.put('/:id',
           docTag[key] = req.body[key];
         }
       });
+
+      if (req.body.linkedTopicId !== undefined) {
+        const linkedTopicId = req.body.linkedTopicId || null;
+        if (linkedTopicId) {
+          const linkedTopic = await Topic.findOne({
+            _id: linkedTopicId,
+            userId,
+            isActive: true
+          });
+
+          if (!linkedTopic) {
+            return res.status(400).json({
+              success: false,
+              message: 'Linked topic not found for this user'
+            });
+          }
+        }
+        docTag.linkedTopicId = linkedTopicId;
+      }
 
       await docTag.save();
 

@@ -25,7 +25,6 @@ const ProfileModal = ({ isOpen, onClose }) => {
       // For now, we'll just update the local state
       updateUser(editData);
       setIsEditing(false);
-      console.log('Profile updated:', editData);
     } catch (error) {
       console.error('Failed to update profile:', error);
     }

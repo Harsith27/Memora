@@ -23,7 +23,6 @@ app.get('/api/health', (req, res) => {
 
 // Test auth routes
 app.post('/api/auth/register', (req, res) => {
-  console.log('Register request:', req.body);
   res.json({ 
     success: true, 
     message: 'User registered successfully',
@@ -32,7 +31,6 @@ app.post('/api/auth/register', (req, res) => {
 });
 
 app.post('/api/auth/login', (req, res) => {
-  console.log('Login request:', req.body);
   res.json({ 
     success: true, 
     message: 'Login successful',
@@ -44,8 +42,7 @@ app.post('/api/auth/login', (req, res) => {
 const PORT = 8080;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Memora Test Server running on port ${PORT}`);
-  console.log(`🌐 Health check: http://localhost:${PORT}/api/health`);
+  console.info(`Memora test server running on port ${PORT}`);
 });
 
 module.exports = app;

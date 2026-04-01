@@ -9,7 +9,7 @@
   username: String (unique),
   email: String (unique),
   password: String (hashed with bcrypt),
-  memScore: Number (0-100),
+  memScore: Number (0-10),
   preferences: {
     colorTheme: String, // "monochrome", "neon-blue", "neon-green"
     defaultDifficulty: Number (1-5),
@@ -86,8 +86,8 @@
 POST /api/auth/register
 POST /api/auth/login
 POST /api/auth/logout
-GET  /api/auth/verify-token
-POST /api/auth/refresh-token
+GET  /api/auth/verify
+POST /api/auth/refresh
 ```
 
 ### User Routes

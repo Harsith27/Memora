@@ -34,6 +34,21 @@ const topicSchema = new mongoose.Schema({
     default: Date.now,
     required: true
   },
+  deadlineDate: {
+    type: Date,
+    default: null
+  },
+  deadlineType: {
+    type: String,
+    enum: ['hard', 'soft'],
+    default: 'soft'
+  },
+  estimatedMinutes: {
+    type: Number,
+    min: [5, 'Estimated minutes must be at least 5'],
+    max: [480, 'Estimated minutes cannot exceed 480'],
+    default: 30
+  },
   category: {
     type: String,
     enum: ['Science', 'Mathematics', 'History', 'Language', 'Technology', 'Arts', 'Business', 'Other'],
@@ -154,6 +169,7 @@ const topicSchema = new mongoose.Schema({
 // Indexes for better query performance
 topicSchema.index({ userId: 1, createdAt: -1 });
 topicSchema.index({ userId: 1, nextReviewDate: 1 });
+topicSchema.index({ userId: 1, deadlineDate: 1 });
 topicSchema.index({ userId: 1, isActive: 1 });
 topicSchema.index({ userId: 1, category: 1 });
 topicSchema.index({ tags: 1 });
@@ -170,7 +186,7 @@ topicSchema.virtual('daysUntilReview').get(function() {
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const MIN_EASE_FACTOR = 1.3;
 const MAX_EASE_FACTOR = 3.2;
-const MAX_INTERVAL_DAYS = 3650;
+const MAX_INTERVAL_DAYS = 180;
 
 const QUALITY_LABELS = {
   0: 'blackout',
@@ -182,17 +198,20 @@ const QUALITY_LABELS = {
 };
 
 const DIFFICULTY_INTERVAL_MULTIPLIER = {
-  1: 1.32,
-  2: 1.16,
+  1: 1.15,
+  2: 1.05,
   3: 1.0,
-  4: 0.82,
-  5: 0.68
+  4: 0.9,
+  5: 0.82
 };
 
 const QUALITY_INTERVAL_MULTIPLIER = {
+  0: 0.45,
+  1: 0.6,
+  2: 0.85,
   3: 1.0,
-  4: 1.08,
-  5: 1.16
+  4: 1.15,
+  5: 1.3
 };
 
 const RESPONSE_TIME_MULTIPLIER = {
@@ -208,10 +227,30 @@ const RETENTION_SPEED_MULTIPLIER = {
   slow: 0.95
 };
 
-const REVISION_BASE_CAP_BY_REPETITION = [
-  1, 3, 6, 10, 16, 24, 35, 50, 70, 95,
-  125, 160, 200, 245, 295, 350, 410, 475, 545, 620, 700
-];
+const BASE_REVISION_COUNT_BY_DIFFICULTY = {
+  1: 3,
+  2: 4,
+  3: 5,
+  4: 6,
+  5: 7
+};
+
+const BASE_PERIOD_DAYS_BY_DIFFICULTY = {
+  1: 15,
+  2: 30,
+  3: 45,
+  4: 60,
+  5: 75
+};
+
+const QUALITY_EASE_DELTA = {
+  0: -0.18,
+  1: -0.12,
+  2: -0.06,
+  3: 0,
+  4: 0.05,
+  5: 0.1
+};
 
 const toSeconds = (responseTime) => {
   if (!responseTime || responseTime <= 0) return 0;
@@ -243,15 +282,89 @@ const setPreferredReviewTime = (date) => {
 
 const getMemScoreMultiplier = (memScore) => {
   const safeMemScore = Math.max(0, Math.min(10, Number(memScore) || 0));
-  // MemScore 0 => 0.82, MemScore 10 => 1.18
-  return Number((0.82 + (safeMemScore / 10) * 0.36).toFixed(3));
+  // Interval scaling: MemScore 0 => 0.9, MemScore 10 => 1.1
+  return Number((0.9 + (safeMemScore / 10) * 0.2).toFixed(3));
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-const getBaseRevisionCap = (upcomingRepetitions) => {
-  const index = Math.max(0, Math.min(upcomingRepetitions, REVISION_BASE_CAP_BY_REPETITION.length - 1));
-  return REVISION_BASE_CAP_BY_REPETITION[index];
+const getMemScoreRevisionBoost = (difficulty, memScore) => {
+  if (difficulty <= 1) return 0;
+  if (memScore >= 9) return 0;
+  if (memScore >= 6) return 1;
+  return 2;
+};
+
+const getTargetRevisionCount = (difficulty, memScore) => {
+  const base = BASE_REVISION_COUNT_BY_DIFFICULTY[difficulty] || 5;
+  const boost = getMemScoreRevisionBoost(difficulty, memScore);
+  return base + boost;
+};
+
+const getTargetPeriodDays = (difficulty) => {
+  return BASE_PERIOD_DAYS_BY_DIFFICULTY[difficulty] || 45;
+};
+
+const getDaysUntil = (dateValue) => {
+  if (!dateValue) return null;
+  const target = new Date(dateValue);
+  const now = new Date();
+  const diff = target.getTime() - now.getTime();
+  return Math.ceil(diff / DAY_IN_MS);
+};
+
+const getEffectivePeriodDays = (targetPeriodDays, deadlineDate, deadlineType) => {
+  const daysUntilDeadline = getDaysUntil(deadlineDate);
+  if (daysUntilDeadline === null) return targetPeriodDays;
+
+  const boundedDays = Math.max(1, daysUntilDeadline);
+  if (deadlineType === 'hard') {
+    return Math.max(1, Math.min(targetPeriodDays, boundedDays));
+  }
+
+  if (boundedDays >= targetPeriodDays) {
+    return targetPeriodDays;
+  }
+
+  // Soft deadlines allow some controlled spill while staying near the target horizon.
+  const softExtension = Math.min(10, Math.ceil((targetPeriodDays - boundedDays) * 0.35));
+  return Math.max(1, Math.min(targetPeriodDays, boundedDays + softExtension));
+};
+
+const getMinimumRevisionCount = (difficulty) => {
+  return difficulty <= 1 ? 2 : 3;
+};
+
+const applyDeadlineCompression = ({
+  difficulty,
+  targetRevisionCount,
+  targetPeriodDays,
+  effectivePeriodDays,
+  deadlineDate,
+  deadlineType
+}) => {
+  const minimumRevisionCount = getMinimumRevisionCount(difficulty);
+  const daysUntilDeadline = getDaysUntil(deadlineDate);
+  let plannedRevisionCount = targetRevisionCount;
+
+  if (daysUntilDeadline !== null && deadlineType === 'hard') {
+    if (difficulty === 5 && daysUntilDeadline <= 10) {
+      plannedRevisionCount = Math.min(plannedRevisionCount, 3);
+    } else if (difficulty === 5 && daysUntilDeadline <= 15) {
+      plannedRevisionCount = Math.min(plannedRevisionCount, 4);
+    } else if (difficulty === 4 && daysUntilDeadline <= 10) {
+      plannedRevisionCount = Math.min(plannedRevisionCount, 3);
+    } else if (difficulty === 4 && daysUntilDeadline <= 15) {
+      plannedRevisionCount = Math.min(plannedRevisionCount, 4);
+    }
+
+    if (effectivePeriodDays < targetPeriodDays) {
+      const compressionScale = Math.max(0.55, effectivePeriodDays / targetPeriodDays);
+      plannedRevisionCount = Math.round(plannedRevisionCount * compressionScale);
+    }
+  }
+
+  return clamp(plannedRevisionCount, minimumRevisionCount, targetRevisionCount);
 };
 
 // Instance method to update spaced repetition parameters with adaptive factors.
@@ -270,92 +383,73 @@ topicSchema.methods.updateSpacedRepetition = async function(quality, responseTim
   const retentionSpeed = user?.preferences?.retentionSpeed || 'medium';
   const retentionSpeedMultiplier = RETENTION_SPEED_MULTIPLIER[retentionSpeed] || 1.0;
 
+  const targetRevisionCount = getTargetRevisionCount(difficulty, memScore);
+  const targetPeriodDays = getTargetPeriodDays(difficulty);
+  const effectivePeriodDays = getEffectivePeriodDays(targetPeriodDays, this.deadlineDate, this.deadlineType);
+  const plannedRevisionCount = applyDeadlineCompression({
+    difficulty,
+    targetRevisionCount,
+    targetPeriodDays,
+    effectivePeriodDays,
+    deadlineDate: this.deadlineDate,
+    deadlineType: this.deadlineType
+  });
+  const daysUntilDeadline = getDaysUntil(this.deadlineDate);
+
   this.reviewCount += 1;
   this.lastReviewed = new Date();
 
-  let previousInterval = Math.max(1, Number(this.interval) || 1);
+  const previousInterval = Math.max(1, Number(this.interval) || 1);
+  const previousRepetitions = Math.max(0, Number(this.repetitions) || 0);
   let nextIntervalDays = 1;
-  let absoluteRevisionCap = 1; // Initialize for all paths
-  let effectiveCap = 1; // Initialize for all paths
 
-  if (safeQuality < 3) {
-    const easePenalty = safeQuality <= 1 ? 0.22 : 0.12;
-    this.easeFactor = Math.max(MIN_EASE_FACTOR, this.easeFactor - easePenalty);
+  const easeDelta = QUALITY_EASE_DELTA[safeQuality] || 0;
+  this.easeFactor = clamp((Number(this.easeFactor) || 2.5) + easeDelta, MIN_EASE_FACTOR, MAX_EASE_FACTOR);
 
-    // Keep progress partially for "hard" recalls instead of hard reset.
-    this.repetitions = safeQuality === 2 ? Math.max(0, this.repetitions - 1) : 0;
-    this.isLearning = true;
-    nextIntervalDays = safeQuality === 2 ? 1 : 1;
+  if (safeQuality >= 3) {
+    this.repetitions = previousRepetitions + 1;
+  } else if (safeQuality === 2) {
+    this.repetitions = Math.max(0, previousRepetitions - 1);
   } else {
-    // SM-2 inspired EF update with bounded range for stability.
-    const efDelta = 0.1 - (5 - safeQuality) * (0.08 + (5 - safeQuality) * 0.02);
-    this.easeFactor = Math.min(
-      MAX_EASE_FACTOR,
-      Math.max(MIN_EASE_FACTOR, this.easeFactor + efDelta)
-    );
+    this.repetitions = Math.max(0, previousRepetitions - 2);
+  }
 
-    let baseInterval;
-    if (this.repetitions === 0) {
-      baseInterval = 1;
-    } else if (this.repetitions === 1) {
-      baseInterval = 3;
-    } else if (this.repetitions === 2) {
-      baseInterval = 6;
-    } else {
-      // Controlled mature growth to avoid exploding intervals.
-      const matureGrowth = 1.2 + (this.easeFactor - MIN_EASE_FACTOR) * 0.18;
-      baseInterval = previousInterval * matureGrowth;
-    }
+  const baseGapDays = Math.max(1, Math.round(effectivePeriodDays / Math.max(1, plannedRevisionCount)));
+  const progressRatio = clamp(this.repetitions / Math.max(1, plannedRevisionCount), 0, 1);
+  const frontLoadMultiplier = 0.7 + progressRatio * 0.9;
 
-    const qualityMultiplier = QUALITY_INTERVAL_MULTIPLIER[safeQuality] || 1.0;
-    const overdueBonus = safeQuality >= 4
-      ? Math.min(1.1, 1 + overdueDays * 0.015)
-      : 1.0;
+  const qualityMultiplier = QUALITY_INTERVAL_MULTIPLIER[safeQuality] || 1.0;
+  const overdueAdjustment = overdueDays > 0 && safeQuality >= 4
+    ? Math.min(1.12, 1 + overdueDays * 0.01)
+    : 1.0;
 
-    const combinedLearningMultiplier = qualityMultiplier
+  const rawIntervalDays = Math.round(
+    baseGapDays
+      * frontLoadMultiplier
+      * qualityMultiplier
       * difficultyMultiplier
       * memScoreMultiplier
       * retentionSpeedMultiplier
       * responseMultiplier
-      * overdueBonus;
+      * overdueAdjustment
+  );
 
-    const qualityGrowthCap = {
-      3: 1.5,
-      4: 1.65,
-      5: 1.85
-    };
+  nextIntervalDays = Math.max(1, rawIntervalDays);
 
-    const dynamicCap = qualityGrowthCap[safeQuality] || 1.75;
-    const maxByGrowthCap = Math.max(1, Math.ceil(previousInterval * dynamicCap));
-
-    const upcomingRepetitions = this.repetitions + 1;
-    const baseRevisionCap = getBaseRevisionCap(upcomingRepetitions);
-    const adaptiveCapMultiplier = clamp(
-      0.9
-        + (memScoreMultiplier - 1.0) * 0.9
-        + (difficultyMultiplier - 1.0) * 0.8
-        + (retentionSpeedMultiplier - 1.0) * 0.7,
-      0.65,
-      1.35
-    );
-    absoluteRevisionCap = Math.max(1, Math.round(baseRevisionCap * adaptiveCapMultiplier));
-    effectiveCap = Math.min(maxByGrowthCap, absoluteRevisionCap);
-
-    nextIntervalDays = Math.max(
-      1,
-      Math.round(baseInterval * combinedLearningMultiplier)
-    );
-
-    // Keep growth smooth for concept revision; avoid sudden jumps.
-    if (this.repetitions >= 1) {
-      nextIntervalDays = clamp(nextIntervalDays, 1, effectiveCap);
-    }
-
-    this.repetitions += 1;
-    if (this.repetitions >= 2 && safeQuality >= 4) {
-      this.isLearning = false;
-    }
+  if (safeQuality <= 1) {
+    nextIntervalDays = 1;
+  } else if (safeQuality === 2) {
+    nextIntervalDays = Math.min(nextIntervalDays, 2);
   }
+
+  if (this.deadlineType === 'hard' && this.deadlineDate) {
+    const safeDaysUntilDeadline = Math.max(1, getDaysUntil(this.deadlineDate) || 1);
+    const remainingRevisionsAfterNext = Math.max(0, plannedRevisionCount - this.repetitions - 1);
+    const maxIntervalAllowed = Math.max(1, safeDaysUntilDeadline - remainingRevisionsAfterNext);
+    nextIntervalDays = Math.min(nextIntervalDays, maxIntervalAllowed);
+  }
+
+  this.isLearning = this.repetitions < plannedRevisionCount;
 
   nextIntervalDays = Math.min(MAX_INTERVAL_DAYS, nextIntervalDays);
   this.interval = nextIntervalDays;
@@ -383,8 +477,12 @@ topicSchema.methods.updateSpacedRepetition = async function(quality, responseTim
     responseTimeSeconds,
     responseBucket,
     responseMultiplier,
-    absoluteRevisionCap,
-    effectiveCap,
+    targetRevisionCount,
+    plannedRevisionCount,
+    targetPeriodDays,
+    effectivePeriodDays,
+    deadlineType: this.deadlineType,
+    daysUntilDeadline,
     overdueDays,
     easeFactor: this.easeFactor,
     repetitions: this.repetitions,

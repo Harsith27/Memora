@@ -79,11 +79,11 @@ const DocTags = () => {
   const sidebarItems = [
     { icon: Brain, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
+    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
     { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
-    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
     { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
     { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
-    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" }
+    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" }
   ];
 
   // Handle sidebar navigation
@@ -311,7 +311,7 @@ const DocTags = () => {
       fetchDocTags(currentPath.length > 0 ? currentPath[currentPath.length - 1].id : null);
     } catch (error) {
       console.error('Failed to create item:', error);
-      showToast('Failed to create item', 'error');
+      showToast(error.message || 'Failed to create item', 'error');
       throw error;
     }
   };
@@ -561,32 +561,48 @@ const DocTags = () => {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {docTags.map((item) => (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {docTags.map((item) => {
+              const isDocument = item.type === 'document';
+              const attachmentCount = item.attachments?.length || 0;
+              const linkCount = item.externalLinks?.length || 0;
+
+              return (
               <div
                 key={item._id}
-                className="bg-white/5 border border-white/10 rounded-lg p-4 hover:bg-white/10 transition-colors group"
+                className="bg-black border border-white/12 rounded-xl p-3.5 hover:border-white/25 hover:bg-black transition-all duration-200 group"
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div className={`${getColorClass(item.color || 'blue')}`}>
-                    {getIcon(item)}
+                <div className="flex items-start justify-between gap-2 mb-2.5">
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <div className={`w-8 h-8 rounded-lg border border-white/15 bg-black/40 flex items-center justify-center ${getColorClass(item.color || 'blue')}`}>
+                      {getIcon(item)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">
+                        {isDocument ? 'Resource' : 'Folder'}
+                      </p>
+                      <h3 className="text-sm font-semibold text-white truncate">{item.name}</h3>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => {
-                        setEditingItem(item);
-                        setShowEditModal(true);
-                      }}
-                      className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-white"
-                    >
-                      <Edit3 className="w-3 h-3" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(item)}
-                      className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-red-400"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
+
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => {
+                          setEditingItem(item);
+                          setShowEditModal(true);
+                        }}
+                        className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-white"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item)}
+                        className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-red-400"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -594,53 +610,59 @@ const DocTags = () => {
                   className="cursor-pointer"
                   onClick={() => item.type === 'folder' ? handleNavigateToFolder(item) : handleOpenDocument(item)}
                 >
-                  <h3 className="font-medium text-white mb-1 truncate">{item.name}</h3>
-                  {item.description && item.name !== 'Topics' && (
-                    <p className="text-sm text-gray-400 mb-2 line-clamp-2">{item.description}</p>
-                  )}
+                  <div className="min-h-[38px] mb-2">
+                    {item.description && item.name !== 'Topics' ? (
+                      <p className="text-xs text-gray-300 line-clamp-2 leading-relaxed">{item.description}</p>
+                    ) : (
+                      <p className="text-xs text-gray-500">No description added</p>
+                    )}
+                  </div>
 
                   {item.linkedTopicId?.title && (
                     <div className="mb-2">
-                      <span className="inline-flex items-center px-2 py-1 bg-emerald-500/15 text-emerald-300 text-xs rounded">
+                      <span className="inline-flex items-center px-2 py-0.5 bg-emerald-500/15 text-emerald-300 text-[11px] rounded">
                         Topic: {item.linkedTopicId.title}
                       </span>
                     </div>
                   )}
-                  
-                  <div className="flex items-center justify-between text-xs text-gray-500">
-                    <span className="capitalize">{item.category}</span>
-                    <span>{new Date(item.createdAt).toLocaleDateString()}</span>
+
+                  <div className="flex items-center justify-between mb-1.5 text-[11px] gap-2">
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md border border-white/10 bg-white/[0.04] text-gray-300 capitalize shrink-0">
+                      {item.category || 'Other'}
+                    </span>
+
+                    {isDocument ? (
+                      <span className="text-gray-400 truncate text-right">
+                        {attachmentCount} file(s){linkCount > 0 ? ` · ${linkCount} link(s)` : ''}
+                      </span>
+                    ) : (
+                      <span className="text-gray-500 text-right">Open folder</span>
+                    )}
                   </div>
 
-                  {item.type === 'document' && (
-                    <div className="mt-2 text-xs text-gray-400">
-                      {item.attachments?.length > 0 && (
-                        <span>{item.attachments.length} file(s)</span>
-                      )}
-                      {item.externalLinks?.length > 0 && (
-                        <span className="ml-2">{item.externalLinks.length} link(s)</span>
-                      )}
-                    </div>
-                  )}
+                  <div className="text-[11px] text-gray-500 mb-1.5">
+                    {new Date(item.createdAt).toLocaleDateString()}
+                  </div>
 
                   {item.tags && item.tags.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {item.tags.slice(0, 3).map((tag, index) => (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {item.tags.slice(0, 2).map((tag, index) => (
                         <span
                           key={index}
-                          className="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs rounded"
+                          className="px-1.5 py-0.5 bg-blue-500/20 text-blue-300 text-[11px] rounded-md"
                         >
                           {tag}
                         </span>
                       ))}
-                      {item.tags.length > 3 && (
-                        <span className="text-xs text-gray-400">+{item.tags.length - 3}</span>
+                      {item.tags.length > 2 && (
+                        <span className="text-[11px] text-gray-400">+{item.tags.length - 2}</span>
                       )}
                     </div>
                   )}
                 </div>
               </div>
-            ))}
+            );
+            })}
             </div>
           )}
         </div>

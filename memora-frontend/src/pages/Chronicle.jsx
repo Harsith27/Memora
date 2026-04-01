@@ -11,6 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 import Logo from '../components/Logo';
 import Toast from '../components/Toast';
 import Dialog from '../components/Dialog';
+import ShadcnSelect from '../components/ShadcnSelect';
 import apiService from '../services/api';
 
 const Chronicle = () => {
@@ -45,7 +46,7 @@ const Chronicle = () => {
     date: '',
     time: '',
     type: 'revision', // revision, event, festival, deadline
-    priority: 'medium', // low, medium, high
+    difficulty: 3,
     color: 'blue'
   });
 
@@ -65,11 +66,11 @@ const Chronicle = () => {
   const sidebarItems = [
     { icon: Brain, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
+    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
     { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
-    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
     { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
     { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
-    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" }
+    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" }
   ];
 
   // Handle sidebar navigation
@@ -224,8 +225,8 @@ const Chronicle = () => {
             title: topic.title,
             description: `Due for review: ${topic.title}`,
             type: 'revision',
-            priority: topic.difficulty >= 4 ? 'high' : topic.difficulty >= 3 ? 'medium' : 'low',
             color: getDifficultyColor(topic.difficulty),
+            difficulty: topic.difficulty,
             time: '09:00',
             topicId: topic._id,
             isDue: true
@@ -246,8 +247,8 @@ const Chronicle = () => {
             title: topic.title,
             description: `Scheduled review: ${topic.title}`,
             type: 'revision',
-            priority: topic.difficulty >= 4 ? 'high' : topic.difficulty >= 3 ? 'medium' : 'low',
             color: getDifficultyColor(topic.difficulty),
+            difficulty: topic.difficulty,
             time: '09:00',
             topicId: topic._id
           });
@@ -299,13 +300,17 @@ const Chronicle = () => {
 
   const getDifficultyColor = (difficulty) => {
     const colors = {
-      1: 'green',
-      2: 'blue',
-      3: 'yellow',
-      4: 'orange',
-      5: 'red'
+      1: 'emerald',
+      2: 'cyan',
+      3: 'amber',
+      4: 'indigo',
+      5: 'rose'
     };
-    return colors[difficulty] || 'blue';
+    return colors[difficulty] || 'cyan';
+  };
+
+  const getFestivalColor = (religion, sequence = 0) => {
+    return 'pink';
   };
 
   const generateFestivals = (year) => {
@@ -388,7 +393,7 @@ const Chronicle = () => {
     // Add festivals based on user's selected religions
     selectedReligions.forEach(religion => {
       if (festivalDatabase[religion]) {
-        festivalDatabase[religion].forEach(festival => {
+        festivalDatabase[religion].forEach((festival, index) => {
           const date = new Date(year, festival.month, festival.day);
           const dateKey = date.toDateString();
 
@@ -401,8 +406,8 @@ const Chronicle = () => {
             title: festival.name,
             description: `${religionOptions.find(r => r.id === religion)?.label || 'Festival'}: ${festival.name}`,
             type: 'festival',
-            priority: 'low',
-            color: 'purple',
+            color: getFestivalColor(religion, index),
+            difficulty: 1,
             time: 'All Day',
             isHoliday: true,
             religion: religion
@@ -424,8 +429,8 @@ const Chronicle = () => {
           title: 'Easter Sunday',
           description: 'Christian: Easter Sunday',
           type: 'festival',
-          priority: 'low',
-          color: 'purple',
+          color: getFestivalColor('christian', 0),
+          difficulty: 1,
           time: 'All Day',
           isHoliday: true,
           religion: 'christian'
@@ -443,8 +448,8 @@ const Chronicle = () => {
           title: 'Good Friday',
           description: 'Christian: Good Friday',
           type: 'festival',
-          priority: 'low',
-          color: 'purple',
+          color: getFestivalColor('christian', 1),
+          difficulty: 1,
           time: 'All Day',
           isHoliday: true,
           religion: 'christian'
@@ -477,13 +482,16 @@ const Chronicle = () => {
 
   // Calendar navigation
   const navigateMonth = (direction) => {
-    const newDate = new Date(currentDate);
-    newDate.setMonth(currentDate.getMonth() + direction);
-    setCurrentDate(newDate);
+    setCurrentDate((prevDate) => {
+      const safeMonthStart = new Date(prevDate.getFullYear(), prevDate.getMonth(), 1);
+      safeMonthStart.setMonth(safeMonthStart.getMonth() + direction);
+      return safeMonthStart;
+    });
   };
 
   const goToToday = () => {
-    setCurrentDate(new Date());
+    const today = new Date();
+    setCurrentDate(new Date(today.getFullYear(), today.getMonth(), 1));
   };
 
   // Calendar grid generation
@@ -529,7 +537,7 @@ const Chronicle = () => {
       date: date ? date.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
       time: '09:00',
       type,
-      priority: 'medium',
+      difficulty: 3,
       color: eventTypes[type]?.color || 'blue'
     });
     setEditingEvent(null);
@@ -543,7 +551,7 @@ const Chronicle = () => {
       date: new Date(event.date || selectedDate).toISOString().split('T')[0],
       time: event.time || '09:00',
       type: event.type || 'event',
-      priority: event.priority || 'medium',
+      difficulty: event.difficulty || 3,
       color: event.color || 'blue'
     });
     setEditingEvent(event);
@@ -566,7 +574,7 @@ const Chronicle = () => {
       date: eventDate,
       time: eventForm.time,
       type: eventForm.type,
-      priority: eventForm.priority,
+      difficulty: Number(eventForm.difficulty) || 3,
       color: eventForm.color
     };
 
@@ -633,23 +641,43 @@ const Chronicle = () => {
 
   const getEventColor = (event) => {
     const colors = {
-      blue: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-      green: 'bg-green-500/20 text-green-400 border-green-500/30',
-      red: 'bg-red-500/20 text-red-400 border-red-500/30',
-      yellow: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-      orange: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-      purple: 'bg-purple-500/20 text-purple-400 border-purple-500/30'
+      blue: 'bg-[#6EA8FE]/30 text-[#EAF2FF] border-[#6EA8FE]/55',
+      green: 'bg-[#58D68D]/28 text-[#EAFFF4] border-[#58D68D]/55',
+      red: 'bg-[#FF6B6B]/30 text-[#FFECEC] border-[#FF6B6B]/55',
+      yellow: 'bg-[#FFD166]/30 text-[#FFF5DE] border-[#FFD166]/55',
+      orange: 'bg-[#FE9000]/30 text-[#FFF1E0] border-[#FE9000]/55',
+      purple: 'bg-[#B084F5]/30 text-[#F4EAFF] border-[#B084F5]/55',
+      emerald: 'bg-[#10B981]/30 text-[#E9FFF6] border-[#10B981]/55',
+      cyan: 'bg-[#06B6D4]/30 text-[#E8FCFF] border-[#06B6D4]/55',
+      amber: 'bg-[#D9A404]/30 text-[#FFF3CF] border-[#D9A404]/55',
+      rose: 'bg-[#F43F5E]/30 text-[#FFEAF0] border-[#F43F5E]/55',
+      violet: 'bg-[#8B5CF6]/30 text-[#F0EAFF] border-[#8B5CF6]/55',
+      indigo: 'bg-[#6366F1]/30 text-[#ECEEFF] border-[#6366F1]/55',
+      fuchsia: 'bg-[#D946EF]/30 text-[#FFEFFF] border-[#D946EF]/55',
+      pink: 'bg-[#EC4899]/30 text-[#FFF0F7] border-[#EC4899]/55',
+      teal: 'bg-[#14B8A6]/30 text-[#EAFFFB] border-[#14B8A6]/55'
     };
+
+    if (event?.type === 'festival') {
+      return 'bg-gray-500/20 text-gray-200 border-gray-400/45';
+    }
+    if (event?.type === 'revision') {
+      return colors[event?.color] || colors.cyan;
+    }
+
     return colors[event.color] || colors.blue;
   };
 
-  const getPriorityColor = (priority) => {
-    const colors = {
-      low: 'border-l-green-500',
-      medium: 'border-l-yellow-500', 
-      high: 'border-l-red-500'
+  const getDifficultyBadgeColor = (difficulty) => {
+    const badgeColors = {
+      1: 'bg-emerald-500/20 text-emerald-300',
+      2: 'bg-cyan-500/20 text-cyan-300',
+      3: 'bg-[#D9A404]/25 text-[#FFE8A3]',
+      4: 'bg-indigo-500/20 text-indigo-300',
+      5: 'bg-rose-500/20 text-rose-300'
     };
-    return colors[priority] || colors.medium;
+
+    return badgeColors[difficulty] || badgeColors[3];
   };
 
   if (isLoading) {
@@ -793,16 +821,18 @@ const Chronicle = () => {
         {/* Calendar Navigation */}
         <div className="border-b border-white/10 p-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center gap-3">
               <button
                 onClick={() => navigateMonth(-1)}
                 className="p-2 hover:bg-white/5 rounded-lg transition-colors"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <h2 className="text-xl font-semibold">
-                {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
-              </h2>
+              <div className="w-[220px] sm:w-[260px] text-center">
+                <h2 className="text-xl font-semibold whitespace-nowrap">
+                  {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+                </h2>
+              </div>
               <button
                 onClick={() => navigateMonth(1)}
                 className="p-2 hover:bg-white/5 rounded-lg transition-colors"
@@ -818,7 +848,7 @@ const Chronicle = () => {
                   <span>Revision</span>
                 </div>
                 <div className="flex items-center space-x-1">
-                  <div className="w-2 h-2 bg-red-500 rounded-full ring-1 ring-red-500/50"></div>
+                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
                   <span>Due Now</span>
                 </div>
                 <div className="flex items-center space-x-1">
@@ -826,7 +856,7 @@ const Chronicle = () => {
                   <span>Event</span>
                 </div>
                 <div className="flex items-center space-x-1">
-                  <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                  <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
                   <span>Festival</span>
                 </div>
               </div>
@@ -869,9 +899,7 @@ const Chronicle = () => {
                       return (
                         <div
                           key={eventIndex}
-                          className={`text-xs p-1 rounded border-l-2 ${getEventColor(event)} ${getPriorityColor(event.priority)} truncate ${
-                            event.isDue ? 'ring-1 ring-red-500/50' : ''
-                          }`}
+                          className={`text-xs p-1 rounded border ${getEventColor(event)} truncate`}
                           title={event.isDue ? `DUE: ${event.title}` : event.title}
                         >
                           <div className="flex items-center space-x-1">
@@ -1013,7 +1041,7 @@ const Chronicle = () => {
                     return (
                       <div
                         key={index}
-                        className={`p-4 rounded-lg border-l-4 ${getEventColor(event)} ${getPriorityColor(event.priority)} hover:bg-white/5 transition-colors`}
+                        className={`p-4 rounded-lg border ${getEventColor(event)} hover:bg-white/5 transition-colors`}
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
@@ -1039,20 +1067,18 @@ const Chronicle = () => {
                               <p className="text-sm text-gray-300 mb-2">{event.description}</p>
                             )}
                             <div className="flex items-center space-x-2 text-xs">
-                              <span className={`px-2 py-1 rounded ${
-                                event.priority === 'high' ? 'bg-red-500/20 text-red-400' :
-                                event.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
-                                'bg-green-500/20 text-green-400'
-                              }`}>
-                                {event.priority} priority
-                              </span>
+                              {typeof event.difficulty === 'number' && (
+                                <span className={`px-2 py-1 rounded ${getDifficultyBadgeColor(event.difficulty)}`}>
+                                  Difficulty {event.difficulty}
+                                </span>
+                              )}
                               {event.topicId && (
                                 <span className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded">
                                   Auto-generated
                                 </span>
                               )}
                               {event.isHoliday && (
-                                <span className="px-2 py-1 bg-purple-500/20 text-purple-400 rounded">
+                                <span className="px-2 py-1 bg-gray-500/20 text-gray-300 rounded">
                                   Holiday
                                 </span>
                               )}
@@ -1162,30 +1188,31 @@ const Chronicle = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Type</label>
-                <select
+                <ShadcnSelect
                   value={eventForm.type}
-                  onChange={(e) => setEventForm({ ...eventForm, type: e.target.value, color: eventTypes[e.target.value]?.color || 'blue' })}
-                  className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                >
-                  {Object.entries(eventTypes).map(([key, type]) => (
-                    <option key={key} value={key} className="bg-gray-800">
-                      {type.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => setEventForm({ ...eventForm, type: value, color: eventTypes[value]?.color || 'blue' })}
+                  options={Object.entries(eventTypes).map(([key, type]) => ({
+                    value: key,
+                    label: type.label
+                  }))}
+                  className="w-full"
+                />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Priority</label>
-                <select
-                  value={eventForm.priority}
-                  onChange={(e) => setEventForm({ ...eventForm, priority: e.target.value })}
-                  className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                >
-                  <option value="low" className="bg-gray-800">Low Priority</option>
-                  <option value="medium" className="bg-gray-800">Medium Priority</option>
-                  <option value="high" className="bg-gray-800">High Priority</option>
-                </select>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Difficulty</label>
+                <ShadcnSelect
+                  value={eventForm.difficulty}
+                  onChange={(value) => setEventForm({ ...eventForm, difficulty: Number(value) })}
+                  options={[
+                    { value: 1, label: '1 (Easy)' },
+                    { value: 2, label: '2' },
+                    { value: 3, label: '3 (Medium)' },
+                    { value: 4, label: '4' },
+                    { value: 5, label: '5 (Hard)' }
+                  ]}
+                  className="w-full"
+                />
               </div>
 
               <div className="flex items-center justify-end space-x-3 pt-4">

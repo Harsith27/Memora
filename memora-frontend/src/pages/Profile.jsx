@@ -39,21 +39,8 @@ const Profile = () => {
     confirmPassword: ''
   });
 
-  // Settings state
-  const [settings, setSettings] = useState({
-    emailNotifications: true,
-    pushNotifications: false,
-    darkMode: true,
-    language: 'en',
-    timezone: 'UTC'
-  });
-
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-  };
-
-  const handleSettingChange = (setting, value) => {
-    setSettings(prev => ({ ...prev, [setting]: value }));
   };
 
   const handleSaveProfile = async () => {
@@ -124,8 +111,17 @@ const Profile = () => {
 
   const handleDeleteAccount = () => {
     // This would typically show a confirmation dialog
-    console.log('Delete account requested');
     setToast({ show: true, message: 'Account deletion feature coming soon', type: 'error' });
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/login');
+    } catch (error) {
+      console.error('Logout failed:', error);
+      setToast({ show: true, message: 'Failed to logout. Please try again.', type: 'error' });
+    }
   };
 
   const formatDate = (dateString) => {
@@ -167,7 +163,6 @@ const Profile = () => {
   const tabs = [
     { id: 'general', label: 'General', icon: User },
     { id: 'security', label: 'Security', icon: Shield },
-    { id: 'preferences', label: 'Preferences', icon: Settings },
     { id: 'account', label: 'Account', icon: Trash2 }
   ];
 
@@ -185,9 +180,15 @@ const Profile = () => {
             </button>
             <div>
               <h1 className="text-2xl font-semibold text-white">Profile Settings</h1>
-              <p className="text-sm text-gray-400">Manage your account and preferences</p>
+              <p className="text-sm text-gray-400">Manage your account settings</p>
             </div>
           </div>
+          <button
+            onClick={handleLogout}
+            className="px-4 py-2 text-sm border border-white/20 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+          >
+            Logout
+          </button>
         </div>
       </header>
 
@@ -538,18 +539,6 @@ const Profile = () => {
                     </div>
                   </div>
 
-                  {/* Save Button */}
-                  {isEditing && (
-                    <div className="flex justify-end pt-6 border-t border-white/10">
-                      <button
-                        onClick={handleSaveProfile}
-                        className="flex items-center space-x-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                      >
-                        <Save className="w-4 h-4" />
-                        <span>Save Changes</span>
-                      </button>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -647,153 +636,13 @@ const Profile = () => {
                 </div>
               )}
 
-              {/* Preferences Tab */}
-              {activeTab === 'preferences' && (
-                <div className="space-y-6">
-                  <h2 className="text-xl font-semibold text-white">Preferences</h2>
-
-                  {/* Notifications */}
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-medium text-white">Notifications</h3>
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <Bell className="w-4 h-4 text-gray-400" />
-                          <div>
-                            <div className="text-white">Email Notifications</div>
-                            <div className="text-sm text-gray-400">Receive study reminders via email</div>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleSettingChange('emailNotifications', !settings.emailNotifications)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                            settings.emailNotifications ? 'bg-blue-600' : 'bg-gray-600'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                              settings.emailNotifications ? 'translate-x-6' : 'translate-x-1'
-                            }`}
-                          />
-                        </button>
-                      </div>
-
-                      <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <Bell className="w-4 h-4 text-gray-400" />
-                          <div>
-                            <div className="text-white">Push Notifications</div>
-                            <div className="text-sm text-gray-400">Browser push notifications</div>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleSettingChange('pushNotifications', !settings.pushNotifications)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                            settings.pushNotifications ? 'bg-blue-600' : 'bg-gray-600'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                              settings.pushNotifications ? 'translate-x-6' : 'translate-x-1'
-                            }`}
-                          />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Appearance */}
-                  <div className="pt-6 border-t border-white/10 space-y-4">
-                    <h3 className="text-lg font-medium text-white">Appearance</h3>
-                    <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <Moon className="w-4 h-4 text-gray-400" />
-                        <div>
-                          <div className="text-white">Dark Mode</div>
-                          <div className="text-sm text-gray-400">Use dark theme</div>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleSettingChange('darkMode', !settings.darkMode)}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          settings.darkMode ? 'bg-blue-600' : 'bg-gray-600'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            settings.darkMode ? 'translate-x-6' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Language & Region */}
-                  <div className="pt-6 border-t border-white/10 space-y-4">
-                    <h3 className="text-lg font-medium text-white">Language & Region</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-2">
-                          <Globe className="w-4 h-4 inline mr-2" />
-                          Language
-                        </label>
-                        <select
-                          value={settings.language}
-                          onChange={(e) => handleSettingChange('language', e.target.value)}
-                          className="w-full px-3 py-2 bg-white/5 border border-white/20 rounded-lg text-white focus:outline-none focus:border-blue-400"
-                        >
-                          <option value="en">English</option>
-                          <option value="es">Spanish</option>
-                          <option value="fr">French</option>
-                          <option value="de">German</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-2">
-                          Timezone
-                        </label>
-                        <select
-                          value={settings.timezone}
-                          onChange={(e) => handleSettingChange('timezone', e.target.value)}
-                          className="w-full px-3 py-2 bg-white/5 border border-white/20 rounded-lg text-white focus:outline-none focus:border-blue-400"
-                        >
-                          <option value="UTC">UTC</option>
-                          <option value="EST">Eastern Time</option>
-                          <option value="PST">Pacific Time</option>
-                          <option value="GMT">Greenwich Mean Time</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Account Tab */}
               {activeTab === 'account' && (
                 <div className="space-y-6">
                   <h2 className="text-xl font-semibold text-white">Account Management</h2>
 
-                  {/* Export Data */}
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-medium text-white">Data Export</h3>
-                    <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="font-medium text-white mb-1">Export Your Data</h4>
-                          <p className="text-sm text-gray-400">
-                            Download all your study data, topics, and progress
-                          </p>
-                        </div>
-                        <button className="px-4 py-2 border border-white/20 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
-                          Export Data
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
                   {/* Danger Zone */}
-                  <div className="pt-6 border-t border-white/10 space-y-4">
+                  <div className="space-y-4">
                     <h3 className="text-lg font-medium text-red-400">Danger Zone</h3>
                     <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
                       <div className="flex items-center justify-between">

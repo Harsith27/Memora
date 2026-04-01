@@ -3,9 +3,13 @@ class DocTagsService {
     this.baseURL = '/api/doctags';
   }
 
+  getAccessToken() {
+    return localStorage.getItem('accessToken');
+  }
+
   // Get authorization headers
   getAuthHeaders() {
-    const token = localStorage.getItem('accessToken');
+    const token = this.getAccessToken();
     return {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
@@ -23,13 +27,22 @@ class DocTagsService {
       const response = await fetch(`${this.baseURL}/upload`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+          'Authorization': `Bearer ${this.getAccessToken()}`
         },
         body: formData
       });
 
       if (!response.ok) {
-        throw new Error('Failed to upload files');
+        let message = 'Failed to upload files';
+        try {
+          const errorData = await response.json();
+          if (errorData?.message) {
+            message = errorData.message;
+          }
+        } catch (parseError) {
+          // Ignore JSON parsing errors and keep fallback message.
+        }
+        throw new Error(message);
       }
 
       const data = await response.json();
@@ -50,7 +63,23 @@ class DocTagsService {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create DocTag');
+        let message = 'Failed to create DocTag';
+        try {
+          const errorData = await response.json();
+          if (errorData?.message) {
+            message = errorData.message;
+          }
+          if (Array.isArray(errorData?.errors) && errorData.errors.length > 0) {
+            const firstError = errorData.errors[0];
+            const detail = typeof firstError === 'string' ? firstError : firstError?.msg;
+            if (detail) {
+              message = `${message}: ${detail}`;
+            }
+          }
+        } catch (parseError) {
+          // Ignore parsing errors and keep fallback message.
+        }
+        throw new Error(message);
       }
 
       return await response.json();
@@ -167,6 +196,26 @@ class DocTagsService {
       return await response.json();
     } catch (error) {
       console.error('Search DocTags error:', error);
+      throw error;
+    }
+  }
+
+  async cleanupDuplicates() {
+    try {
+      const response = await fetch(`${this.baseURL}/cleanup-duplicates`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.getAccessToken()}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to cleanup duplicates');
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Cleanup duplicates error:', error);
       throw error;
     }
   }

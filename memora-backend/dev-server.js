@@ -31,7 +31,7 @@ app.use(express.urlencoded({ extended: true }));
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect('mongodb://localhost:27017/memora');
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+    console.info(`MongoDB connected: ${conn.connection.host}`);
     return true;
   } catch (error) {
     console.warn('⚠️  MongoDB connection failed. Running in development mode without database.');
@@ -59,8 +59,6 @@ app.get('/api/health', (req, res) => {
 
 // Mock authentication routes for development
 app.post('/api/auth/register', (req, res) => {
-  console.log('📝 Register request:', req.body);
-  
   // Simulate validation
   const { username, email, password } = req.body;
   if (!username || !email || !password) {
@@ -94,8 +92,6 @@ app.post('/api/auth/register', (req, res) => {
 });
 
 app.post('/api/auth/login', (req, res) => {
-  console.log('🔐 Login request:', req.body);
-  
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({
@@ -135,7 +131,6 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 app.post('/api/auth/logout', (req, res) => {
-  console.log('👋 Logout request');
   res.json({ 
     success: true, 
     message: 'Logged out successfully'
@@ -153,8 +148,8 @@ app.get('/api/auth/verify', (req, res) => {
     });
   }
 
-  // Mock token verification - only allow veeracharan99@gmail.com
-  const email = 'veeracharan99@gmail.com'; // Only your account
+  // Mock token verification response
+  const email = 'demo@memora.local';
   const memScore = 7.0;
 
   res.json({
@@ -179,8 +174,6 @@ app.get('/api/auth/verify', (req, res) => {
 
 // Mock evaluation results endpoint
 app.post('/api/user/evaluation', (req, res) => {
-  console.log('📊 Evaluation results:', req.body);
-
   const { memoryGame, tileRecall, processingSpeed, overallScore } = req.body;
 
   res.json({
@@ -202,7 +195,6 @@ let topicIdCounter = 1;
 
 // Mock topics endpoints
 app.get('/api/topics', (req, res) => {
-  console.log('📚 Getting all topics');
   setTimeout(() => {
     res.json({
       success: true,
@@ -213,7 +205,6 @@ app.get('/api/topics', (req, res) => {
 });
 
 app.get('/api/topics/due', (req, res) => {
-  console.log('📅 Getting due topics');
   const dueTopics = mockTopics.filter(topic => new Date(topic.nextReviewDate) <= new Date());
   res.json({
     success: true,
@@ -223,7 +214,6 @@ app.get('/api/topics/due', (req, res) => {
 });
 
 app.get('/api/topics/upcoming', (req, res) => {
-  console.log('🔮 Getting upcoming topics');
   const upcomingTopics = mockTopics.filter(topic => new Date(topic.nextReviewDate) > new Date());
   res.json({
     success: true,
@@ -233,7 +223,6 @@ app.get('/api/topics/upcoming', (req, res) => {
 });
 
 app.post('/api/topics', (req, res) => {
-  console.log('➕ Creating new topic:', req.body);
   const { title, content, difficulty = 3 } = req.body;
 
   const newTopic = {
@@ -262,7 +251,6 @@ app.post('/api/topics', (req, res) => {
 });
 
 app.post('/api/topics/:id/review', (req, res) => {
-  console.log('✅ Reviewing topic:', req.params.id, 'Quality:', req.body.quality);
   const { quality } = req.body;
   const topicId = req.params.id;
 
@@ -304,7 +292,6 @@ app.post('/api/topics/:id/review', (req, res) => {
 });
 
 app.delete('/api/topics/:id', (req, res) => {
-  console.log('🗑️ Deleting topic:', req.params.id);
   const topicId = req.params.id;
 
   const index = mockTopics.findIndex(t => t._id === topicId);
@@ -325,7 +312,6 @@ app.delete('/api/topics/:id', (req, res) => {
 
 // Mock study session endpoint
 app.post('/api/user/study-session', (req, res) => {
-  console.log('🔥 Recording study session');
   res.json({
     success: true,
     message: 'Study session recorded',
@@ -350,7 +336,7 @@ app.post('/api/user/study-session', (req, res) => {
 //   console.warn('⚠️  Some routes may not be available');
 // }
 
-console.log('✅ Using mock API endpoints for development');
+console.info('Using mock API endpoints for development');
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -369,10 +355,7 @@ app.use('*', (req, res) => {
 const PORT = 3001;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Memora Backend Server running on port ${PORT}`);
-  console.log(`🌐 Environment: development`);
-  console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`📡 CORS enabled for: http://localhost:5173`);
+  console.info(`Memora dev server running on port ${PORT}`);
 });
 
 module.exports = app;

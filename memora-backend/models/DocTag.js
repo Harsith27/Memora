@@ -9,7 +9,7 @@ const docTagSchema = new mongoose.Schema({
   },
   description: {
     type: String,
-    maxlength: [1000, 'Description cannot exceed 1000 characters'],
+    maxlength: [5000, 'Description cannot exceed 5000 characters'],
     default: ''
   },
   type: {
@@ -22,6 +22,16 @@ const docTagSchema = new mongoose.Schema({
     ref: 'User',
     required: [true, 'User ID is required']
   },
+  sourceTopicId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Topic',
+    default: null
+  },
+  linkedTopicId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Topic',
+    default: null
+  },
   parentId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'DocTag',
@@ -30,7 +40,7 @@ const docTagSchema = new mongoose.Schema({
   tags: [{
     type: String,
     trim: true,
-    maxlength: [50, 'Tag cannot exceed 50 characters']
+    maxlength: [100, 'Tag cannot exceed 100 characters']
   }],
   category: {
     type: String,
@@ -74,12 +84,12 @@ const docTagSchema = new mongoose.Schema({
     title: {
       type: String,
       required: true,
-      maxlength: [200, 'Link title cannot exceed 200 characters']
+      maxlength: [300, 'Link title cannot exceed 300 characters']
     },
     url: {
       type: String,
       required: true,
-      maxlength: [2000, 'URL cannot exceed 2000 characters']
+      maxlength: [4000, 'URL cannot exceed 4000 characters']
     },
     type: {
       type: String,
@@ -88,7 +98,7 @@ const docTagSchema = new mongoose.Schema({
     },
     description: {
       type: String,
-      maxlength: [500, 'Link description cannot exceed 500 characters'],
+      maxlength: [2000, 'Link description cannot exceed 2000 characters'],
       default: ''
     },
     addedAt: {
@@ -157,6 +167,8 @@ const docTagSchema = new mongoose.Schema({
 // Indexes for better query performance
 docTagSchema.index({ userId: 1, type: 1, createdAt: -1 });
 docTagSchema.index({ userId: 1, parentId: 1 });
+docTagSchema.index({ userId: 1, sourceTopicId: 1 });
+docTagSchema.index({ userId: 1, linkedTopicId: 1 });
 docTagSchema.index({ userId: 1, category: 1 });
 docTagSchema.index({ userId: 1, isFavorite: 1 });
 docTagSchema.index({ tags: 1 });

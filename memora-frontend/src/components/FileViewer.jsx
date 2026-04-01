@@ -42,10 +42,6 @@ const FileViewer = ({ isOpen, onClose, file, files = [] }) => {
   const fileType = getFileType(absoluteUrl, currentFile.mimetype);
 
   const renderFileContent = () => {
-    console.log('Rendering file:', currentFile);
-    console.log('File type:', fileType);
-    console.log('File URL:', currentFile.url);
-
     switch (fileType) {
       case 'image':
         return (
@@ -54,7 +50,6 @@ const FileViewer = ({ isOpen, onClose, file, files = [] }) => {
               src={absoluteUrl}
               alt={currentFile.title || currentFile.originalName}
               className="max-w-full max-h-full object-contain"
-              onLoad={() => console.log('Image loaded successfully')}
               onError={(e) => {
                 console.error('Image failed to load:', absoluteUrl);
                 e.target.style.display = 'none';
@@ -79,7 +74,6 @@ const FileViewer = ({ isOpen, onClose, file, files = [] }) => {
             controls
             className="max-w-full max-h-full"
             src={absoluteUrl}
-            onLoadStart={() => console.log('Video loading started')}
             onError={() => console.error('Video failed to load:', absoluteUrl)}
           >
             Your browser does not support the video tag.
@@ -99,12 +93,11 @@ const FileViewer = ({ isOpen, onClose, file, files = [] }) => {
       
       case 'pdf':
         return (
-          <div className="w-full h-full flex flex-col">
+          <div className="w-full h-full flex flex-col bg-black">
             <iframe
               src={absoluteUrl}
-              className="w-full h-full border-0 bg-white"
+              className="w-full h-full border-0 bg-black"
               title={currentFile.title || currentFile.originalName}
-              onLoad={() => console.log('PDF loaded successfully')}
               onError={() => console.error('PDF failed to load:', absoluteUrl)}
             />
           </div>
@@ -157,7 +150,7 @@ const FileViewer = ({ isOpen, onClose, file, files = [] }) => {
 
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-      <div className="bg-gray-900 border border-white/20 rounded-xl w-full h-full max-w-6xl max-h-[90vh] flex flex-col">
+      <div className="bg-black border border-white/20 rounded-xl w-full h-full max-w-6xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10">
           <div className="flex items-center space-x-4">
@@ -205,7 +198,7 @@ const FileViewer = ({ isOpen, onClose, file, files = [] }) => {
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-4 overflow-hidden flex items-center justify-center">
+        <div className="flex-1 p-4 overflow-hidden flex items-center justify-center bg-black">
           {renderFileContent()}
           {renderErrorFallback()}
         </div>
