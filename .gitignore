@@ -105,3 +105,9 @@ AI_INSTRUCTIONS.md
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# Project local archive / cleanup
+extra_items/
+
+# Invalid Windows reserved filename artifact
+memora-backend/nul
