@@ -197,6 +197,14 @@ FRONTEND_URL=http://localhost:5173
 BCRYPT_SALT_ROUNDS=12
 ```
 
+## ☁️ Deployment
+
+- Production deployment guide: `DEPLOYMENT_RUNBOOK.md`
+- Target architecture: Vercel (frontend) + Azure App Service (backend) + MongoDB Atlas + Azure Blob Storage
+- CI/CD workflows:
+  - `.github/workflows/deploy-backend-azure.yml`
+  - `.github/workflows/deploy-frontend-vercel.yml`
+
 ## 🗄️ Database Schema
 
 ### User Collection

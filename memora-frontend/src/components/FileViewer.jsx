@@ -11,9 +11,24 @@ const FileViewer = ({ isOpen, onClose, file, files = [] }) => {
   // Ensure URL is absolute
   const getAbsoluteUrl = (url) => {
     if (!url) return '';
+
     if (url.startsWith('http://') || url.startsWith('https://')) {
+      try {
+        const parsed = new URL(url);
+        const isLocalBackend = ['localhost', '127.0.0.1'].includes(parsed.hostname);
+
+        // Route local backend upload URLs through frontend origin so Vite /uploads proxy
+        // handles them consistently (prevents mixed-origin iframe preview issues).
+        if (isLocalBackend && parsed.pathname.startsWith('/uploads/')) {
+          return `${window.location.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+        }
+      } catch {
+        // Fall through to raw URL when parsing fails.
+      }
+
       return url;
     }
+
     // If it's a relative URL, make it absolute
     if (url.startsWith('/')) {
       return `${window.location.origin}${url}`;

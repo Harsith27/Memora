@@ -7,33 +7,73 @@ require('dotenv').config();
 
 const app = express();
 
+const toBoolean = (value, fallback = false) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(normalized);
+};
+
+const parseCsvOrigins = (value) => String(value || '')
+  .split(',')
+  .map((item) => item.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const isProduction = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+const explicitAllowedOrigins = [
+  ...new Set([
+    ...parseCsvOrigins(process.env.FRONTEND_URL),
+    ...parseCsvOrigins(process.env.FRONTEND_URLS),
+    'https://lwj6kt2m-5173.inc1.devtunnels.ms'
+  ])
+];
+const allowVercelPreviews = toBoolean(process.env.ALLOW_VERCEL_PREVIEWS, true);
+const allowLocalOrigins = !isProduction || toBoolean(process.env.ALLOW_LOCALHOST_CORS, false);
+
+const isVercelPreviewOrigin = (origin) => /^https:\/\/[a-z0-9-]+(?:-[a-z0-9-]+)*\.vercel\.app$/i.test(origin);
+const isLocalDevOrigin = (origin) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+
 // Security middleware
 app.use(helmet());
 
-// Rate limiting - Disabled for development
-// const limiter = rateLimit({
-//   windowMs: 15 * 60 * 1000, // 15 minutes
-//   max: 100, // limit each IP to 100 requests per windowMs
-//   message: 'Too many requests from this IP, please try again later.'
-// });
-// app.use(limiter);
+if (isProduction) {
+  app.set('trust proxy', 1);
+}
 
-// CORS configuration: allow local dev hosts on any port + optional explicit frontend URL.
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  'https://lwj6kt2m-5173.inc1.devtunnels.ms'
-].filter(Boolean);
+const enableRateLimit = isProduction || toBoolean(process.env.ENABLE_RATE_LIMIT, false);
+if (enableRateLimit) {
+  const limiter = rateLimit({
+    windowMs: parsePositiveInt(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+    max: parsePositiveInt(process.env.RATE_LIMIT_MAX_REQUESTS, 100),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many requests from this IP, please try again later.'
+  });
 
-const isLocalDevOrigin = (origin) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  app.use(limiter);
+}
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow non-browser requests (no Origin header) and local dev ports.
-    if (!origin || isLocalDevOrigin(origin) || allowedOrigins.includes(origin)) {
+    if (!origin) {
+      // Allow non-browser requests and same-origin server-to-server traffic.
       return callback(null, true);
     }
 
-    return callback(new Error(`CORS blocked for origin: ${origin}`));
+    const normalizedOrigin = String(origin).trim().replace(/\/+$/, '');
+    const isExplicitlyAllowed = explicitAllowedOrigins.includes(normalizedOrigin);
+    const isLocalAllowed = allowLocalOrigins && isLocalDevOrigin(normalizedOrigin);
+    const isVercelAllowed = allowVercelPreviews && isVercelPreviewOrigin(normalizedOrigin);
+
+    if (isExplicitlyAllowed || isLocalAllowed || isVercelAllowed) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked for origin: ${normalizedOrigin}`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -44,8 +84,15 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Serve uploaded files
-app.use('/uploads', express.static('uploads'));
+// Serve uploaded files.
+// Upload previews are opened inside the frontend iframe, so we relax frame/CORP headers
+// only for this static route while keeping helmet defaults for API responses.
+app.use('/uploads', (req, res, next) => {
+  res.removeHeader('X-Frame-Options');
+  res.removeHeader('Content-Security-Policy');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+}, express.static('uploads'));
 
 // MongoDB connection
 const connectDB = async () => {

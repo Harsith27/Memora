@@ -111,3 +111,9 @@ extra_items/
 
 # Invalid Windows reserved filename artifact
 memora-backend/nul
+
+# Local deployment/build metadata
+memora-frontend/.vercel/
+
+# Runtime user-uploaded files
+memora-backend/uploads/

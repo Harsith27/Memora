@@ -1,33 +1,16 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const { body, validationResult } = require('express-validator');
 const DocTag = require('../models/DocTag');
 const Topic = require('../models/Topic');
 const { authenticateToken } = require('../middleware/auth');
+const { saveFileToStorage, isAzureEnabled } = require('../utils/fileStorage');
 
 const router = express.Router();
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../uploads/doctags');
-    // Create directory if it doesn't exist
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    // Generate unique filename
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
 const upload = multer({
-  storage: storage,
+  storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
@@ -213,7 +196,13 @@ router.post('/upload', authenticateToken, upload.array('files', 5), async (req, 
       });
     }
 
-    const uploadedFiles = req.files.map(file => {
+    const uploadedFiles = await Promise.all(req.files.map(async (file) => {
+      const stored = await saveFileToStorage({
+        file,
+        folder: 'doctags',
+        req
+      });
+
       // Determine file type
       let fileType = 'other';
       if (file.mimetype.startsWith('image/')) fileType = 'image';
@@ -223,19 +212,20 @@ router.post('/upload', authenticateToken, upload.array('files', 5), async (req, 
       else if (file.mimetype.includes('document') || file.mimetype.includes('word')) fileType = 'document';
 
       return {
-        filename: file.filename,
+        filename: stored.filename,
         originalName: file.originalname,
         mimetype: file.mimetype,
         size: file.size,
-        url: `/uploads/doctags/${file.filename}`,
+        url: stored.url,
         fileType: fileType,
         uploadedAt: new Date()
       };
-    });
+    }));
 
     res.json({
       success: true,
       message: `${uploadedFiles.length} file(s) uploaded successfully`,
+      storageProvider: isAzureEnabled() ? 'azure' : 'local',
       files: uploadedFiles
     });
 
