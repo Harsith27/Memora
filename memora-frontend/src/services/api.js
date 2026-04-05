@@ -1,6 +1,9 @@
 // API service for Memora frontend
 // Prefer explicit env URL, otherwise use same-origin /api so Vite proxy handles dev routing.
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const RAW_API_BASE_URL = import.meta.env.VITE_API_URL;
+const IS_LOCALHOST_API_BASE = typeof RAW_API_BASE_URL === 'string' && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(RAW_API_BASE_URL);
+const API_BASE_URL = !import.meta.env.DEV && IS_LOCALHOST_API_BASE ? '/api' : (RAW_API_BASE_URL || '/api');
+const FALLBACK_API_BASE_URL = 'https://memora-api-04021453.azurewebsites.net/api';
 const IS_DEV = import.meta.env.DEV;
 
 class ApiService {
@@ -11,6 +14,24 @@ class ApiService {
     if (IS_DEV) {
       console.log('API Base URL:', this.baseURL);
     }
+  }
+
+  createHttpError(message, status, payload = null) {
+    const error = new Error(message || 'Request failed');
+    error.status = status;
+    error.payload = payload;
+    return error;
+  }
+
+  isAuthError(error) {
+    return error?.status === 401 || error?.status === 403;
+  }
+
+  isTransientError(error) {
+    if (!error?.status) {
+      return true;
+    }
+    return error.status >= 500;
   }
 
   // Set authentication token
@@ -73,11 +94,39 @@ class ApiService {
       }
 
       if (!response.ok) {
-        throw new Error(data.message || `HTTP error! status: ${response.status}`);
+        throw this.createHttpError(
+          data?.message || `HTTP error! status: ${response.status}`,
+          response.status,
+          data
+        );
       }
 
       return data;
     } catch (error) {
+      const isNetworkFailure = error.name === 'TypeError' && error.message.includes('fetch');
+
+      // Some browsers/devices may fail on same-origin proxy path due stale edge routes.
+      // Retry once directly against backend API before surfacing a network error.
+      if (isNetworkFailure && this.baseURL === '/api') {
+        try {
+          const fallbackUrl = `${FALLBACK_API_BASE_URL}${endpoint}`;
+          const fallbackResponse = await fetch(fallbackUrl, config);
+          const fallbackData = await fallbackResponse.json();
+
+          if (!fallbackResponse.ok) {
+            throw this.createHttpError(
+              fallbackData?.message || `HTTP error! status: ${fallbackResponse.status}`,
+              fallbackResponse.status,
+              fallbackData
+            );
+          }
+
+          return fallbackData;
+        } catch (fallbackError) {
+          error = fallbackError;
+        }
+      }
+
       console.error('API request failed:', {
         error: error.message,
         url,
@@ -179,30 +228,34 @@ class ApiService {
     try {
       return await this.get('/auth/verify');
     } catch (error) {
-      // Token is invalid, clear it
-      this.setToken(null);
-      localStorage.removeItem('refreshToken');
+      // Keep tokens for transient/server failures so session can recover.
+      if (this.isAuthError(error)) {
+        this.setToken(null);
+        localStorage.removeItem('refreshToken');
+      }
       throw error;
     }
   }
 
   async refreshToken() {
-    const refreshToken = localStorage.getItem('refreshToken');
-    if (!refreshToken) {
+    const refreshTokenValue = localStorage.getItem('refreshToken');
+    if (!refreshTokenValue) {
       throw new Error('No refresh token available');
     }
 
     try {
-      const response = await this.post('/auth/refresh', { refreshToken });
+      const response = await this.post('/auth/refresh', { refreshToken: refreshTokenValue });
       if (response.success && response.tokens) {
         this.setToken(response.tokens.accessToken);
         localStorage.setItem('refreshToken', response.tokens.refreshToken);
       }
       return response;
     } catch (error) {
-      // Refresh failed, clear tokens
-      this.setToken(null);
-      localStorage.removeItem('refreshToken');
+      // Only clear tokens when refresh token is truly invalid/expired.
+      if (this.isAuthError(error)) {
+        this.setToken(null);
+        localStorage.removeItem('refreshToken');
+      }
       throw error;
     }
   }
@@ -248,6 +301,10 @@ class ApiService {
 
   async getUpcomingTopics(days = 7, limit = 20) {
     return this.get(`/topics/upcoming?days=${days}&limit=${limit}`);
+  }
+
+  async getRevisionDailyStats(days = 120) {
+    return this.get(`/topics/revision-stats?days=${days}`);
   }
 
   async createTopic(topicData) {

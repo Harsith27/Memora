@@ -90,35 +90,104 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
+  const persistUser = (user) => {
+    if (!user) return;
+    localStorage.setItem('currentUser', JSON.stringify(user));
+  };
+
+  const getPersistedUser = () => {
+    try {
+      const raw = localStorage.getItem('currentUser');
+      return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+      console.warn('Failed to parse cached user:', error);
+      localStorage.removeItem('currentUser');
+      return null;
+    }
+  };
+
+  const clearPersistedAuth = () => {
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('refreshToken');
+    apiService.setToken(null);
+  };
+
   // Check if user is authenticated on app start
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem('accessToken');
-      
-      if (!token) {
+      const refreshToken = localStorage.getItem('refreshToken');
+      const cachedUser = getPersistedUser();
+
+      if (cachedUser && (token || refreshToken)) {
+        dispatch({
+          type: AUTH_ACTIONS.SET_USER,
+          payload: { user: cachedUser }
+        });
+      }
+
+      if (!token && !refreshToken) {
         dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: { isLoading: false } });
         return;
       }
 
-      try {
-        // Set the token in API service before verifying
+      if (token) {
         apiService.setToken(token);
+      }
 
+      try {
         const response = await apiService.verifyToken();
-        if (response.success) {
-          let user = response.user;
-
-          // Remove hardcoded memScore override - use actual database value
-
-          dispatch({
-            type: AUTH_ACTIONS.SET_USER,
-            payload: { user }
-          });
-        } else {
-          dispatch({ type: AUTH_ACTIONS.LOGOUT });
+        if (!response.success) {
+          throw new Error('Token verification failed');
         }
+
+        persistUser(response.user);
+        dispatch({
+          type: AUTH_ACTIONS.SET_USER,
+          payload: { user: response.user }
+        });
       } catch (error) {
-        console.error('Token verification failed:', error);
+        const shouldTryRefresh = refreshToken && (apiService.isAuthError(error) || !token);
+
+        if (shouldTryRefresh) {
+          try {
+            const refreshResponse = await apiService.refreshToken();
+            if (!refreshResponse.success) {
+              throw new Error('Token refresh failed');
+            }
+
+            const verifyAfterRefresh = await apiService.verifyToken();
+            if (!verifyAfterRefresh.success) {
+              throw new Error('Token verification after refresh failed');
+            }
+
+            persistUser(verifyAfterRefresh.user);
+            dispatch({
+              type: AUTH_ACTIONS.SET_USER,
+              payload: { user: verifyAfterRefresh.user }
+            });
+            return;
+          } catch (refreshError) {
+            if (!apiService.isAuthError(refreshError) && cachedUser) {
+              dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: { isLoading: false } });
+              return;
+            }
+
+            console.error('Token refresh failed:', refreshError);
+            clearPersistedAuth();
+            dispatch({ type: AUTH_ACTIONS.LOGOUT });
+            return;
+          }
+        }
+
+        // Keep cached session during transient failures.
+        if (!apiService.isAuthError(error) && cachedUser) {
+          dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: { isLoading: false } });
+          return;
+        }
+
+        console.error('Session restore failed:', error);
+        clearPersistedAuth();
         dispatch({ type: AUTH_ACTIONS.LOGOUT });
       }
     };
@@ -146,6 +215,7 @@ export const AuthProvider = ({ children }) => {
           type: AUTH_ACTIONS.LOGIN_SUCCESS,
           payload: { user }
         });
+        persistUser(user);
         return { success: true, user };
       } else {
         throw new Error(response.message || 'Login failed');
@@ -167,6 +237,7 @@ export const AuthProvider = ({ children }) => {
       const response = await apiService.register(userData);
       
       if (response.success) {
+        persistUser(response.user);
         dispatch({
           type: AUTH_ACTIONS.LOGIN_SUCCESS,
           payload: { user: response.user }
@@ -197,9 +268,11 @@ export const AuthProvider = ({ children }) => {
 
   // Update user function
   const updateUser = (userData) => {
+    const updatedUser = { ...state.user, ...userData };
+    persistUser(updatedUser);
     dispatch({
       type: AUTH_ACTIONS.SET_USER,
-      payload: { user: { ...state.user, ...userData } }
+      payload: { user: updatedUser }
     });
   };
 
