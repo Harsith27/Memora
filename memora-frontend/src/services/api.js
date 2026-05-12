@@ -34,6 +34,15 @@ class ApiService {
     return error.status >= 500;
   }
 
+  async tryRefreshAuthSession() {
+    try {
+      const response = await this.refreshToken();
+      return Boolean(response?.success);
+    } catch {
+      return false;
+    }
+  }
+
   // Set authentication token
   setToken(token) {
     this.token = token;
@@ -60,9 +69,18 @@ class ApiService {
   // Generic request method
   async request(endpoint, options = {}) {
     const url = `${this.baseURL}${endpoint}`;
+    const { _retryAuth = false, ...requestOptions } = options || {};
+    const isFormData = typeof FormData !== 'undefined' && requestOptions?.body instanceof FormData;
+    const headers = this.getAuthHeaders();
+
+    if (isFormData) {
+      // Let browser set multipart boundary automatically.
+      delete headers['Content-Type'];
+    }
+
     const config = {
-      headers: this.getAuthHeaders(),
-      ...options,
+      headers,
+      ...requestOptions,
     };
 
     if (IS_DEV) {
@@ -94,39 +112,24 @@ class ApiService {
       }
 
       if (!response.ok) {
-        throw this.createHttpError(
+        const httpError = this.createHttpError(
           data?.message || `HTTP error! status: ${response.status}`,
           response.status,
           data
         );
+
+        if (!endpoint.startsWith('/auth/') && this.isAuthError(httpError) && !_retryAuth) {
+          const refreshed = await this.tryRefreshAuthSession();
+          if (refreshed) {
+            return this.request(endpoint, { ...requestOptions, _retryAuth: true });
+          }
+        }
+
+        throw httpError;
       }
 
       return data;
     } catch (error) {
-      const isNetworkFailure = error.name === 'TypeError' && error.message.includes('fetch');
-
-      // Some browsers/devices may fail on same-origin proxy path due stale edge routes.
-      // Retry once directly against backend API before surfacing a network error.
-      if (isNetworkFailure && this.baseURL === '/api') {
-        try {
-          const fallbackUrl = `${FALLBACK_API_BASE_URL}${endpoint}`;
-          const fallbackResponse = await fetch(fallbackUrl, config);
-          const fallbackData = await fallbackResponse.json();
-
-          if (!fallbackResponse.ok) {
-            throw this.createHttpError(
-              fallbackData?.message || `HTTP error! status: ${fallbackResponse.status}`,
-              fallbackResponse.status,
-              fallbackData
-            );
-          }
-
-          return fallbackData;
-        } catch (fallbackError) {
-          error = fallbackError;
-        }
-      }
-
       console.error('API request failed:', {
         error: error.message,
         url,
@@ -152,6 +155,14 @@ class ApiService {
     return this.request(endpoint, {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  }
+
+  // POST multipart/form-data request
+  async postForm(endpoint, formData) {
+    return this.request(endpoint, {
+      method: 'POST',
+      body: formData,
     });
   }
 
@@ -213,6 +224,10 @@ class ApiService {
       if (key && (
         key.includes('focusModeSettings_') ||
         key.includes('focusModePresets_') ||
+        key.includes('focusModeQuickConfig_') ||
+        key.includes('focusModeTheme_') ||
+        key.includes('focus_sessions_') ||
+        key.includes('study_streak_') ||
         key.includes('userPreferences_') ||
         key.includes('userSettings_')
       )) {
@@ -228,10 +243,9 @@ class ApiService {
     try {
       return await this.get('/auth/verify');
     } catch (error) {
-      // Keep tokens for transient/server failures so session can recover.
+      // Keep refresh token for access-token expiry so auth context can refresh silently.
       if (this.isAuthError(error)) {
         this.setToken(null);
-        localStorage.removeItem('refreshToken');
       }
       throw error;
     }
@@ -269,6 +283,10 @@ class ApiService {
     return this.put('/user/profile', userData);
   }
 
+  async deleteAccount() {
+    return this.delete('/user/account');
+  }
+
   async saveEvaluationResults(results) {
     return this.post('/user/evaluation', results);
   }
@@ -281,12 +299,28 @@ class ApiService {
     return this.get(`/user/memscore/history?days=${days}`);
   }
 
+  async getUserPreferences() {
+    return this.get('/user/preferences');
+  }
+
+  async updateUserPreferences(preferences) {
+    return this.put('/user/preferences', preferences);
+  }
+
   async recordStudySession() {
     return this.post('/user/study-session');
   }
 
   async updateMemScore(score) {
     return this.put('/user/memscore', { memScore: score });
+  }
+
+  async syncAchievementsLeaderboardStats(payload) {
+    return this.post('/user/achievements/leaderboard-sync', payload);
+  }
+
+  async getAchievementsLeaderboard(limit = 10) {
+    return this.get(`/user/achievements/leaderboard?limit=${limit}`);
   }
 
   // Topics methods
@@ -305,6 +339,10 @@ class ApiService {
 
   async getRevisionDailyStats(days = 120) {
     return this.get(`/topics/revision-stats?days=${days}`);
+  }
+
+  async getRevisionHistory(days = 120) {
+    return this.get(`/topics/revision-history?days=${days}`);
   }
 
   async createTopic(topicData) {
@@ -392,6 +430,36 @@ class ApiService {
       topic,
       ...options
     });
+  }
+
+  // Listener methods
+  async processListenerRecording({ audioBlob, topicId = '', language = 'en', durationSeconds = 0, visualizerStyle = 'pulse' }) {
+    const formData = new FormData();
+    const fileName = `listener-${Date.now()}.webm`;
+    formData.append('audio', audioBlob, fileName);
+    formData.append('language', language);
+    formData.append('durationSeconds', String(Math.max(0, Number(durationSeconds) || 0)));
+    formData.append('visualizerStyle', visualizerStyle || 'pulse');
+    if (topicId) {
+      formData.append('topicId', topicId);
+    }
+
+    return this.postForm('/listener/process', formData);
+  }
+
+  async getListenerNotes(params = {}) {
+    const queryString = new URLSearchParams(
+      Object.entries(params).filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '')
+    ).toString();
+    return this.get(`/listener/notes${queryString ? `?${queryString}` : ''}`);
+  }
+
+  async updateListenerNote(id, payload) {
+    return this.put(`/listener/notes/${id}`, payload);
+  }
+
+  async deleteListenerNote(id) {
+    return this.delete(`/listener/notes/${id}`);
   }
 
   // Health check

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { formatDateDDMMYYYY } from '../utils/dateFormat';
 
 const MemScoreChart = ({ data = [], currentScore = 0 }) => {
   const [hoveredPoint, setHoveredPoint] = useState(null);
@@ -17,7 +18,7 @@ const MemScoreChart = ({ data = [], currentScore = 0 }) => {
     return [{
       date: today.toISOString().split('T')[0],
       score: currentScore, // Use the score as-is, no division needed
-      label: today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      label: formatDateDDMMYYYY(today)
     }];
   }, [data, currentScore]);
 

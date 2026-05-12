@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   Brain, Clock, Target, CheckCircle, ArrowRight,
   RotateCcw, Zap, TrendingUp, Award, Eye, EyeOff, Undo2
@@ -9,12 +9,91 @@ import Logo from '../components/Logo';
 import { useAuth } from '../contexts/AuthContext';
 import journalService from '../services/journalService';
 
-const MemScoreEvaluation = () => {
+const VALID_PHASES = new Set([
+  'intro',
+  'memory-game-instructions',
+  'memory-game',
+  'tile-recall-instructions',
+  'tile-recall',
+  'speed-test-instructions',
+  'speed-test',
+  'results'
+]);
+
+const DIRECT_GAME_PHASES = new Set(['memory-game', 'tile-recall', 'speed-test']);
+
+const PHASE_THEMES = {
+  'memory-game-instructions': {
+    active: 'border-indigo-300/55 bg-indigo-500/18 text-indigo-100',
+    inactive: 'border-indigo-400/25 bg-indigo-500/10 text-indigo-200/60'
+  },
+  'tile-recall-instructions': {
+    active: 'border-emerald-300/55 bg-emerald-500/18 text-emerald-100',
+    inactive: 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200/60'
+  },
+  'speed-test-instructions': {
+    active: 'border-amber-300/55 bg-amber-500/18 text-amber-100',
+    inactive: 'border-amber-400/25 bg-amber-500/10 text-amber-200/60'
+  },
+  results: {
+    active: 'border-violet-300/55 bg-violet-500/18 text-violet-100',
+    inactive: 'border-violet-400/25 bg-violet-500/10 text-violet-200/60'
+  }
+};
+
+const getPhaseThemeClasses = (key, active) => {
+  const theme = PHASE_THEMES[key] || PHASE_THEMES.results;
+  return active ? theme.active : theme.inactive;
+};
+
+const MovingBlurDots = ({ count = 20, compact = false, color = '59,130,246' }) => (
+  <div className="pointer-events-none absolute inset-0 overflow-hidden">
+    {Array.from({ length: count }).map((_, index) => {
+      const size = compact ? 2 + (index % 3) : 3 + (index % 5);
+      const left = (index * 17) % 100;
+      const top = (index * 29 + 11) % 100;
+      const driftX = ((index % 5) - 2) * (compact ? 8 : 14);
+      const driftY = ((index % 7) - 3) * (compact ? 8 : 12);
+      const delay = index * 0.24;
+      const duration = 6 + (index % 7);
+
+      return (
+        <motion.span
+          key={`blur-dot-${index}`}
+          className="absolute rounded-full blur-[2px]"
+          style={{
+            left: `${left}%`,
+            top: `${top}%`,
+            width: `${size}px`,
+            height: `${size}px`,
+            backgroundColor: `rgba(${color}, ${compact ? 0.28 : 0.22})`
+          }}
+          animate={{
+            x: [0, driftX, 0],
+            y: [0, driftY, 0],
+            opacity: [0.2, 0.5, 0.2],
+            scale: [1, 1.15, 1]
+          }}
+          transition={{
+            duration,
+            repeat: Infinity,
+            delay,
+            ease: 'easeInOut'
+          }}
+        />
+      );
+    })}
+  </div>
+);
+
+const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
   const navigate = useNavigate();
-  const { saveEvaluationResults, user } = useAuth();
+  const { saveEvaluationResults } = useAuth();
   const speedInputRef = useRef(null);
+  const directEntryInitializedRef = useRef(false);
+  const sanitizedInitialPhase = VALID_PHASES.has(initialPhase) ? initialPhase : 'intro';
   
-  const [currentPhase, setCurrentPhase] = useState('intro'); // intro, memory-game-instructions, memory-game, tile-recall-instructions, tile-recall, speed-test-instructions, speed-test, results
+  const [currentPhase, setCurrentPhase] = useState(sanitizedInitialPhase); // intro, memory-game-instructions, memory-game, tile-recall-instructions, tile-recall, speed-test-instructions, speed-test, results
   const [testResults, setTestResults] = useState({
     memoryGame: 0,
     tileRecall: 0,
@@ -67,6 +146,7 @@ const MemScoreEvaluation = () => {
   });
 
   const [isLoading, setIsLoading] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const phaseFlow = [
     { key: 'memory-game-instructions', label: 'Memory Match' },
@@ -275,7 +355,7 @@ const MemScoreEvaluation = () => {
 
   // Handle tile click during user turn
   const handleTileClick = (tileIndex) => {
-    if (!tileRecall.isUserTurn) return;
+    if (!tileRecall.isUserTurn || tileRecall.userSequence.includes(tileIndex)) return;
 
     const newUserSequence = [...tileRecall.userSequence, tileIndex];
     setTileRecall(prev => ({ ...prev, userSequence: newUserSequence }));
@@ -334,6 +414,7 @@ const MemScoreEvaluation = () => {
                 const wrongPenalty = tileRecall.wrongAttempts * 0.5;
                 const finalScore = Math.max(1, Math.round(baseScore - wrongPenalty));
 
+                setTileRecall(prev => ({ ...prev, roundScores: newRoundScores }));
                 setTestResults(prev => ({ ...prev, tileRecall: finalScore }));
                 setCurrentPhase('speed-test-instructions');
               }
@@ -370,6 +451,7 @@ const MemScoreEvaluation = () => {
             const wrongPenalty = tileRecall.wrongAttempts * 0.5;
             const finalScore = Math.max(1, Math.round(baseScore - wrongPenalty));
 
+            setTileRecall(prev => ({ ...prev, roundScores: newRoundScores }));
             setTestResults(prev => ({ ...prev, tileRecall: finalScore }));
             setCurrentPhase('speed-test-instructions');
           }
@@ -426,6 +508,35 @@ const MemScoreEvaluation = () => {
       userAnswer: ''
     }));
   };
+
+  useEffect(() => {
+    setCurrentPhase(sanitizedInitialPhase);
+    directEntryInitializedRef.current = false;
+  }, [sanitizedInitialPhase, initMemoryGame, initTileRecall, initSpeedTest]);
+
+  useEffect(() => {
+    if (!DIRECT_GAME_PHASES.has(sanitizedInitialPhase)) return;
+    if (directEntryInitializedRef.current) return;
+
+    directEntryInitializedRef.current = true;
+
+    const starter = window.setTimeout(() => {
+      if (sanitizedInitialPhase === 'memory-game') {
+        setCurrentPhase('memory-game');
+        initMemoryGame();
+      } else if (sanitizedInitialPhase === 'tile-recall') {
+        setCurrentPhase('tile-recall');
+        initTileRecall(0);
+      } else if (sanitizedInitialPhase === 'speed-test') {
+        setCurrentPhase('speed-test');
+        initSpeedTest();
+      }
+    }, 140);
+
+    return () => {
+      window.clearTimeout(starter);
+    };
+  }, [sanitizedInitialPhase]);
 
   // Handle speed test answer
   const handleSpeedAnswer = () => {
@@ -487,11 +598,12 @@ const MemScoreEvaluation = () => {
     } else if (speedTest.isActive && speedTest.timeLeft === 0) {
       finishEvaluation();
     }
-  }, [speedTest.timeLeft, speedTest.isActive]);
+  }, [speedTest.timeLeft, speedTest.isActive, finishEvaluation]);
 
   // Complete evaluation and go to dashboard
   const completeEvaluation = async () => {
     setIsLoading(true);
+    setSaveError('');
 
     try {
       // Save results to backend
@@ -506,10 +618,8 @@ const MemScoreEvaluation = () => {
       }, 500);
     } catch (error) {
       console.error('Failed to save evaluation results:', error);
-      // Still navigate to dashboard even if save fails
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 500);
+      setSaveError(error.message || 'Failed to save your MemScore result. Please try again.');
+      setIsLoading(false);
     }
   };
 
@@ -531,11 +641,6 @@ const MemScoreEvaluation = () => {
 
         <div className="relative z-10 text-center">
           <div className="relative mx-auto mb-6 h-20 w-20">
-            <motion.span
-              className="absolute inset-0 rounded-2xl bg-gradient-to-br from-indigo-500/25 to-emerald-400/20"
-              animate={{ scale: [1, 1.1, 1], opacity: [0.45, 0.2, 0.45] }}
-              transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
-            />
             <motion.div
               initial={{ scale: 0.94, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -626,16 +731,7 @@ const MemScoreEvaluation = () => {
 
   return (
     <div className="relative bg-black text-white min-h-screen flex flex-col overflow-hidden">
-      <motion.div
-        className="pointer-events-none absolute -left-12 top-24 h-64 w-64 rounded-full bg-indigo-500/15 blur-3xl"
-        animate={{ x: [0, 24, 0], y: [0, -18, 0], scale: [1, 1.1, 1] }}
-        transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
-      />
-      <motion.div
-        className="pointer-events-none absolute -right-10 bottom-20 h-72 w-72 rounded-full bg-emerald-400/12 blur-3xl"
-        animate={{ x: [0, -28, 0], y: [0, 20, 0], scale: [1, 1.12, 1] }}
-        transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }}
-      />
+      <MovingBlurDots count={28} color="71,85,105" />
 
       {/* Header - Only show during intro */}
       {currentPhase === 'intro' && (
@@ -675,11 +771,7 @@ const MemScoreEvaluation = () => {
                 return (
                   <div
                     key={step.key}
-                    className={`rounded-lg border px-3 py-2 text-xs uppercase tracking-[0.12em] transition-colors ${
-                      active
-                        ? 'border-cyan-300/45 bg-cyan-400/10 text-cyan-100'
-                        : 'border-white/10 bg-black/35 text-white/45'
-                    }`}
+                    className={`rounded-lg border px-3 py-2 text-xs uppercase tracking-[0.12em] transition-colors ${getPhaseThemeClasses(step.key, active)}`}
                   >
                     {step.label}
                   </div>
@@ -764,7 +856,9 @@ const MemScoreEvaluation = () => {
                   </p>
                 </div>
 
-                <div className="bg-gray-900/50 border border-white/10 rounded-xl p-8 mb-6">
+                <div className="relative bg-black border border-white/15 rounded-xl p-8 mb-6 overflow-hidden">
+                  <MovingBlurDots count={16} compact color="129,140,248" />
+                  <div className="relative z-10">
                   <div className="mb-6">
                     {memoryGame.showingPreview ? (
                       <div className="text-center mb-4">
@@ -832,6 +926,7 @@ const MemScoreEvaluation = () => {
                       </div>
                     </motion.div>
                   )}
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -902,8 +997,10 @@ const MemScoreEvaluation = () => {
                   </p>
                 </div>
 
-                <div className="bg-gray-900/50 border border-white/10 rounded-xl p-8 mb-6">
-                  <div className="mb-6">
+                <div className="relative bg-black border border-white/15 rounded-xl p-8 mb-6 overflow-hidden">
+                  <MovingBlurDots count={18} compact color="16,185,129" />
+                  <div className="relative z-10">
+                  <div className="mb-4">
                     <div className="flex justify-between items-center text-sm text-gray-400 mb-4">
                       <span>Round {tileRecall.currentRound + 1} of {tileRecall.totalRounds}</span>
                       <span>Grid: {tileRecall.gridSize}×{tileRecall.gridSize}</span>
@@ -917,9 +1014,9 @@ const MemScoreEvaluation = () => {
                     </div>
                   </div>
 
-                  <div className="py-4">
+                  <div className="pt-1 pb-2">
                     {/* Fixed height container to prevent layout shifts */}
-                    <div className="h-12 mb-4 flex items-center justify-center">
+                    <div className="h-10 mb-2 flex items-center justify-center">
                       {tileRecall.isShowingSequence && (
                         <div className="text-blue-400 font-semibold">
                           Watch the sequence...
@@ -1010,6 +1107,7 @@ const MemScoreEvaluation = () => {
                       </div>
                     )}
                   </div>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -1076,7 +1174,9 @@ const MemScoreEvaluation = () => {
                   </p>
                 </div>
 
-                <div className="bg-gray-900/50 border border-white/10 rounded-xl p-8 mb-6">
+                <div className="relative bg-black border border-white/15 rounded-xl p-8 mb-6 overflow-hidden">
+                  <MovingBlurDots count={15} compact color="251,191,36" />
+                  <div className="relative z-10">
                   <div className="mb-6">
                     <div className="text-sm text-gray-400 mb-2">
                       Question {speedTest.currentQuestion + 1} of {speedTest.totalQuestions} • Time: {speedTest.timeLeft}s
@@ -1097,12 +1197,14 @@ const MemScoreEvaluation = () => {
                     <div className="mb-6">
                       <input
                         ref={speedInputRef}
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="-?[0-9]*"
                         value={speedTest.userAnswer}
                         onChange={(e) => setSpeedTest(prev => ({ ...prev, userAnswer: e.target.value }))}
                         onKeyDown={(e) => e.key === 'Enter' && handleSpeedAnswer()}
-                        placeholder="Your answer"
-                        className="w-32 px-4 py-3 bg-black border border-white/20 rounded-lg text-center text-xl font-mono focus:outline-none focus:border-orange-400 transition-colors"
+                        placeholder="Enter your answer"
+                        className="w-52 px-4 py-3 bg-black border border-white/20 rounded-lg text-center text-xl font-mono placeholder:text-sm placeholder:text-gray-400 focus:outline-none focus:border-orange-400 transition-colors"
                         autoFocus
                       />
                     </div>
@@ -1116,6 +1218,7 @@ const MemScoreEvaluation = () => {
                     >
                       Submit
                     </motion.button>
+                  </div>
                   </div>
                 </div>
               </motion.div>
@@ -1249,6 +1352,12 @@ const MemScoreEvaluation = () => {
                     </>
                   )}
                 </motion.button>
+
+                {saveError && (
+                  <div className="mt-4 rounded-lg border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                    {saveError}
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>

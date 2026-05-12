@@ -1,7 +1,25 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'memora-super-secret-jwt-key-2025-development';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'memora-super-secret-refresh-key-2025-development';
+const isProduction = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+
+const requireSecret = (envName) => {
+  const value = process.env[envName];
+  if (value) {
+    return value;
+  }
+
+  if (isProduction) {
+    throw new Error(`${envName} is required. Refusing to start without explicit JWT secrets.`);
+  }
+
+  const generated = crypto.randomBytes(48).toString('hex');
+  console.warn(`[JWT] ${envName} is missing. Generated an ephemeral development secret.`);
+  return generated;
+};
+
+const JWT_SECRET = requireSecret('JWT_SECRET');
+const JWT_REFRESH_SECRET = requireSecret('JWT_REFRESH_SECRET');
 const JWT_EXPIRE = process.env.JWT_EXPIRE || '24h';
 const JWT_REFRESH_EXPIRE = process.env.JWT_REFRESH_EXPIRE || '7d';
 

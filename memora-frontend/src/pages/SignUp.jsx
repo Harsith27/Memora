@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, ArrowRight, Check, AlertCircle, CheckCircle } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import Logo from '../components/Logo';
 import PublicNavbar from '../components/PublicNavbar';
 import PublicFooter from '../components/PublicFooter';
@@ -10,7 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 function SignUp() {
   const navigate = useNavigate();
-  const { register, isLoading: authLoading, error: authError, clearError } = useAuth();
+  const { register, clearError } = useAuth();
 
   const [formData, setFormData] = useState({
     username: '',
@@ -144,20 +144,20 @@ function SignUp() {
         </div>
 
         {/* Plus signs at grid intersections */}
-        <div className="absolute top-16 left-16 sm:top-32 sm:left-32 pointer-events-none">
+        <div className="hidden sm:block absolute top-16 left-16 sm:top-32 sm:left-32 pointer-events-none">
           <div className="w-3 h-3 relative">
             <div className="absolute top-1/2 left-0 w-full h-px bg-white/30"></div>
             <div className="absolute left-1/2 top-0 w-px h-full bg-white/30"></div>
           </div>
         </div>
-        <div className="absolute top-24 right-12 sm:top-64 sm:right-64 pointer-events-none">
+        <div className="hidden sm:block absolute top-24 right-12 sm:top-64 sm:right-64 pointer-events-none">
           <div className="w-3 h-3 relative">
             <div className="absolute top-1/2 left-0 w-full h-px bg-white/30"></div>
             <div className="absolute left-1/2 top-0 w-px h-full bg-white/30"></div>
           </div>
         </div>
 
-        <div className="relative z-10 flex items-center justify-center px-4 sm:px-6 lg:px-8 py-10 min-h-[calc(100vh-8rem)]">
+        <div className="relative z-10 flex items-center justify-center px-4 sm:px-6 lg:px-8 py-8 sm:py-10 min-h-[calc(100vh-7.5rem)]">
           <motion.div
             className="max-w-[27rem] w-full"
             initial={{ opacity: 0, y: 20 }}
@@ -166,7 +166,7 @@ function SignUp() {
           >
           {/* Header */}
           <motion.div
-            className="text-center mb-6"
+            className="text-center mb-5 sm:mb-6"
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
@@ -175,8 +175,8 @@ function SignUp() {
               <Logo size="sm" className="text-white" />
               <span className="text-lg font-semibold">Memora</span>
             </Link>
-            <h2 className="text-[2rem] sm:text-[2.1rem] leading-tight font-bold mb-1.5">Create your account</h2>
-            <p className="text-gray-400 text-base">Start your intelligent learning journey today</p>
+            <h2 className="text-[1.8rem] sm:text-[2.1rem] leading-tight font-bold mb-1.5">Create your account</h2>
+            <p className="text-gray-400 text-sm sm:text-base">Start your intelligent learning journey today</p>
           </motion.div>
 
           {/* Signup Form */}
@@ -186,11 +186,11 @@ function SignUp() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.6, delay: 0.4, ease: "easeOut" }}
           >
-            <div className="rounded-2xl border border-white/10 bg-black/55 p-6 backdrop-blur-md">
+            <div className="rounded-2xl border border-white/10 bg-black/55 p-5 sm:p-6 backdrop-blur-md">
               <form onSubmit={handleSubmit} className="space-y-4">
               {/* Username */}
               <div>
-                <label htmlFor="username" className="block text-base font-medium text-gray-300 mb-1.5">
+                <label htmlFor="username" className="block text-sm sm:text-base font-medium text-gray-300 mb-1.5">
                   Username
                 </label>
                 <input
@@ -200,7 +200,7 @@ function SignUp() {
                   required
                   value={formData.username}
                   onChange={handleChange}
-                  className={`w-full px-3 py-2.5 bg-black border rounded-lg text-white text-base placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none transition-colors ${
+                  className={`w-full px-3 py-2.5 bg-black border rounded-lg text-white text-sm sm:text-base placeholder:text-[0.9rem] sm:placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none transition-colors ${
                     errors.username
                       ? 'border-red-400/50 focus:border-red-400'
                       : 'border-white/20 focus:border-white/40'
@@ -224,7 +224,7 @@ function SignUp() {
 
               {/* Email */}
               <div>
-                <label htmlFor="email" className="block text-base font-medium text-gray-300 mb-1.5">
+                <label htmlFor="email" className="block text-sm sm:text-base font-medium text-gray-300 mb-1.5">
                   Email address
                 </label>
                 <input
@@ -234,7 +234,7 @@ function SignUp() {
                   required
                   value={formData.email}
                   onChange={handleChange}
-                  className={`w-full px-3 py-2.5 bg-black border rounded-lg text-white text-base placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none transition-colors ${
+                  className={`w-full px-3 py-2.5 bg-black border rounded-lg text-white text-sm sm:text-base placeholder:text-[0.9rem] sm:placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none transition-colors ${
                     errors.email
                       ? 'border-red-400/50 focus:border-red-400'
                       : 'border-white/20 focus:border-white/40'
@@ -258,7 +258,7 @@ function SignUp() {
 
               {/* Password */}
               <div>
-                <label htmlFor="password" className="block text-base font-medium text-gray-300 mb-1.5">
+                <label htmlFor="password" className="block text-sm sm:text-base font-medium text-gray-300 mb-1.5">
                   Password
                 </label>
                 <div className="relative">
@@ -269,7 +269,7 @@ function SignUp() {
                     required
                     value={formData.password}
                     onChange={handleChange}
-                    className="w-full px-3 py-2.5 bg-black border border-white/20 rounded-lg text-white text-base placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none focus:border-white/40 transition-colors pr-10"
+                    className="w-full px-3 py-2.5 bg-black border border-white/20 rounded-lg text-white text-sm sm:text-base placeholder:text-[0.9rem] sm:placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none focus:border-white/40 transition-colors pr-10"
                     placeholder="Create a password"
                   />
                   <button
@@ -284,7 +284,7 @@ function SignUp() {
 
               {/* Confirm Password */}
               <div>
-                <label htmlFor="confirmPassword" className="block text-base font-medium text-gray-300 mb-1.5">
+                <label htmlFor="confirmPassword" className="block text-sm sm:text-base font-medium text-gray-300 mb-1.5">
                   Confirm Password
                 </label>
                 <div className="relative">
@@ -295,7 +295,7 @@ function SignUp() {
                     required
                     value={formData.confirmPassword}
                     onChange={handleChange}
-                    className="w-full px-3 py-2.5 bg-black border border-white/20 rounded-lg text-white text-base placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none focus:border-white/40 transition-colors pr-10"
+                    className="w-full px-3 py-2.5 bg-black border border-white/20 rounded-lg text-white text-sm sm:text-base placeholder:text-[0.9rem] sm:placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none focus:border-white/40 transition-colors pr-10"
                     placeholder="Confirm your password"
                   />
                   <button
@@ -310,7 +310,7 @@ function SignUp() {
 
               {/* Compact Password Requirements */}
               {formData.password && (
-                <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] sm:text-xs">
                   {passwordRequirements.map((req, index) => (
                     <div key={index} className="flex items-center">
                       <Check className={`w-3 h-3 mr-1 ${req.met ? 'text-green-400' : 'text-gray-500'}`} />

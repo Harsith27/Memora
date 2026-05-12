@@ -42,11 +42,6 @@ const docTagSchema = new mongoose.Schema({
     trim: true,
     maxlength: [100, 'Tag cannot exceed 100 characters']
   }],
-  category: {
-    type: String,
-    enum: ['Science', 'Mathematics', 'History', 'Language', 'Technology', 'Arts', 'Business', 'Personal', 'Research', 'Other'],
-    default: 'Other'
-  },
   // File attachments for documents
   attachments: [{
     filename: {
@@ -169,7 +164,6 @@ docTagSchema.index({ userId: 1, type: 1, createdAt: -1 });
 docTagSchema.index({ userId: 1, parentId: 1 });
 docTagSchema.index({ userId: 1, sourceTopicId: 1 });
 docTagSchema.index({ userId: 1, linkedTopicId: 1 });
-docTagSchema.index({ userId: 1, category: 1 });
 docTagSchema.index({ userId: 1, isFavorite: 1 });
 docTagSchema.index({ tags: 1 });
 docTagSchema.index({ name: 'text', description: 'text' });
@@ -236,10 +230,6 @@ docTagSchema.statics.searchDocTags = function(userId, query, options = {}) {
   
   if (options.type) {
     searchQuery.type = options.type;
-  }
-  
-  if (options.category) {
-    searchQuery.category = options.category;
   }
   
   return this.find(searchQuery)

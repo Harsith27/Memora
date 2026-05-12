@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import Logo from '../components/Logo';
 import PublicNavbar from '../components/PublicNavbar';
 import PublicFooter from '../components/PublicFooter';
@@ -10,7 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 function Login() {
   const navigate = useNavigate();
-  const { login, isLoading: authLoading, error: authError, clearError } = useAuth();
+  const { login, clearError } = useAuth();
 
   const [formData, setFormData] = useState({
     email: '',
@@ -120,20 +120,20 @@ function Login() {
         </div>
 
         {/* Plus signs at grid intersections */}
-        <div className="absolute top-16 left-16 sm:top-32 sm:left-32 pointer-events-none">
+        <div className="hidden sm:block absolute top-16 left-16 sm:top-32 sm:left-32 pointer-events-none">
           <div className="w-3 h-3 relative">
             <div className="absolute top-1/2 left-0 w-full h-px bg-white/30"></div>
             <div className="absolute left-1/2 top-0 w-px h-full bg-white/30"></div>
           </div>
         </div>
-        <div className="absolute top-24 right-12 sm:top-64 sm:right-64 pointer-events-none">
+        <div className="hidden sm:block absolute top-24 right-12 sm:top-64 sm:right-64 pointer-events-none">
           <div className="w-3 h-3 relative">
             <div className="absolute top-1/2 left-0 w-full h-px bg-white/30"></div>
             <div className="absolute left-1/2 top-0 w-px h-full bg-white/30"></div>
           </div>
         </div>
 
-        <div className="relative z-10 flex items-center justify-center px-4 sm:px-6 lg:px-8 py-10 min-h-[calc(100vh-8rem)]">
+        <div className="relative z-10 flex items-center justify-center px-4 sm:px-6 lg:px-8 py-8 sm:py-10 min-h-[calc(100vh-7.5rem)]">
           <motion.div
             className="max-w-md w-full"
             initial={{ opacity: 0, y: 20 }}
@@ -142,17 +142,17 @@ function Login() {
           >
           {/* Header */}
           <motion.div
-            className="text-center mb-8"
+            className="text-center mb-6 sm:mb-8"
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
           >
-            <Link to="/" className="inline-flex items-center space-x-2 mb-6 hover:scale-105 transition-transform">
+            <Link to="/" className="inline-flex items-center space-x-2 mb-4 sm:mb-6 hover:scale-105 transition-transform">
               <Logo size="md" className="text-white" />
               <span className="text-xl font-semibold">Memora</span>
             </Link>
-            <h2 className="text-3xl font-bold mb-2">Welcome back</h2>
-            <p className="text-gray-400">Sign in to your account to continue learning</p>
+            <h2 className="text-2xl sm:text-3xl font-bold mb-2">Welcome back</h2>
+            <p className="text-sm sm:text-base text-gray-400">Sign in to your account to continue learning</p>
           </motion.div>
 
           {/* Login Form */}
@@ -162,8 +162,8 @@ function Login() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.6, delay: 0.4, ease: "easeOut" }}
           >
-            <div className="rounded-2xl border border-white/10 bg-black/55 p-8 backdrop-blur-md">
-              <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="rounded-2xl border border-white/10 bg-black/55 p-5 sm:p-8 backdrop-blur-md">
+              <form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
                 <div>
                   <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
                     Email address
@@ -222,24 +222,16 @@ function Login() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <input
-                      id="remember-me"
-                      name="remember-me"
-                      type="checkbox"
-                      className="h-4 w-4 bg-black border border-white/20 rounded focus:ring-blue-500 focus:ring-offset-0"
-                    />
-                    <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-300">
-                      Remember me
-                    </label>
-                  </div>
-
-                  <div className="text-sm">
-                    <a href="#" className="text-blue-400 hover:text-blue-300 transition-colors">
-                      Forgot your password?
-                    </a>
-                  </div>
+                <div className="flex items-center">
+                  <input
+                    id="remember-me"
+                    name="remember-me"
+                    type="checkbox"
+                    className="h-4 w-4 bg-black border border-white/20 rounded focus:ring-blue-500 focus:ring-offset-0"
+                  />
+                  <label htmlFor="remember-me" className="ml-2 block text-xs sm:text-sm text-gray-300">
+                    Remember me
+                  </label>
                 </div>
 
                 <motion.button
@@ -247,14 +239,14 @@ function Login() {
                   disabled={isLoading || isSuccess}
                   whileHover={{ scale: isLoading || isSuccess ? 1 : 1.02 }}
                   whileTap={{ scale: isLoading || isSuccess ? 1 : 0.98 }}
-                  className={`w-full px-4 py-2.5 rounded-lg font-medium transition-all duration-300 disabled:cursor-not-allowed flex items-center justify-center ${
+                  className={`w-full px-4 py-2.5 rounded-lg border font-medium transition-all duration-300 disabled:cursor-not-allowed flex items-center justify-center ${
                     isSuccess
-                      ? 'bg-green-500 text-white'
-                      : 'bg-white text-black hover:bg-gray-100 disabled:opacity-50'
+                      ? 'border-emerald-400/35 bg-emerald-500/14 text-emerald-100'
+                      : 'border-white/30 bg-white/10 text-white hover:bg-white/18 disabled:opacity-50'
                   }`}
                 >
                   {isLoading ? (
-                    <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                   ) : isSuccess ? (
                     <>
                       <CheckCircle className="w-4 h-4 mr-2" />

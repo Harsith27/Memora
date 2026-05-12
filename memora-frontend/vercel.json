@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://memora-api-04021453.azurewebsites.net/api/$1"
+    },
+    {
+      "source": "/uploads/(.*)",
+      "destination": "https://memora-api-04021453.azurewebsites.net/uploads/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

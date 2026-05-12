@@ -7,7 +7,8 @@ const ShadcnSelect = ({
   options = [],
   placeholder = 'Select an option',
   disabled = false,
-  className = ''
+  className = '',
+  menuPlacement = 'bottom'
 }) => {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
@@ -26,7 +27,11 @@ const ShadcnSelect = ({
     };
 
     const onEscape = (event) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape' && open) {
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen(false);
+      }
     };
 
     document.addEventListener('mousedown', onDocumentClick);
@@ -36,7 +41,7 @@ const ShadcnSelect = ({
       document.removeEventListener('mousedown', onDocumentClick);
       document.removeEventListener('keydown', onEscape);
     };
-  }, []);
+  }, [open]);
 
   const toggleOpen = () => {
     if (disabled) return;
@@ -50,7 +55,7 @@ const ShadcnSelect = ({
   };
 
   return (
-    <div ref={rootRef} className={`relative ${className}`}>
+    <div ref={rootRef} data-shadcn-select-root="true" className={`relative ${className}`}>
       <button
         type="button"
         disabled={disabled}
@@ -60,14 +65,14 @@ const ShadcnSelect = ({
         }`}
       >
         <span className={`${selectedOption ? 'text-white' : 'text-gray-400'} truncate`}>
-          {selectedOption?.label || placeholder}
+          <span style={selectedOption?.style || null}>{selectedOption?.label || placeholder}</span>
         </span>
         <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-white/15 bg-[#050505] shadow-[0_10px_30px_rgba(0,0,0,0.65)]">
-          <ul className="max-h-64 overflow-auto py-1">
+        <div data-shadcn-select-menu="true" className={`absolute z-50 w-full overflow-hidden rounded-lg border border-white/15 bg-[#050505] shadow-[0_10px_30px_rgba(0,0,0,0.65)] ${menuPlacement === 'top' ? 'bottom-full mb-1' : 'mt-1'}`}>
+          <ul className="max-h-64 overflow-auto scrollbar-themed py-1 overscroll-contain">
             {options.map((option) => {
               const isSelected = option.value === value;
               return (
@@ -77,11 +82,10 @@ const ShadcnSelect = ({
                     onClick={() => handleSelect(option.value)}
                     className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors ${
                       isSelected
-                        ? 'bg-blue-500/15 text-blue-300'
-                        : 'text-gray-200 hover:bg-white/10'
-                    }`}
-                  >
-                    <span className="truncate">{option.label}</span>
+                        ? 'bg-violet-500/15 text-violet-300'
+                        : 'text-gray-200 hover:bg-violet-500/10'
+                    }`}> 
+                      <span className="truncate" style={option.style || null}>{option.label}</span>
                     {isSelected && <Check className="w-4 h-4" />}
                   </button>
                 </li>

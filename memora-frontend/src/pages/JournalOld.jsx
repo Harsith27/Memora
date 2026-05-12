@@ -2,15 +2,17 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   BookOpen, Settings, Save, Edit3, Eye, Calendar, Clock,
-  Plus, Target, Brain, ChevronLeft, ChevronRight, ArrowLeft,
+  Plus, Target, ChevronLeft, ChevronRight, ArrowLeft,
   FileText, BarChart3, PanelLeft, PanelLeftClose, Zap,
   CalendarDays, TrendingUp, BarChart2
 } from 'lucide-react';
 import Logo from '../components/Logo';
 import Toast from '../components/Toast';
 import Dialog from '../components/Dialog';
+import DashboardGlyph from '../components/DashboardGlyph';
 import { useAuth } from '../contexts/AuthContext';
 import apiService from '../services/api';
+import { formatDateWithWeekday } from '../utils/dateFormat';
 
 const escapeHtml = (value = '') => {
   return value
@@ -123,7 +125,7 @@ const Journal = () => {
 
   // Sidebar navigation items
   const sidebarItems = [
-    { icon: Brain, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
+    { icon: DashboardGlyph, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
     { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
     { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
@@ -221,12 +223,7 @@ const Journal = () => {
 
   const generateInitialEntry = () => {
     const today = new Date();
-    const dateStr = today.toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    });
+    const dateStr = formatDateWithWeekday(today, 'long');
 
     const initialEntry = `# Learning Journal - ${dateStr}
 
@@ -399,7 +396,7 @@ ${todayActivities.length > 0 ? todayActivities.map(activity => `- ${activity}`).
         {/* Logo */}
         <div className={`h-16 sm:h-20 border-b border-white/10 flex items-center ${sidebarCollapsed ? 'justify-center px-2' : 'px-4'}`}>
           <button
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate('/')}
             className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
           >
             <Logo size={sidebarCollapsed ? "md" : "sm"} className="text-white" />
@@ -478,12 +475,7 @@ ${todayActivities.length > 0 ? todayActivities.map(activity => `- ${activity}`).
               <div>
                 <h1 className="text-xl sm:text-2xl font-semibold text-white">Learning Journal</h1>
                 <p className="text-xs sm:text-sm text-gray-400">
-                  {new Date().toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
+                  {formatDateWithWeekday(new Date(), 'long')}
                 </p>
               </div>
             </div>
@@ -607,12 +599,7 @@ ${todayActivities.length > 0 ? todayActivities.map(activity => `- ${activity}`).
             <div className="flex items-center space-x-3">
               <Calendar className="w-5 h-5 text-blue-400" />
               <h2 className="text-lg font-semibold">
-                {new Date().toLocaleDateString('en-US', { 
-                  weekday: 'long', 
-                  year: 'numeric', 
-                  month: 'long', 
-                  day: 'numeric' 
-                })}
+                {formatDateWithWeekday(new Date(), 'long')}
               </h2>
             </div>
             
@@ -724,11 +711,6 @@ ${todayActivities.length > 0 ? todayActivities.map(activity => `- ${activity}`).
                 </button>
               </div>
             </div>
-
-            {/* Bottom Copyright */}
-            <div className="mt-4 pt-4 border-t border-white/10 text-center text-sm text-gray-500">
-              © 2025 Memora, Inc. All rights reserved.
-            </div>
           </div>
         </footer>
       </div>
@@ -756,7 +738,7 @@ ${todayActivities.length > 0 ? todayActivities.map(activity => `- ${activity}`).
         isVisible={toast.show}
         message={toast.message}
         type={toast.type}
-        onClose={() => setToast({ ...toast, show: false })}
+        onClose={() => setToast((prev) => ({ ...prev, show: false }))}
       />
     </div>
   );

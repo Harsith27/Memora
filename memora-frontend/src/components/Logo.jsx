@@ -1,7 +1,7 @@
 import React from 'react';
 import logoImg from '../assets/logo.jpg';
 
-const Logo = ({ size = 'md', className = '', variant = 'default' }) => {
+const Logo = ({ size = 'md', className = '' }) => {
   const sizeClasses = {
     sm: 'w-6 h-6',
     md: 'w-8 h-8',

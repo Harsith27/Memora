@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Brain,
@@ -16,9 +16,8 @@ import {
   X,
   PenLine,
 } from 'lucide-react';
-import { motion, useInView, useScroll, useTransform } from 'framer-motion';
+import { AnimatePresence, motion, useInView, useScroll, useTransform } from 'framer-motion';
 import logoImg from '../assets/logo.jpg';
-import UserProfileDropdown from '../components/UserProfileDropdown';
 import PublicFooter from '../components/PublicFooter';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -239,30 +238,43 @@ const memscoreProcess = [
   'MemScore then drives revision intensity, spacing, and priority queues.',
 ];
 
-const FloatingParticles = () => (
-  <div className="absolute inset-0 overflow-hidden pointer-events-none">
-    {[...Array(14)].map((_, i) => (
-      <motion.div
-        key={i}
-        className="absolute w-1 h-1 bg-blue-400/20 rounded-full"
-        initial={{
-          x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1200),
-          y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 800),
-        }}
-        animate={{
-          x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1200),
-          y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 800),
-        }}
-        transition={{
-          duration: Math.random() * 18 + 10,
-          repeat: Infinity,
-          repeatType: 'reverse',
-          ease: 'linear',
-        }}
-      />
-    ))}
-  </div>
-);
+const FloatingParticles = ({ particleCount = 14, className = '' }) => {
+  const particles = useMemo(
+    () =>
+      [...Array(particleCount)].map(() => ({
+        left: Math.random() * 100,
+        top: Math.random() * 100,
+        driftX: Math.random() * 140 - 70,
+        driftY: Math.random() * 140 - 70,
+        duration: Math.random() * 8 + 14,
+        delay: Math.random() * 2,
+      })),
+    [particleCount]
+  );
+
+  return (
+    <div className={`absolute inset-0 overflow-hidden pointer-events-none ${className}`}>
+      {particles.map((particle, i) => (
+        <motion.div
+          key={i}
+          className="absolute h-1.5 w-1.5 rounded-full bg-blue-300/40"
+          style={{ left: `${particle.left}%`, top: `${particle.top}%` }}
+          animate={{
+            x: [0, particle.driftX, -particle.driftX * 0.45, 0],
+            y: [0, particle.driftY, -particle.driftY * 0.45, 0],
+            opacity: [0.2, 0.65, 0.35, 0.2],
+          }}
+          transition={{
+            duration: particle.duration,
+            delay: particle.delay,
+            repeat: Infinity,
+            ease: 'easeInOut',
+          }}
+        />
+      ))}
+    </div>
+  );
+};
 
 const Reveal = ({ children, className = '', delay = 0 }) => {
   const ref = useRef(null);
@@ -739,7 +751,14 @@ function Landing() {
   const [activeSection, setActiveSection] = useState('memscore');
   const [isScrolled, setIsScrolled] = useState(false);
   const [ctaGlow, setCtaGlow] = useState({ x: 50, y: 50, hovering: false });
+  const rotatingHeadlinePhrases = ['memory-powered learning.', 'personalized study experience.'];
+  const [headlinePhraseIndex, setHeadlinePhraseIndex] = useState(0);
+  const [typedHeadline, setTypedHeadline] = useState('');
+  const [isHeadlineDeleting, setIsHeadlineDeleting] = useState(false);
+  const [mobileFocus, setMobileFocus] = useState('memscore');
   const heroRef = useRef(null);
+  const currentHeadlinePhrase = rotatingHeadlinePhrases[headlinePhraseIndex];
+  const isHeadlineIdle = !isHeadlineDeleting && typedHeadline === currentHeadlinePhrase;
 
   const { scrollYProgress: heroProgress } = useScroll({
     target: heroRef,
@@ -750,13 +769,21 @@ function Landing() {
   const heroTextY = useTransform(heroProgress, [0, 1], [0, -72]);
   const heroPreviewY = useTransform(heroProgress, [0, 1], [0, -46]);
   const heroPreviewScale = useTransform(heroProgress, [0, 1], [1, 0.93]);
-  const heroGlowOpacity = useTransform(heroProgress, [0, 1], [0.5, 0.12]);
 
   const navItems = [
     { id: 'memscore', label: 'MemScore' },
     { id: 'features', label: 'Modules' },
     { id: 'feedback', label: 'Feedback' },
     { id: 'pricing', label: 'Pricing' },
+  ];
+
+  const mobileFeatureCards = featureCards;
+  const mobileFeedbackPreview = [...feedbackItems.slice(0, 3), ...feedbackItemsSecondary.slice(0, 2)];
+  const mobileSummaryTabs = [
+    { id: 'memscore', label: 'MemScore', icon: Brain },
+    { id: 'modules', label: 'Modules', icon: FileText },
+    { id: 'feedback', label: 'Feedback', icon: Users },
+    { id: 'pricing', label: 'Pricing', icon: Target },
   ];
 
   useEffect(() => {
@@ -802,6 +829,37 @@ function Landing() {
     setCtaGlow((prev) => ({ ...prev, hovering: false, x: 50, y: 50 }));
   };
 
+  useEffect(() => {
+    const fullPhrase = currentHeadlinePhrase;
+    const isPhraseComplete = !isHeadlineDeleting && typedHeadline === fullPhrase;
+    const isPhraseCleared = isHeadlineDeleting && typedHeadline.length === 0;
+
+    let delay = isHeadlineDeleting ? 38 : 68;
+    if (isPhraseComplete) delay = 860;
+    if (isPhraseCleared) delay = 220;
+
+    const timerId = window.setTimeout(() => {
+      if (isPhraseComplete) {
+        setIsHeadlineDeleting(true);
+        return;
+      }
+
+      if (isPhraseCleared) {
+        setIsHeadlineDeleting(false);
+        setHeadlinePhraseIndex((prev) => (prev + 1) % rotatingHeadlinePhrases.length);
+        return;
+      }
+
+      if (isHeadlineDeleting) {
+        setTypedHeadline((prev) => prev.slice(0, -1));
+      } else {
+        setTypedHeadline(fullPhrase.slice(0, typedHeadline.length + 1));
+      }
+    }, delay);
+
+    return () => window.clearTimeout(timerId);
+  }, [typedHeadline, isHeadlineDeleting, headlinePhraseIndex, currentHeadlinePhrase]);
+
   return (
     <div className="bg-black text-white min-h-screen pt-16">
       <nav className={`fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-md supports-[backdrop-filter]:bg-black/50 transition-colors duration-300 ${
@@ -809,9 +867,9 @@ function Landing() {
       }`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-8">
+            <div className="flex items-center space-x-3 sm:space-x-8 min-w-0">
               <motion.div
-                className="flex items-center space-x-2 cursor-pointer"
+                className="flex items-center space-x-2 cursor-pointer min-w-0"
                 whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.96 }}
               >
@@ -822,7 +880,7 @@ function Landing() {
                 >
                   <img src={logoImg} alt="Memora Logo" className="w-full h-full object-cover rounded-lg" />
                 </motion.div>
-                <span className="font-semibold text-lg">Memora</span>
+                <span className="font-semibold text-base sm:text-lg truncate">Memora</span>
               </motion.div>
 
               <div className="hidden lg:flex items-center space-x-2">
@@ -844,16 +902,15 @@ function Landing() {
               </div>
             </div>
 
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 sm:space-x-4">
               {user ? (
                 <>
-                  <Link to="/dashboard" className="text-gray-400 hover:text-white transition-colors text-sm">Dashboard</Link>
-                  <UserProfileDropdown />
+                  <Link to="/dashboard" className="text-gray-400 hover:text-white transition-colors text-xs sm:text-sm">Dashboard</Link>
                 </>
               ) : (
                 <>
-                  <Link to="/login" className="text-gray-400 hover:text-white transition-colors text-sm">Sign In</Link>
-                  <Link to="/signup" className="bg-white text-black px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-100 transition-colors">
+                  <Link to="/login" className="text-gray-400 hover:text-white transition-colors text-xs sm:text-sm whitespace-nowrap">Sign In</Link>
+                  <Link to="/signup" className="bg-white text-black px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-medium hover:bg-gray-100 transition-colors whitespace-nowrap">
                     Sign Up
                   </Link>
                 </>
@@ -863,35 +920,11 @@ function Landing() {
         </div>
       </nav>
 
+      <div className="relative">
+        <FloatingParticles particleCount={44} className="z-[1]" />
+
       <section ref={heroRef} className="relative min-h-screen overflow-hidden">
-        <motion.div
-          className="absolute inset-0 opacity-40"
-          animate={{
-            background: [
-              'radial-gradient(820px circle at 10% 15%, rgba(55,65,255,0.18), transparent 48%), radial-gradient(900px circle at 90% 25%, rgba(147,51,234,0.14), transparent 52%), linear-gradient(180deg, #02030a 0%, #000000 100%)',
-              'radial-gradient(760px circle at 80% 20%, rgba(59,130,246,0.16), transparent 50%), radial-gradient(900px circle at 20% 70%, rgba(109,40,217,0.12), transparent 55%), linear-gradient(180deg, #02030a 0%, #000000 100%)',
-              'radial-gradient(840px circle at 15% 80%, rgba(59,130,246,0.16), transparent 50%), radial-gradient(900px circle at 85% 60%, rgba(147,51,234,0.12), transparent 54%), linear-gradient(180deg, #02030a 0%, #000000 100%)',
-              'radial-gradient(820px circle at 10% 15%, rgba(55,65,255,0.18), transparent 48%), radial-gradient(900px circle at 90% 25%, rgba(147,51,234,0.14), transparent 52%), linear-gradient(180deg, #02030a 0%, #000000 100%)',
-            ],
-          }}
-          transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
-        />
-
-        <motion.div
-          className="absolute left-[6%] top-[18%] h-48 w-48 rounded-full bg-cyan-400/20 blur-3xl"
-          style={{ opacity: heroGlowOpacity }}
-          animate={{ x: [0, 42, 0], y: [0, -18, 0] }}
-          transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }}
-        />
-
-        <motion.div
-          className="absolute right-[7%] bottom-[16%] h-56 w-56 rounded-full bg-indigo-400/20 blur-3xl"
-          style={{ opacity: heroGlowOpacity }}
-          animate={{ x: [0, -38, 0], y: [0, 22, 0] }}
-          transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
-        />
-
-        <FloatingParticles />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#02030a] to-black" />
 
         <div className="absolute inset-0 opacity-20">
           <div
@@ -904,44 +937,54 @@ function Landing() {
           />
         </div>
 
-        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-10 text-center">
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 sm:pt-20 pb-8 sm:pb-10 text-center">
           <motion.h1
-            className="text-4xl sm:text-6xl lg:text-[72px] font-semibold tracking-tight leading-[0.98] mb-8"
+            className="text-[2rem] sm:text-5xl lg:text-[72px] font-semibold tracking-tight leading-[1.02] sm:leading-[0.98] mb-6 sm:mb-8"
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.2 }}
             style={{ y: heroTitleY }}
           >
-            <span className="block">Learn smarter, not harder with</span>
-            <span className="block mt-2 relative inline-block">
-              memory-powered learning.
+            <span className="block font-light text-zinc-300">Learn smarter, not harder with</span>
+            <span className="block mt-2 relative inline-block text-blue-100">
+              {typedHeadline}
+              <motion.span
+                aria-hidden="true"
+                className="inline-block ml-1 text-blue-300"
+                animate={isHeadlineIdle ? { opacity: [1, 0, 1] } : { opacity: 1 }}
+                transition={isHeadlineIdle ? { duration: 0.9, repeat: Infinity, ease: 'linear' } : { duration: 0 }}
+              >
+                |
+              </motion.span>
               <span className="absolute left-1/2 -translate-x-1/2 -bottom-2 h-[5px] w-[68%] rounded-full bg-gradient-to-r from-blue-500 via-blue-400 to-purple-500 opacity-90" />
             </span>
           </motion.h1>
 
           <motion.p
-            className="text-lg sm:text-xl text-zinc-400 mb-10 max-w-4xl mx-auto leading-relaxed"
+            className="text-base sm:text-xl text-zinc-400 mb-8 sm:mb-10 max-w-4xl mx-auto leading-relaxed"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.35 }}
             style={{ y: heroTextY }}
           >
-            Master any subject with scientifically-proven spaced repetition. Transform how you learn, remember, and retain knowledge with personalized schedules that adapt to your progress.
+            Adaptive schedules and focused revision loops help you retain concepts longer,
+            <br className="hidden sm:block" />
+            track real progress, and study with calm consistency every single day.
           </motion.p>
 
           <motion.div
-            className="flex flex-col sm:flex-row gap-3 justify-center items-center"
+            className="flex flex-col sm:flex-row gap-3 justify-center items-center w-full"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.5 }}
           >
-            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="w-full sm:w-auto">
               <Link
                 to="/dashboard"
                 onMouseMove={handleCtaMouseMove}
                 onMouseEnter={() => setCtaGlow((prev) => ({ ...prev, hovering: true }))}
                 onMouseLeave={handleCtaMouseLeave}
-                className="group relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-full border border-zinc-300 px-7 py-2.5 text-sm sm:text-base font-semibold tracking-tight text-zinc-900 bg-white shadow-[0_10px_30px_rgba(0,0,0,0.16),0_1px_0_rgba(255,255,255,0.95)_inset] transition-all duration-300 hover:-translate-y-0.5 hover:border-zinc-400"
+                className="group relative inline-flex w-full sm:w-auto items-center justify-center gap-2 overflow-hidden rounded-full border border-zinc-300 px-6 sm:px-7 py-2.5 text-sm sm:text-base font-semibold tracking-tight text-zinc-900 bg-white shadow-[0_10px_30px_rgba(0,0,0,0.16),0_1px_0_rgba(255,255,255,0.95)_inset] transition-all duration-300 hover:-translate-y-0.5 hover:border-zinc-400"
                 style={{
                   '--cta-x': `${ctaGlow.x}%`,
                   '--cta-y': `${ctaGlow.y}%`,
@@ -964,7 +1007,7 @@ function Landing() {
           </motion.div>
 
           <motion.div
-            className="mt-12 sm:mt-14"
+            className="mt-10 sm:mt-14"
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.65 }}
@@ -979,7 +1022,7 @@ function Landing() {
                 <img
                   src="/dashboard-preview.png"
                   alt="Memora dashboard preview"
-                  className="relative z-10 w-full h-[280px] sm:h-[380px] lg:h-[500px] object-cover object-top"
+                  className="relative z-10 w-full h-[210px] sm:h-[320px] md:h-[420px] lg:h-[500px] object-cover object-top"
                   loading="lazy"
                 />
 
@@ -994,8 +1037,195 @@ function Landing() {
         </div>
       </section>
 
-      <section id="memscore" className="relative py-16 sm:py-20 border-y border-white/10 scroll-mt-24 overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_20%,rgba(59,130,246,0.14),transparent_40%),radial-gradient(circle_at_88%_80%,rgba(14,165,233,0.12),transparent_42%)]" />
+      <section className="relative py-10 border-y border-white/10 overflow-hidden md:hidden">
+        <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_20%_10%,rgba(59,130,246,0.3),transparent_40%),radial-gradient(circle_at_82%_80%,rgba(34,211,238,0.2),transparent_35%)]" />
+
+        <div className="relative z-10 px-4">
+          <Reveal className="mb-5">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-cyan-200/80 mb-2">Mobile Overview</p>
+            <h2 className="text-2xl font-semibold tracking-tight">70% home summary, built for phone</h2>
+            <p className="text-sm text-zinc-400 mt-2 leading-relaxed">
+              All core sections are included here. Switch tabs to morph cards between MemScore, Modules, Feedback, and Pricing.
+            </p>
+          </Reveal>
+
+          <Reveal className="mb-4" delay={0.04}>
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+              {mobileSummaryTabs.map((tab) => {
+                const Icon = tab.icon;
+                const active = mobileFocus === tab.id;
+
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setMobileFocus(tab.id)}
+                    className={`relative inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs whitespace-nowrap transition-colors ${
+                      active
+                        ? 'border-white/35 text-white'
+                        : 'border-white/15 text-zinc-300'
+                    }`}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="mobile-home-tab-pill"
+                        className="absolute inset-0 rounded-full bg-white/10"
+                        transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+                      />
+                    )}
+                    <Icon className="relative z-10 w-3.5 h-3.5" />
+                    <span className="relative z-10">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </Reveal>
+
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={mobileFocus}
+              initial={{ opacity: 0, y: 20, scale: 0.985 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -16, scale: 0.985 }}
+              transition={{ duration: 0.28, ease: 'easeOut' }}
+              className="rounded-2xl border border-white/14 bg-black/65 p-4"
+            >
+              {mobileFocus === 'memscore' && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-[11px] uppercase tracking-[0.15em] text-blue-200/80">MemScore System</p>
+                    <span className="text-[11px] text-zinc-400">3 games + 4-step flow</span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 mb-3.5">
+                    {memscoreGames.map((game) => {
+                      const Icon = game.icon;
+                      return (
+                        <div key={game.title} className="rounded-lg border border-white/12 bg-white/[0.03] p-2.5">
+                          <Icon className="w-4 h-4 text-zinc-100 mb-1" />
+                          <p className="text-[11px] text-zinc-200 leading-tight">{game.title}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {memscoreProcess.map((step, idx) => (
+                      <div key={step} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
+                        <p className="text-[10px] uppercase tracking-[0.13em] text-cyan-200/80 mb-1">Step {idx + 1}</p>
+                        <p className="text-sm text-zinc-300 leading-relaxed">{step}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {mobileFocus === 'modules' && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-[11px] uppercase tracking-[0.15em] text-purple-200/80">Modules Snapshot</p>
+                    <span className="text-[11px] text-zinc-400">9 modules included</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {mobileFeatureCards.map((card) => {
+                      const Icon = card.icon;
+                      return (
+                        <div key={card.title} className="rounded-xl border border-white/12 bg-white/[0.03] p-3">
+                          <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 bg-black/60 mb-2">
+                            <Icon className="h-4 w-4 text-zinc-100" />
+                          </div>
+                          <p className="text-sm leading-tight text-zinc-100 mb-1.5">{card.title}</p>
+                          <p className="text-[11px] text-zinc-400 leading-relaxed">{card.points[0]}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {mobileFocus === 'feedback' && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-[11px] uppercase tracking-[0.15em] text-emerald-200/80">Learner Feedback</p>
+                    <span className="text-[11px] text-zinc-400">Student-first outcomes</span>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {mobileFeedbackPreview.map((item) => (
+                      <div key={`${item.name}-${item.role}`} className="rounded-lg border border-white/12 bg-white/[0.03] p-3">
+                        <p className="text-sm text-zinc-200 leading-relaxed">{item.quote}</p>
+                        <div className="mt-2">
+                          <p className="text-xs font-semibold text-cyan-100">{item.name}</p>
+                          <p className="text-[11px] text-zinc-400">{item.role}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {mobileFocus === 'pricing' && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-[11px] uppercase tracking-[0.15em] text-amber-200/80">Pricing Summary</p>
+                    <span className="text-[11px] text-zinc-400">Free + Starter + Pro</span>
+                  </div>
+
+                  <div className="space-y-2.5 mb-3.5">
+                    <div className="rounded-lg border border-white/12 bg-white/[0.03] p-3">
+                      <p className="text-[10px] uppercase tracking-[0.13em] text-zinc-400">Free (Beta)</p>
+                      <p className="text-xl font-semibold mt-1">Free</p>
+                      <p className="text-[11px] text-zinc-400 mt-1">Launch access for early learners</p>
+                    </div>
+                    <div className="rounded-lg border border-blue-200/25 bg-blue-300/10 p-3">
+                      <p className="text-[10px] uppercase tracking-[0.13em] text-blue-100/80">Starter</p>
+                      <p className="text-xl font-semibold mt-1">₹49 / month</p>
+                      <p className="text-[11px] text-zinc-200 mt-1">₹499 yearly for daily revision flow</p>
+                    </div>
+                    <div className="rounded-lg border border-purple-200/25 bg-purple-300/10 p-3">
+                      <p className="text-[10px] uppercase tracking-[0.13em] text-purple-100/80">Pro</p>
+                      <p className="text-xl font-semibold mt-1">₹99 / month</p>
+                      <p className="text-[11px] text-zinc-200 mt-1">₹999 yearly for full intelligence stack</p>
+                    </div>
+                  </div>
+
+                  <Link
+                    to="/signup"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-white text-black py-2.5 text-sm font-semibold hover:bg-zinc-100 transition-colors"
+                  >
+                    Start Learning
+                    <ArrowRight className="w-4 h-4" />
+                  </Link>
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
+
+          <Reveal delay={0.18} className="mt-4">
+            <div className="grid grid-cols-4 gap-2">
+              <div className="rounded-lg border border-white/12 bg-black/55 p-2.5 text-center">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">Sections</p>
+                <p className="text-base font-semibold mt-0.5">4</p>
+              </div>
+              <div className="rounded-lg border border-white/12 bg-black/55 p-2.5 text-center">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">Modules</p>
+                <p className="text-base font-semibold mt-0.5">9</p>
+              </div>
+              <div className="rounded-lg border border-white/12 bg-black/55 p-2.5 text-center">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">Games</p>
+                <p className="text-base font-semibold mt-0.5">3</p>
+              </div>
+              <div className="rounded-lg border border-white/12 bg-black/55 p-2.5 text-center">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-zinc-500">Plans</p>
+                <p className="text-base font-semibold mt-0.5">3</p>
+              </div>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
+      <section id="memscore" className="relative py-16 sm:py-20 border-y border-white/10 scroll-mt-24 overflow-hidden hidden md:block">
         <div className="absolute inset-0 opacity-30 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:52px_52px]" />
 
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1131,7 +1361,7 @@ function Landing() {
         </div>
       </section>
 
-      <section id="features" className="relative py-20 sm:py-24 scroll-mt-24">
+      <section id="features" className="relative py-20 sm:py-24 scroll-mt-24 hidden md:block">
         <div className="absolute inset-0 opacity-18 bg-[radial-gradient(circle_at_18%_8%,rgba(255,255,255,0.07),transparent_34%),radial-gradient(circle_at_85%_78%,rgba(255,255,255,0.05),transparent_36%)]" />
 
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1151,14 +1381,14 @@ function Landing() {
         </div>
       </section>
 
-      <section id="feedback" className="relative py-20 border-y border-white/10 overflow-hidden scroll-mt-24">
+      <section id="feedback" className="relative py-20 border-y border-white/10 overflow-hidden scroll-mt-24 hidden md:block">
         <div className="absolute inset-0 opacity-10 bg-[linear-gradient(180deg,rgba(59,130,246,0.25),transparent_40%,rgba(147,51,234,0.25))]" />
 
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <Reveal className="mb-10">
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-purple-300/80 mb-3">Feedback</p>
-              <h3 className="text-3xl sm:text-4xl font-semibold tracking-tight">What learners say after switching to Memora</h3>
+              <h3 className="text-2xl sm:text-4xl font-semibold tracking-tight">What learners say after switching to Memora</h3>
             </div>
           </Reveal>
 
@@ -1190,7 +1420,7 @@ function Landing() {
                   <motion.article
                     key={`${item.name}-${index}`}
                     whileHover={{ y: -3, scale: 1.005 }}
-                    className="w-[320px] sm:w-[360px] rounded-2xl border border-white/15 bg-black p-6"
+                    className="w-[280px] sm:w-[340px] lg:w-[360px] rounded-2xl border border-white/15 bg-black p-5 sm:p-6"
                   >
                     <p className="text-zinc-200 leading-relaxed mb-6">{item.quote}</p>
                     <div className="text-sm">
@@ -1217,7 +1447,7 @@ function Landing() {
                   <motion.article
                     key={`${item.name}-secondary-${index}`}
                     whileHover={{ y: -3, scale: 1.005 }}
-                    className="w-[320px] sm:w-[360px] rounded-2xl border border-white/15 bg-gradient-to-b from-cyan-400/5 to-black p-6"
+                    className="w-[280px] sm:w-[340px] lg:w-[360px] rounded-2xl border border-white/15 bg-gradient-to-b from-cyan-400/5 to-black p-5 sm:p-6"
                   >
                     <p className="text-zinc-200 leading-relaxed mb-6">{item.quote}</p>
                     <div className="text-sm">
@@ -1232,15 +1462,15 @@ function Landing() {
         </div>
       </section>
 
-      <section id="pricing" className="relative py-20 sm:py-24 scroll-mt-24">
+      <section id="pricing" className="relative py-20 sm:py-24 scroll-mt-24 hidden md:block">
         <div className="absolute inset-0 opacity-15 bg-[radial-gradient(circle_at_50%_0%,rgba(59,130,246,0.25),transparent_35%)]" />
 
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <Reveal className="text-center mb-12">
             <p className="text-xs uppercase tracking-[0.18em] text-blue-300/80 mb-3">Pricing</p>
-            <h3 className="text-4xl sm:text-5xl font-semibold tracking-tight mb-4">Choose your learning momentum</h3>
+            <h3 className="text-3xl sm:text-5xl font-semibold tracking-tight mb-4">Choose your learning momentum</h3>
             <p className="max-w-3xl mx-auto text-zinc-400 text-lg">
-              Start free. Upgrade when you want deeper analytics, smarter automation, and collaboration features.
+              Transparent and scalable plans built for students and learners at every stage.
             </p>
           </Reveal>
 
@@ -1251,18 +1481,20 @@ function Landing() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.25 }}
               transition={{ duration: 0.55, ease: 'easeOut' }}
-              className="rounded-2xl border border-white/12 bg-[#04050a] p-7"
+              className="rounded-2xl border border-white/12 bg-[#04050a] p-5 sm:p-7"
             >
               <div className="flex items-center justify-between mb-5">
-                <h4 className="text-2xl font-semibold">Starter</h4>
+                <h4 className="text-xl sm:text-2xl font-semibold">Free Plan(Beta)</h4>
                 <Users className="w-5 h-5 text-blue-300" />
               </div>
-              <p className="text-zinc-400 mb-5">For solo learners building consistency.</p>
-              <div className="text-4xl font-semibold mb-6">$0<span className="text-lg text-zinc-400">/mo</span></div>
+              <p className="text-zinc-400 mb-5">Launch phase access for early learners.</p>
+              <div className="text-3xl sm:text-4xl font-semibold mb-1">Free</div>
+              <div className="text-sm text-zinc-400 mb-6">launch offer - 2 months only</div>
               <ul className="space-y-3 text-zinc-300 mb-7">
-                <li>MemScore evaluation</li>
-                <li>Topics, Chronicle, Journal</li>
-                <li>Basic analytics + Focus Mode</li>
+                <li>full access during beta period</li>
+                <li>unlimited features and reviews</li>
+                <li>limited to first 1000 users</li>
+                <li>priority onboarding support</li>
               </ul>
               <Link to="/signup" className="inline-flex items-center justify-center w-full rounded-full border border-white/20 py-3 font-semibold hover:bg-white/8 transition-colors">
                 Start Free
@@ -1277,21 +1509,22 @@ function Landing() {
               transition={{ duration: 0.58, delay: 0.08, ease: 'easeOut' }}
               className="rounded-2xl p-[1px] bg-gradient-to-br from-blue-500/70 via-white/30 to-purple-500/70 shadow-[0_0_34px_rgba(59,130,246,0.2)]"
             >
-              <div className="rounded-2xl border border-white/15 bg-[#04050a] p-7 h-full">
+              <div className="rounded-2xl border border-white/15 bg-[#04050a] p-5 sm:p-7 h-full">
                 <div className="flex items-center justify-between mb-5">
-                  <h4 className="text-2xl font-semibold">Pro</h4>
-                  <span className="text-xs uppercase tracking-[0.15em] text-blue-200 bg-blue-500/20 px-3 py-1 rounded-full">Popular</span>
+                  <h4 className="text-xl sm:text-2xl font-semibold">Starter Plan</h4>
+                  <Target className="w-5 h-5 text-blue-200" />
                 </div>
-                <p className="text-zinc-400 mb-5">For ambitious learners optimizing outcomes.</p>
-                <div className="text-4xl font-semibold mb-6">$9<span className="text-lg text-zinc-400">/mo</span></div>
+                <p className="text-zinc-400 mb-5">Core system for consistent daily revision.</p>
+                <div className="text-3xl sm:text-4xl font-semibold mb-0.5">₹49/ Month</div>
+                <div className="text-xl sm:text-2xl font-semibold text-zinc-200 mb-6">₹499/ Year</div>
                 <ul className="space-y-3 text-zinc-300 mb-7">
-                  <li>Everything in Starter</li>
-                  <li>Advanced retention analytics</li>
-                  <li>Auto GitHub journal sync</li>
-                  <li>Priority Neuro scheduling</li>
+                  <li>core spaced repetition</li>
+                  <li>daily review limit</li>
+                  <li>basic progress tracking</li>
+                  <li>weekly performance summary</li>
                 </ul>
-                <Link to="/signup" className="inline-flex items-center justify-center w-full rounded-full bg-white text-black py-3 font-semibold hover:bg-zinc-100 transition-colors">
-                  Get Pro
+                <Link to="/signup" className="inline-flex items-center justify-center w-full rounded-full border border-white/20 py-3 font-semibold hover:bg-white/8 transition-colors">
+                  Get Starter
                 </Link>
               </div>
             </motion.div>
@@ -1302,27 +1535,30 @@ function Landing() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.25 }}
               transition={{ duration: 0.55, delay: 0.16, ease: 'easeOut' }}
-              className="rounded-2xl border border-white/12 bg-[#04050a] p-7"
+              className="rounded-2xl border border-white/12 bg-[#04050a] p-5 sm:p-7"
             >
               <div className="flex items-center justify-between mb-5">
-                <h4 className="text-2xl font-semibold">Team</h4>
+                <h4 className="text-xl sm:text-2xl font-semibold">Pro Plan</h4>
                 <Brain className="w-5 h-5 text-purple-300" />
               </div>
-              <p className="text-zinc-400 mb-5">For clubs, cohorts, and coaching teams.</p>
-              <div className="text-4xl font-semibold mb-6">$19<span className="text-lg text-zinc-400">/user/mo</span></div>
+              <p className="text-zinc-400 mb-5">High-retention workflow with automation depth.</p>
+              <div className="text-3xl sm:text-4xl font-semibold mb-0.5">₹99/ Month</div>
+              <div className="text-xl sm:text-2xl font-semibold text-zinc-200 mb-6">₹999/ Year</div>
               <ul className="space-y-3 text-zinc-300 mb-7">
-                <li>Everything in Pro</li>
-                <li>Shared topic libraries</li>
-                <li>Group progress views</li>
-                <li>Role-based workspace controls</li>
+                <li>unlimited reviews</li>
+                <li>auto journaling and tracking</li>
+                <li>smart neuro engine scheduling</li>
+                <li>advanced analytics dashboard</li>
               </ul>
-              <button className="inline-flex items-center justify-center w-full rounded-full border border-white/20 py-3 font-semibold hover:bg-white/8 transition-colors">
-                Contact Team Sales
-              </button>
+              <Link to="/signup" className="inline-flex items-center justify-center w-full rounded-full bg-white text-black py-3 font-semibold hover:bg-zinc-100 transition-colors">
+                Get Pro
+              </Link>
             </motion.div>
           </div>
         </div>
       </section>
+
+      </div>
 
       <PublicFooter />
     </div>

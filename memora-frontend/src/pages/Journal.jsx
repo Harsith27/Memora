@@ -1,17 +1,20 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   BookOpen, Save, Edit3, Calendar,
   ChevronLeft, ChevronRight, TrendingUp, BarChart2,
-  FileText, BarChart3, PanelLeft, PanelLeftClose, Brain, Settings,
-  RefreshCw, ToggleLeft, ToggleRight, Globe, GitBranch
+  FileText, BarChart3, PanelLeft, PanelLeftClose, Settings,
+  RefreshCw, ToggleLeft, ToggleRight, Globe, GitBranch, Award, Mic
 } from 'lucide-react';
 import Logo from '../components/Logo';
 import Toast from '../components/Toast';
 import Dialog from '../components/Dialog';
+import DashboardGlyph from '../components/DashboardGlyph';
+import DashboardFooter from '../components/DashboardFooter';
 import { useAuth } from '../contexts/AuthContext';
 import apiService from '../services/api';
 import journalService from '../services/journalService';
+import { formatDateDDMMYYYY, formatDateWithWeekday, parseDateInputToIso } from '../utils/dateFormat';
 
 const escapeHtml = (value = '') => {
   return value
@@ -53,10 +56,97 @@ const parseStoredJson = (value, fallback) => {
   }
 };
 
+const getStartOfWeekDateString = (value = new Date()) => {
+  const date = value instanceof Date ? new Date(value) : new Date(value);
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - date.getDay());
+  return getLocalDateString(date);
+};
+
+const getStartOfMonthDateString = (value = new Date()) => {
+  const date = value instanceof Date ? new Date(value) : new Date(value);
+  date.setHours(0, 0, 0, 0);
+  date.setDate(1);
+  return getLocalDateString(date);
+};
+
 const TOPIC_ACTIVITY_PATTERN = /Reviewed "|Added topic|Added new topic/;
 const TOPIC_ACTIVITY_EXTRACT_PATTERN = /Reviewed "([^"]+)"|Added topic "([^"]+)"|Added new topic "([^"]+)"/;
 const FOCUS_ACTIVITY_PATTERN = /Focus session:/;
 const FOCUS_MINUTES_PATTERN = /Focus session: (\d+) minutes/;
+const OVERVIEW_ACTIVITY_LINE_PATTERN = /^(Created \d+ topics|Revised \d+ topics(?:\s*\([^)]*\))?|Completed \d+\/\d+ tasks|Focus sessions:\s*\d+(?:\s*\(\d+\s*min\))?|Workspace docs created\/used:\s*\d+\/\d+|Mindmaps created:\s*\d+)$/i;
+
+const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const getSectionMatch = (template, sectionTitle) => {
+  const pattern = new RegExp(`(##\\s*${escapeRegExp(sectionTitle)}\\s*\\n)([\\s\\S]*?)(?=\\n##\\s|$)`, 'i');
+  return template.match(pattern);
+};
+
+const getLockedTemplateSectionTitles = (templateKey) => {
+  if (templateKey === 'daily') return ['Overview', 'Activities'];
+  if (templateKey === 'weekly' || templateKey === 'monthly') return ['Overview', 'Topics Studied'];
+  return ['Overview'];
+};
+
+const stripLockedTemplateSections = (templateKey, templateText) => {
+  const input = String(templateText || '');
+  if (!input) return input;
+
+  let output = input;
+  getLockedTemplateSectionTitles(templateKey).forEach((sectionTitle) => {
+    const sectionPattern = new RegExp(`\\n*##\\s*${escapeRegExp(sectionTitle)}\\s*\\n[\\s\\S]*?(?=\\n##\\s|$)`, 'i');
+    output = output.replace(sectionPattern, '\n');
+  });
+
+  return output.replace(/\n{3,}/g, '\n\n').trim();
+};
+
+const getLockedTemplateSectionBlocks = (templateKey, templateText) => {
+  const sourceTemplate = String(templateText || defaultJournalTemplates[templateKey] || '');
+  const fallbackTemplate = String(defaultJournalTemplates[templateKey] || '');
+
+  return getLockedTemplateSectionTitles(templateKey).map((sectionTitle) => {
+    const sectionMatch = getSectionMatch(sourceTemplate, sectionTitle) || getSectionMatch(fallbackTemplate, sectionTitle);
+    return {
+      title: sectionTitle,
+      content: sectionMatch?.[2]?.trim() || '- Auto-managed by Memora'
+    };
+  });
+};
+
+const enforceLockedTemplateSections = (templateKey, templateText) => {
+  const input = String(templateText || '');
+  const defaultTemplate = String(defaultJournalTemplates[templateKey] || '');
+  if (!input || !defaultTemplate) return input;
+
+  const lockedSections = getLockedTemplateSectionTitles(templateKey);
+  let output = input;
+
+  lockedSections.forEach((sectionTitle) => {
+    const currentMatch = getSectionMatch(output, sectionTitle);
+    const defaultMatch = getSectionMatch(defaultTemplate, sectionTitle);
+    if (!defaultMatch) return;
+
+    const replacement = `${defaultMatch[1]}${defaultMatch[2].trimEnd()}\n`;
+    const sectionPattern = new RegExp(`(##\\s*${escapeRegExp(sectionTitle)}\\s*\\n)([\\s\\S]*?)(?=\\n##\\s|$)`, 'i');
+
+    if (currentMatch) {
+      output = output.replace(sectionPattern, replacement);
+      return;
+    }
+
+    const firstHeadingMatch = output.match(/^#.*$/m);
+    if (firstHeadingMatch) {
+      const insertAfter = firstHeadingMatch.index + firstHeadingMatch[0].length;
+      output = `${output.slice(0, insertAfter)}\n\n${replacement}${output.slice(insertAfter)}`;
+    } else {
+      output = `${replacement}\n${output}`;
+    }
+  });
+
+  return output;
+};
 
 const defaultJournalTemplates = {
   daily: `# Learning Journal - {{dateLabel}}
@@ -179,6 +269,43 @@ const mergeJournalTemplates = (templates = {}) => ({
   monthly: templates.monthly || defaultJournalTemplates.monthly,
 });
 
+const requiredTemplatePlaceholders = {
+  daily: ['dateLabel', 'topicCount', 'focusSessions', 'studyTime', 'activities'],
+  weekly: [
+    'weekRange',
+    'activeDays',
+    'avgTopicsPerDay',
+    'avgStudyTimePerDay',
+    'mostProductiveDay',
+    'totalTopics',
+    'totalFocusSessions',
+    'totalStudyTime',
+    'dailyBreakdown',
+    'topicsSummary',
+    'summaryFooter'
+  ],
+  monthly: [
+    'monthName',
+    'activeDays',
+    'daysInMonth',
+    'totalTopics',
+    'totalFocusSessions',
+    'totalStudyTime',
+    'topicsSummary',
+    'summaryFooter'
+  ]
+};
+
+const getMissingTemplatePlaceholders = (templateKey, templateText) => {
+  const required = requiredTemplatePlaceholders[templateKey] || [];
+  const text = String(templateText || '');
+
+  return required.filter((placeholder) => {
+    const pattern = new RegExp(`\\{\\{\\s*${escapeRegExp(placeholder)}\\s*\\}\\}`, 'i');
+    return !pattern.test(text);
+  });
+};
+
 const renderJournalTemplate = (template, values = {}) => {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
     const value = values[key];
@@ -240,9 +367,21 @@ const Journal = () => {
     const saved = localStorage.getItem('sidebarCollapsed');
     return parseStoredJson(saved, false);
   });
+  const [isDesktopViewport, setIsDesktopViewport] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth >= 1024;
+  });
+  const [isPhoneViewport, setIsPhoneViewport] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 640;
+  });
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const isSidebarCollapsed = isDesktopViewport && sidebarCollapsed;
 
   // Journal state
   const [currentDate, setCurrentDate] = useState(getLocalDateString());
+  const [currentDateInput, setCurrentDateInput] = useState(() => formatDateDDMMYYYY(getLocalDateString()));
+  const [currentDateInputError, setCurrentDateInputError] = useState('');
   const [currentEntry, setCurrentEntry] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true); // Start with loading true to prevent flash
@@ -253,6 +392,7 @@ const Journal = () => {
 
   // Auto-journal state
   const [todayActivities, setTodayActivities] = useState([]);
+  const [backendActivitiesByDate, setBackendActivitiesByDate] = useState({});
   const [journalSettings, setJournalSettings] = useState({
     autoJournal: false,
     autoPush: false,
@@ -282,17 +422,42 @@ const Journal = () => {
     cancelText: 'Cancel',
     showCancel: false
   });
+  const datePickerInputRef = useRef(null);
+  const journalEntryCacheRef = useRef(new Map());
+  const isCurrentDateToday = currentDate === getLocalDateString();
 
   // Sidebar navigation items
   const sidebarItems = [
-    { icon: Brain, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
+    { icon: DashboardGlyph, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
     { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
     { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
     { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
+    { icon: Mic, label: "Listener", active: location.pathname === "/listener", path: "/listener" },
     { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
-    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" }
+    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
+    { icon: Award, label: "Achievements", active: location.pathname === "/achievements", path: "/achievements" }
   ];
+
+  const switchToView = (view) => {
+    const today = new Date();
+    setIsEditing(false);
+    setActiveView(view);
+
+    if (view === 'daily') {
+      setCurrentDate(getLocalDateString(today));
+      return;
+    }
+
+    if (view === 'weekly') {
+      setCurrentDate(getStartOfWeekDateString(today));
+      return;
+    }
+
+    if (view === 'monthly') {
+      setCurrentDate(getStartOfMonthDateString(today));
+    }
+  };
 
   // Quick actions for Journal
   const quickActions = [
@@ -305,15 +470,13 @@ const Journal = () => {
           loadEntry(currentDate);
           setIsEditing(false);
         } else {
-          setActiveView('daily');
-          setIsEditing(false);
-          loadEntry(currentDate);
+          switchToView('daily');
         }
       },
       primary: true
     },
-    { icon: TrendingUp, label: "Weekly View", action: () => setActiveView('weekly'), primary: false },
-    { icon: BarChart2, label: "Monthly View", action: () => setActiveView('monthly'), primary: false }
+    { icon: TrendingUp, label: "Weekly View", action: () => switchToView('weekly'), primary: false },
+    { icon: BarChart2, label: "Monthly View", action: () => switchToView('monthly'), primary: false }
   ];
 
   // Dialog helper functions
@@ -340,6 +503,10 @@ const Journal = () => {
 
   // Handle sidebar navigation (same as Dashboard)
   const handleSidebarClick = (item) => {
+    if (!isDesktopViewport) {
+      setIsMobileSidebarOpen(false);
+    }
+
     if (item.label === "Journal") return;
 
     if (item.label === "Dashboard") {
@@ -367,8 +534,18 @@ const Journal = () => {
       return;
     }
 
+    if (item.label === "Listener") {
+      navigate('/listener');
+      return;
+    }
+
     if (item.label === "Graph Mode") {
       navigate('/graph');
+      return;
+    }
+
+    if (item.label === "Achievements") {
+      navigate('/achievements');
       return;
     }
 
@@ -381,6 +558,27 @@ const Journal = () => {
     });
   };
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleResize = () => {
+      const nextIsDesktop = window.innerWidth >= 1024;
+      const nextIsPhone = window.innerWidth < 640;
+      setIsDesktopViewport(nextIsDesktop);
+      setIsPhoneViewport(nextIsPhone);
+      if (nextIsDesktop) {
+        setIsMobileSidebarOpen(false);
+      }
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
   // Date navigation
   const navigateDate = (direction) => {
     const date = new Date(`${currentDate}T00:00:00`);
@@ -389,7 +587,65 @@ const Journal = () => {
   };
 
   const goToToday = () => {
+    if (activeView === 'weekly') {
+      setCurrentDate(getStartOfWeekDateString(new Date()));
+      return;
+    }
+
+    if (activeView === 'monthly') {
+      setCurrentDate(getStartOfMonthDateString(new Date()));
+      return;
+    }
+
     setCurrentDate(getLocalDateString());
+  };
+
+  const handleCurrentDateInputChange = (value) => {
+    setCurrentDateInput(value);
+    setCurrentDateInputError('');
+    const parsedDate = parseDateInputToIso(value);
+    if (parsedDate) {
+      setCurrentDate(parsedDate);
+    }
+  };
+
+  const handleCurrentDateInputBlur = () => {
+    const trimmedValue = String(currentDateInput || '').trim();
+    if (!trimmedValue) {
+      setCurrentDateInput(formatDateDDMMYYYY(currentDate));
+      setCurrentDateInputError('');
+      return;
+    }
+
+    const parsedDate = parseDateInputToIso(trimmedValue);
+    if (!parsedDate) {
+      setCurrentDateInputError('Use DD/MM/YYYY (for example, 07/04/2026).');
+      return;
+    }
+
+    setCurrentDate(parsedDate);
+    setCurrentDateInput(formatDateDDMMYYYY(parsedDate));
+    setCurrentDateInputError('');
+  };
+
+  const handleCurrentDatePickerChange = (value) => {
+    if (!value) return;
+    setCurrentDate(value);
+    setCurrentDateInput(formatDateDDMMYYYY(value));
+    setCurrentDateInputError('');
+  };
+
+  const openCurrentDatePicker = () => {
+    const datePicker = datePickerInputRef.current;
+    if (!datePicker) return;
+
+    if (typeof datePicker.showPicker === 'function') {
+      datePicker.showPicker();
+      return;
+    }
+
+    datePicker.focus();
+    datePicker.click();
   };
 
   // Auto-journal functions
@@ -425,11 +681,23 @@ const Journal = () => {
     }
   };
 
-  const saveJournalSettings = (newSettings) => {
-    const mergedSettings = {
+  const getLatestJournalSettings = () => {
+    const key = getUserStorageKey('journalSettings');
+    const saved = localStorage.getItem(key);
+    const persisted = saved ? parseStoredJson(saved, {}) : {};
+    return {
       ...journalSettings,
+      ...persisted,
+      journalTemplates: mergeJournalTemplates(persisted.journalTemplates || journalSettings.journalTemplates)
+    };
+  };
+
+  const saveJournalSettings = (newSettings) => {
+    const baseSettings = getLatestJournalSettings();
+    const mergedSettings = {
+      ...baseSettings,
       ...newSettings,
-      journalTemplates: mergeJournalTemplates(newSettings.journalTemplates || journalSettings.journalTemplates)
+      journalTemplates: mergeJournalTemplates(newSettings.journalTemplates || baseSettings.journalTemplates)
     };
 
     setJournalSettings(mergedSettings);
@@ -444,7 +712,8 @@ const Journal = () => {
   };
 
   const handleToggleAutoPush = () => {
-    const newSettings = { ...journalSettings, autoPush: !journalSettings.autoPush };
+    const latestSettings = getLatestJournalSettings();
+    const newSettings = { ...latestSettings, autoPush: !latestSettings.autoPush };
     saveJournalSettings(newSettings);
 
     if (newSettings.autoPush && (!newSettings.githubRepo || !newSettings.githubToken)) {
@@ -458,7 +727,9 @@ const Journal = () => {
 
   const handleManualGitHubPush = async () => {
     try {
-      if (!journalSettings.githubRepo || !journalSettings.githubToken) {
+      const latestSettings = getLatestJournalSettings();
+
+      if (!latestSettings.githubRepo || !latestSettings.githubToken) {
         showToast('Please configure GitHub repository and token first.', 'error');
         return;
       }
@@ -467,7 +738,7 @@ const Journal = () => {
         localStorage.setItem(getUserStorageKey(`journal_${currentDate}`), currentEntry);
       }
 
-      journalService.saveSettings(journalSettings);
+      journalService.saveSettings(latestSettings);
       await journalService.pushToGitHub(currentDate);
       showToast('Journal pushed to GitHub successfully!', 'success');
     } catch (error) {
@@ -477,13 +748,35 @@ const Journal = () => {
 
   const loadTodayActivities = () => {
     const today = getLocalDateString();
-    const saved = localStorage.getItem(getUserStorageKey(`activities_${today}`));
-    setTodayActivities(parseStoredJson(saved, []));
+    setTodayActivities(getActivitiesForDate(today));
   };
 
-  const getActivitiesForDate = (dateString) => {
+  const mergeActivities = (localActivities = [], backendActivities = []) => {
+    const merged = [];
+    const seen = new Set();
+
+    [...localActivities, ...backendActivities].forEach((item) => {
+      const text = String(item || '').trim();
+      if (!text || seen.has(text)) return;
+      seen.add(text);
+      merged.push(text);
+    });
+
+    return merged;
+  };
+
+  const getLocalActivitiesForDate = (dateString) => {
     const saved = localStorage.getItem(getUserStorageKey(`activities_${dateString}`));
     return parseStoredJson(saved, []);
+  };
+
+  const getActivitiesForDate = (dateString, backendActivitiesOverride = null) => {
+    const localActivities = getLocalActivitiesForDate(dateString);
+    const backendActivities = backendActivitiesOverride === null
+      ? (backendActivitiesByDate[dateString] || [])
+      : backendActivitiesOverride;
+
+    return mergeActivities(localActivities, Array.isArray(backendActivities) ? backendActivities : []);
   };
 
   const calculateStudyMetrics = (activities = []) => {
@@ -493,6 +786,8 @@ const Journal = () => {
     const topics = [];
 
     activities.forEach((activity) => {
+      const text = String(activity || '').trim();
+
       if (TOPIC_ACTIVITY_PATTERN.test(activity)) {
         topicCount += 1;
         const match = activity.match(TOPIC_ACTIVITY_EXTRACT_PATTERN);
@@ -502,13 +797,38 @@ const Journal = () => {
         }
       }
 
+      const revisedMatch = text.match(/^Revised\s+(\d+)\s+topics?/i);
+      if (revisedMatch) {
+        topicCount += Number(revisedMatch[1]) || 0;
+      }
+
+      const createdMatch = text.match(/^Created\s+(\d+)\s+topics?/i);
+      if (createdMatch) {
+        topicCount += Number(createdMatch[1]) || 0;
+      }
+
       if (FOCUS_ACTIVITY_PATTERN.test(activity)) {
         focusSessions += 1;
+      }
+
+      const focusSessionsSummaryMatch = text.match(/^Focus sessions:\s*(\d+)/i);
+      if (focusSessionsSummaryMatch) {
+        focusSessions += Number(focusSessionsSummaryMatch[1]) || 0;
       }
 
       const timeMatch = activity.match(FOCUS_MINUTES_PATTERN);
       if (timeMatch) {
         totalStudyTime += parseInt(timeMatch[1], 10);
+      }
+
+      const focusSummaryMinutesMatch = text.match(/^Focus sessions:\s*\d+\s*\((\d+)\s*min\)/i);
+      if (focusSummaryMinutesMatch) {
+        totalStudyTime += parseInt(focusSummaryMinutesMatch[1], 10);
+      }
+
+      const studyTimeSummaryMatch = text.match(/^Study time:\s*(\d+)\s*minutes?/i);
+      if (studyTimeSummaryMatch) {
+        totalStudyTime += parseInt(studyTimeSummaryMatch[1], 10);
       }
     });
 
@@ -521,10 +841,11 @@ const Journal = () => {
 
   const openTemplateEditor = (templateKey) => {
     const templates = getJournalTemplates();
+    const fullTemplate = templates[templateKey] || defaultJournalTemplates[templateKey];
     setTemplateEditor({
       isOpen: true,
       key: templateKey,
-      text: templates[templateKey] || defaultJournalTemplates[templateKey]
+      text: stripLockedTemplateSections(templateKey, fullTemplate)
     });
   };
 
@@ -535,41 +856,141 @@ const Journal = () => {
     }));
   };
 
+  useEffect(() => {
+    if (!templateEditor.isOpen) return undefined;
+
+    const handleEscape = (event) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      closeTemplateEditor();
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [templateEditor.isOpen]);
+
   const saveTemplateEditor = () => {
+    const lockedTemplate = enforceLockedTemplateSections(templateEditor.key, templateEditor.text);
+    const missingPlaceholders = getMissingTemplatePlaceholders(templateEditor.key, lockedTemplate);
+    if (missingPlaceholders.length > 0) {
+      showToast(
+        `Template is missing required placeholders: ${missingPlaceholders.map((value) => `{{${value}}}`).join(', ')}`,
+        'error'
+      );
+      return;
+    }
+
     const updatedTemplates = {
       ...getJournalTemplates(),
-      [templateEditor.key]: templateEditor.text
+      [templateEditor.key]: lockedTemplate
     };
 
     saveJournalSettings({ journalTemplates: updatedTemplates });
-    showToast(`${journalTemplateFields.find(field => field.key === templateEditor.key)?.label || 'Template'} saved.`, 'success');
+    const lockedLabel = getLockedTemplateSectionTitles(templateEditor.key).join(', ');
+    showToast(`${lockedLabel} sections are auto-managed and stay read-only.`, 'info');
+    showToast(
+      `${journalTemplateFields.find(field => field.key === templateEditor.key)?.label || 'Template'} saved. Changes apply to newly generated entries and summaries.`,
+      'success'
+    );
     closeTemplateEditor();
+  };
+
+  const getDetailedActivities = (activities = []) => {
+    return (Array.isArray(activities) ? activities : [])
+      .map((item) => String(item || '').trim())
+      .filter((item) => item && !OVERVIEW_ACTIVITY_LINE_PATTERN.test(item));
+  };
+
+  const buildActivitySections = (activities = []) => {
+    const detailed = getDetailedActivities(activities);
+    const buckets = {
+      topics: [],
+      mindmaps: [],
+      tasks: [],
+      doctags: [],
+      other: []
+    };
+
+    detailed.forEach((activity) => {
+      const normalized = activity.toLowerCase();
+
+      if (normalized.includes('mindmap')) {
+        buckets.mindmaps.push(activity);
+        return;
+      }
+
+      if (normalized.includes('doctags resource') || normalized.includes('workspace docs')) {
+        buckets.doctags.push(activity);
+        return;
+      }
+
+      if (normalized.includes('task') || normalized.includes('chronicle')) {
+        buckets.tasks.push(activity);
+        return;
+      }
+
+      if (
+        normalized.includes('reviewed "')
+        || normalized.includes('added topic')
+        || normalized.includes('edited "')
+        || normalized.includes('skipped "')
+        || normalized.includes('deleted "')
+      ) {
+        buckets.topics.push(activity);
+        return;
+      }
+
+      buckets.other.push(activity);
+    });
+
+    const toSection = (title, rows, emptyText) => {
+      const lines = [
+        `### ${title}`,
+        ...(rows.length > 0 ? rows.map((row) => `- ${row}`) : [`- ${emptyText}`]),
+      ];
+
+      return lines.join('\n');
+    };
+
+    const sections = [
+      toSection('Topics', buckets.topics, 'No topic activity logged yet'),
+      toSection('Mindmaps', buckets.mindmaps, 'No mindmap activity logged yet'),
+      toSection('Tasks', buckets.tasks, 'No task activity logged yet'),
+      toSection('DocTags', buckets.doctags, 'No DocTags activity logged yet')
+    ];
+
+    if (buckets.other.length > 0) {
+      sections.push(toSection('Other', buckets.other, 'No additional activity logged yet'));
+    }
+
+    return sections.join('\n\n');
   };
 
   const resetTemplateEditor = () => {
     setTemplateEditor(prev => ({
       ...prev,
-      text: defaultJournalTemplates[prev.key]
+      text: stripLockedTemplateSections(prev.key, defaultJournalTemplates[prev.key])
     }));
   };
 
+  const templateEditorLockedSections = useMemo(() => {
+    if (!templateEditor.isOpen) return [];
+    const templates = getJournalTemplates();
+    const sourceTemplate = templates[templateEditor.key] || defaultJournalTemplates[templateEditor.key] || '';
+    return getLockedTemplateSectionBlocks(templateEditor.key, sourceTemplate);
+  }, [templateEditor.isOpen, templateEditor.key, journalSettings.journalTemplates]);
+
   const generateInitialEntry = (forDate = null) => {
     const targetDate = forDate ? new Date(`${forDate}T00:00:00`) : new Date();
-    const dateStr = targetDate.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
+    const dateStr = formatDateWithWeekday(targetDate, 'long');
 
     // Load activities for the specific date
     const dateString = getLocalDateString(targetDate);
     const dayActivities = getActivitiesForDate(dateString);
     const { topicCount, focusSessions, totalStudyTime } = calculateStudyMetrics(dayActivities);
 
-    const activitySection = dayActivities.length > 0
-      ? dayActivities.map(activity => `- ${activity}`).join('\n')
-      : '- No activities logged yet';
+    const activitySection = buildActivitySections(dayActivities);
 
     const initialEntry = renderTemplate(getJournalTemplates().daily, {
       dateLabel: dateStr,
@@ -604,6 +1025,7 @@ const Journal = () => {
   // Function to update study summary in existing entry
   const updateStudySummaryInEntry = (entry, activities) => {
     const { topicCount, focusSessions, totalStudyTime } = calculateStudyMetrics(activities);
+    const activitySection = buildActivitySections(activities);
 
     // Update the study summary section
     let updatedEntry = entry.replace(
@@ -618,6 +1040,13 @@ const Journal = () => {
       /- (?:Study time|Total Study Time): \d+ minutes/, 
       `- Study time: ${totalStudyTime} minutes`
     );
+
+    const activitiesSectionPattern = /(## Activities\s*\n)([\s\S]*?)(\n##\s)/;
+    if (activitiesSectionPattern.test(updatedEntry)) {
+      updatedEntry = updatedEntry.replace(activitiesSectionPattern, `$1${activitySection}$3`);
+    } else {
+      updatedEntry = `${updatedEntry.trim()}\n\n## Activities\n${activitySection}`;
+    }
 
     return updatedEntry;
   };
@@ -641,20 +1070,56 @@ const Journal = () => {
 
   // Load journal entry for current date
   const loadEntry = async (date) => {
-    setLoading(true);
-    try {
-      // Load activities for this date to update study summary
-      const dayActivities = getActivitiesForDate(date);
+    const dayActivitiesFromState = getActivitiesForDate(date);
+    const localEntry = localStorage.getItem(getUserStorageKey(`journal_${date}`));
+    const cachedEntry = journalEntryCacheRef.current.get(date) || null;
+    const immediateBase = cachedEntry?.content || localEntry || '';
+    const hasImmediateContent = Boolean(immediateBase);
 
+    if (hasImmediateContent) {
+      setCurrentEntry(updateStudySummaryInEntry(immediateBase, dayActivitiesFromState));
+      setLoading(false);
+      setInitialLoadComplete(true);
+    } else if (journalSettings.autoJournal) {
+      generateInitialEntry(date);
+      setLoading(false);
+      setInitialLoadComplete(true);
+    } else {
+      setLoading(true);
+    }
+
+    const isCacheFresh = cachedEntry && (Date.now() - Number(cachedEntry.fetchedAt || 0) < 45 * 1000);
+    if (isCacheFresh) {
+      return;
+    }
+
+    try {
       // First try to load from backend
       const response = await apiService.getJournalEntry(date);
       if (response.success && response.entry) {
+        const backendActivities = Array.isArray(response.entry.activities) ? response.entry.activities : [];
+        setBackendActivitiesByDate((prev) => ({ ...prev, [date]: backendActivities }));
+
+        journalEntryCacheRef.current.set(date, {
+          content: String(response.entry.content || ''),
+          fetchedAt: Date.now()
+        });
+
+        const dayActivities = getActivitiesForDate(date, backendActivities);
+        if (date === getLocalDateString()) {
+          setTodayActivities(dayActivities);
+        }
+
         // Update study summary in the loaded entry
         const updatedEntry = updateStudySummaryInEntry(response.entry.content, dayActivities);
         setCurrentEntry(updatedEntry);
       } else {
+        const dayActivities = getActivitiesForDate(date, []);
+        if (date === getLocalDateString()) {
+          setTodayActivities(dayActivities);
+        }
+
         // If no backend entry exists, check localStorage for auto-generated content
-        const localEntry = localStorage.getItem(getUserStorageKey(`journal_${date}`));
         if (localEntry) {
           // Update study summary in the local entry
           const updatedEntry = updateStudySummaryInEntry(localEntry, dayActivities);
@@ -671,7 +1136,10 @@ const Journal = () => {
       // Fallback to localStorage
       const dayActivities = getActivitiesForDate(date);
 
-      const localEntry = localStorage.getItem(getUserStorageKey(`journal_${date}`));
+        if (date === getLocalDateString()) {
+          setTodayActivities(dayActivities);
+        }
+
       if (localEntry) {
         const updatedEntry = updateStudySummaryInEntry(localEntry, dayActivities);
         setCurrentEntry(updatedEntry);
@@ -695,14 +1163,24 @@ const Journal = () => {
 
     setLoading(true);
     try {
+      const dayActivities = getActivitiesForDate(currentDate);
+
       // Save to backend
       const response = await apiService.saveJournalEntry({
         date: currentDate,
         content: currentEntry,
-        mood: 'neutral'
+        mood: 'neutral',
+        activities: dayActivities
       });
 
       if (response.success) {
+        setBackendActivitiesByDate((prev) => ({ ...prev, [currentDate]: dayActivities }));
+
+        journalEntryCacheRef.current.set(currentDate, {
+          content: currentEntry,
+          fetchedAt: Date.now()
+        });
+
         // Also update localStorage to keep in sync
         localStorage.setItem(getUserStorageKey(`journal_${currentDate}`), currentEntry);
 
@@ -736,6 +1214,31 @@ const Journal = () => {
       let totalFocusSessions = 0;
       let totalStudyTime = 0;
 
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+
+      let backendByDate = {};
+      try {
+        const rangeResponse = await apiService.getJournalRange(
+          getLocalDateString(weekStart),
+          getLocalDateString(weekEnd)
+        );
+
+        if (rangeResponse?.success && Array.isArray(rangeResponse.entries)) {
+          backendByDate = rangeResponse.entries.reduce((acc, entry) => {
+            if (!entry?.dateString || !Array.isArray(entry.activities)) return acc;
+            acc[entry.dateString] = entry.activities;
+            return acc;
+          }, {});
+
+          if (Object.keys(backendByDate).length > 0) {
+            setBackendActivitiesByDate((prev) => ({ ...prev, ...backendByDate }));
+          }
+        }
+      } catch (rangeError) {
+        console.warn('Failed to load weekly journal activity range:', rangeError);
+      }
+
       const todayString = getLocalDateString();
 
       for (let i = 0; i < 7; i++) {
@@ -750,12 +1253,13 @@ const Journal = () => {
 
         // Fix timezone issue by using the dayString directly
         const dayDate = new Date(dayString + 'T00:00:00');
-        const dayName = dayDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        const dayName = formatDateWithWeekday(dayDate, 'short');
 
-        const dayActivities = getActivitiesForDate(dayString);
+        const dayActivities = getActivitiesForDate(dayString, backendByDate[dayString] ?? null);
         if (dayActivities.length > 0) {
           const metrics = calculateStudyMetrics(dayActivities);
-          if (metrics.topics.length > 0) {
+          const hasActivity = metrics.topicCount > 0 || metrics.focusSessions > 0 || metrics.totalStudyTime > 0;
+          if (hasActivity) {
             activeDays += 1;
           }
 
@@ -774,20 +1278,20 @@ const Journal = () => {
       }
 
       if (activeDays > 0 || totalTopics > 0) {
-        const weekRange = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+        const weekRange = `${formatDateDDMMYYYY(weekStart)} - ${formatDateDDMMYYYY(new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000))}`;
 
-        const topicDays = dayStats.filter((stats) => stats.topics.length > 0);
-        const topicsSummary = topicDays
-          .map((stats) => `- ${stats.dayName}: ${stats.topics.join(', ')}`)
+        const activityDays = dayStats.filter((stats) => stats.topicCount > 0 || stats.focusSessions > 0 || stats.totalStudyTime > 0);
+        const topicsSummary = activityDays
+          .map((stats) => `- ${stats.dayName}: ${stats.topics.length > 0 ? stats.topics.join(', ') : `${stats.topicCount} topics reviewed`}`)
           .join('\n');
-        const dailyBreakdown = topicDays
+        const dailyBreakdown = activityDays
           .map((stats) => `- ${stats.dayName}: ${stats.topicCount} topics, ${stats.focusSessions} focus sessions, ${stats.totalStudyTime} minutes`)
           .join('\n');
 
         // Calculate averages and insights
         const avgTopicsPerDay = activeDays > 0 ? (totalTopics / activeDays).toFixed(1) : 0;
         const avgStudyTimePerDay = activeDays > 0 ? (totalStudyTime / activeDays).toFixed(0) : 0;
-        const mostProductiveDay = topicDays.reduce((max, stats) => {
+        const mostProductiveDay = activityDays.reduce((max, stats) => {
           if (!max || stats.topicCount > max.topicCount) {
             return stats;
           }
@@ -810,6 +1314,8 @@ const Journal = () => {
         });
 
         setWeeklySummary({ summaryText });
+      } else {
+        setWeeklySummary(null);
       }
     } catch (error) {
       console.error('Failed to load weekly summary:', error);
@@ -838,6 +1344,28 @@ const Journal = () => {
       let totalFocusSessions = 0;
       let totalStudyTime = 0;
 
+      let backendByDate = {};
+      try {
+        const rangeResponse = await apiService.getJournalRange(
+          getLocalDateString(monthStart),
+          getLocalDateString(monthEnd)
+        );
+
+        if (rangeResponse?.success && Array.isArray(rangeResponse.entries)) {
+          backendByDate = rangeResponse.entries.reduce((acc, entry) => {
+            if (!entry?.dateString || !Array.isArray(entry.activities)) return acc;
+            acc[entry.dateString] = entry.activities;
+            return acc;
+          }, {});
+
+          if (Object.keys(backendByDate).length > 0) {
+            setBackendActivitiesByDate((prev) => ({ ...prev, ...backendByDate }));
+          }
+        }
+      } catch (rangeError) {
+        console.warn('Failed to load monthly journal activity range:', rangeError);
+      }
+
       const todayString = getLocalDateString();
 
       for (let i = 1; i <= daysInMonth; i++) {
@@ -851,13 +1379,13 @@ const Journal = () => {
 
         // Fix timezone issue by using the dayString directly
         const dayDate = new Date(dayString + 'T00:00:00');
-        const dayName = dayDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        const dayName = formatDateWithWeekday(dayDate, 'short');
 
-        const dayActivities = getActivitiesForDate(dayString);
+        const dayActivities = getActivitiesForDate(dayString, backendByDate[dayString] ?? null);
         if (dayActivities.length > 0) {
           const metrics = calculateStudyMetrics(dayActivities);
-          if (metrics.topics.length > 0) {
-            topicDays.push({ dayName, topics: metrics.topics });
+          if (metrics.topicCount > 0 || metrics.focusSessions > 0 || metrics.totalStudyTime > 0) {
+            topicDays.push({ dayName, topics: metrics.topics, topicCount: metrics.topicCount });
             activeDays += 1;
           }
 
@@ -867,10 +1395,10 @@ const Journal = () => {
         }
       }
 
-      const monthName = monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      const monthName = formatDateDDMMYYYY(monthStart);
 
       const topicsSummary = topicDays
-        .map((item) => `- ${item.dayName}: ${item.topics.join(', ')}`)
+        .map((item) => `- ${item.dayName}: ${item.topics.length > 0 ? item.topics.join(', ') : `${item.topicCount} topics reviewed`}`)
         .join('\n');
 
       const monthlyTemplate = getJournalTemplates().monthly;
@@ -885,7 +1413,11 @@ const Journal = () => {
         summaryFooter: `${activeDays} active day${activeDays > 1 ? 's' : ''} this month.`,
       });
 
-      setMonthlySummary({ summaryText });
+      if (activeDays > 0 || totalTopics > 0 || totalFocusSessions > 0 || totalStudyTime > 0) {
+        setMonthlySummary({ summaryText });
+      } else {
+        setMonthlySummary(null);
+      }
     } catch (error) {
       console.error('Failed to load monthly summary:', error);
       setMonthlySummary(null);
@@ -899,6 +1431,8 @@ const Journal = () => {
   useEffect(() => {
     if (user) {
       journalService.setCurrentUser(userStorageId);
+      journalEntryCacheRef.current.clear();
+      setBackendActivitiesByDate({});
       loadJournalSettings();
       loadTodayActivities();
       // Reset initial load state when user changes
@@ -912,20 +1446,35 @@ const Journal = () => {
     }
   }, [user, currentDate, activeView, journalSettings.autoJournal]);
 
-  // Auto-refresh daily journal when activities change
   useEffect(() => {
-    if (activeView === 'daily' && journalSettings.autoJournal && !isEditing && initialLoadComplete) {
-      const today = getLocalDateString();
-      if (currentDate === today && todayActivities.length > 0) {
-        // Only auto-refresh for today's entry when not editing and after initial load
-        const timeoutId = setTimeout(() => {
-          generateInitialEntry(currentDate);
-        }, 800);
+    setCurrentDateInput(formatDateDDMMYYYY(currentDate));
+    setCurrentDateInputError('');
+  }, [currentDate]);
 
-        return () => clearTimeout(timeoutId);
+  useEffect(() => {
+    const globalSearch = location.state?.globalSearch;
+    if (!globalSearch || globalSearch.source !== 'dashboard-global-search') return;
+
+    const clearGlobalSearchState = () => {
+      const { globalSearch: _globalSearch, ...restState } = location.state || {};
+      navigate(location.pathname, {
+        replace: true,
+        state: Object.keys(restState).length > 0 ? restState : null
+      });
+    };
+
+    if (globalSearch.action === 'open-journal-date') {
+      const date = String(globalSearch.date || '');
+      if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        setActiveView('daily');
+        setIsEditing(false);
+        setCurrentDate(date);
+        showToast(`Opened journal for ${date}`, 'info');
       }
     }
-  }, [todayActivities, journalSettings.autoJournal, currentDate, activeView, isEditing, initialLoadComplete]);
+
+    clearGlobalSearchState();
+  }, [location.state, location.pathname, navigate]);
 
   useEffect(() => {
     if (user && activeView === 'weekly') {
@@ -943,13 +1492,18 @@ const Journal = () => {
   useEffect(() => {
     const handleJournalUpdate = (event) => {
       const { date, content, activities } = event.detail;
+      const nextActivities = Array.isArray(activities) ? activities : getActivitiesForDate(date);
 
       if (date === getLocalDateString()) {
-        setTodayActivities(Array.isArray(activities) ? activities : getActivitiesForDate(date));
+        setTodayActivities(nextActivities);
       }
 
       if (date === currentDate && activeView === 'daily' && !isEditing && initialLoadComplete) {
-        setCurrentEntry((previous) => (content !== previous ? content : previous));
+        setCurrentEntry((previous) => {
+          const base = content || previous || '';
+          const next = updateStudySummaryInEntry(base, nextActivities);
+          return next !== previous ? next : previous;
+        });
       }
     };
 
@@ -993,15 +1547,8 @@ const Journal = () => {
   const formatDate = (dateString) => {
     // Add 'T00:00:00' to ensure consistent timezone handling
     const date = new Date(dateString + 'T00:00:00');
-    return date.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
+    return formatDateWithWeekday(date, 'long');
   };
-
-  const isToday = currentDate === getLocalDateString();
 
   if (!user) {
     return (
@@ -1014,16 +1561,31 @@ const Journal = () => {
   return (
     <div className="bg-black text-white min-h-screen flex">
       {/* Sidebar */}
-      <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} bg-black border-r border-white/10 flex flex-col fixed left-0 top-0 h-screen z-10 transition-all duration-300`}>
+      <div className={`${isDesktopViewport ? (isSidebarCollapsed ? 'w-16' : 'w-64') : 'w-72 max-w-[82vw]'} bg-black border-r border-white/10 flex flex-col fixed left-0 top-0 h-screen z-40 transition-[width,transform] duration-300 ${
+        isDesktopViewport
+          ? 'translate-x-0'
+          : (isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full')
+      }`}>
         {/* Logo */}
-        <div className={`h-16 sm:h-20 border-b border-white/10 flex items-center ${sidebarCollapsed ? 'justify-center px-2' : 'px-4'}`}>
+        <div className={`h-16 sm:h-20 border-b border-white/10 flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'}`}>
           <button
             onClick={() => navigate('/')}
-            className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+            className={`flex items-center hover:opacity-80 transition-opacity ${isSidebarCollapsed ? 'justify-center w-full' : 'gap-2 min-w-0'}`}
           >
-            <Logo size={sidebarCollapsed ? "md" : "sm"} className="text-white" />
-            {!sidebarCollapsed && <span className="text-lg font-semibold text-white">Memora</span>}
+            <Logo size="sm" className="text-white scale-90" />
+            {!isSidebarCollapsed && <span className="text-lg font-semibold text-white">Memora</span>}
           </button>
+
+          {isDesktopViewport && !isSidebarCollapsed && (
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(true)}
+              aria-label="Collapse sidebar"
+              className="inline-flex items-center justify-center rounded-md border border-white/10 bg-white/[0.03] p-1.5 text-gray-300 hover:bg-white/10 hover:text-white transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         {/* Navigation */}
@@ -1033,23 +1595,23 @@ const Journal = () => {
               <button
                 key={item.label}
                 onClick={() => handleSidebarClick(item)}
-                className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-1' : 'space-x-3 px-3'} py-2 rounded-lg text-sm transition-colors ${
+                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-1' : 'space-x-3 px-3'} py-2 rounded-lg text-sm transition-colors ${
                   item.active
                     ? 'bg-white/10 text-white font-medium'
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
-                title={sidebarCollapsed ? item.label : ''}
+                title={isSidebarCollapsed ? item.label : ''}
               >
-                <item.icon className={`${sidebarCollapsed ? "w-5 h-5" : "w-4 h-4"} ${
-                  location.pathname === item.path ? 'text-blue-400' : ''
+                <item.icon className={`${isSidebarCollapsed ? "w-5 h-5" : "w-4 h-4"} ${
+                  location.pathname === item.path ? 'text-emerald-300' : ''
                 }`} />
-                {!sidebarCollapsed && <span>{item.label}</span>}
+                {!isSidebarCollapsed && <span>{item.label}</span>}
               </button>
             ))}
           </div>
 
           {/* Quick Actions */}
-          {!sidebarCollapsed && (
+          {!isSidebarCollapsed && (
             <div className="mt-8">
               <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Quick Actions</p>
               <div className="space-y-1">
@@ -1059,7 +1621,7 @@ const Journal = () => {
                     onClick={action.action}
                     className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                       action.primary
-                        ? 'bg-white text-black hover:bg-gray-100'
+                        ? 'border border-emerald-400/35 bg-emerald-500/12 text-emerald-100 hover:bg-emerald-500/18'
                         : 'text-gray-400 hover:text-white hover:bg-white/5'
                     }`}
                   >
@@ -1073,70 +1635,84 @@ const Journal = () => {
         </nav>
       </div>
 
+      {!isDesktopViewport && isMobileSidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          onClick={() => setIsMobileSidebarOpen(false)}
+          className="fixed inset-0 z-30 bg-black/55 backdrop-blur-sm"
+        />
+      )}
+
       {/* Main Content */}
-      <div className={`flex-1 flex flex-col transition-all duration-300 ${
-        sidebarCollapsed
-          ? 'ml-16'
-          : 'ml-64'
+      <div className={`flex-1 flex flex-col transition-[margin] duration-300 ${
+        isDesktopViewport
+          ? (isSidebarCollapsed ? 'ml-16' : 'ml-64')
+          : 'ml-0'
       }`}>
         {/* Header */}
-        <header className="bg-black border-b border-white/10 h-16 sm:h-20 px-3 sm:px-4 flex items-center">
-          <div className="flex items-center justify-between w-full">
+        <header data-tour="journal-header" className="bg-black border-b border-white/10 h-16 sm:h-20 px-3 sm:px-4 flex items-center">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 w-full">
             {/* Left: Sidebar toggle and title */}
-            <div className="flex items-center space-x-2 sm:space-x-4">
-              <button
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="p-1.5 sm:p-2 hover:bg-white/5 rounded-lg transition-colors"
-              >
-                {sidebarCollapsed ? (
-                  <PanelLeft className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-                ) : (
-                  <PanelLeftClose className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-                )}
-              </button>
+            <div className="flex items-center gap-2">
+              {isDesktopViewport && isSidebarCollapsed && (
+                <button
+                  type="button"
+                  onClick={() => setSidebarCollapsed(false)}
+                  aria-label="Expand sidebar"
+                  className="hidden lg:inline-flex p-0 text-emerald-200 hover:text-emerald-100 transition-colors"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              )}
               <div>
-                <h1 className="text-xl sm:text-2xl font-semibold text-white">Journal</h1>
-                <p className="text-xs sm:text-sm text-gray-400">
-                  {new Date().toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
-                </p>
+                <h1 className="text-xl sm:text-2xl font-semibold text-emerald-100 inline-flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-emerald-200" />
+                  Journal
+                </h1>
+                <p className="hidden sm:block text-xs text-gray-400 mt-0.5">Capture daily reflections, weekly patterns, and monthly learning summaries.</p>
               </div>
             </div>
 
             {/* Right: View tabs and actions */}
-            <div className="flex items-center space-x-2 sm:space-x-4">
+            <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-4 w-full sm:w-auto min-w-0">
+              <button
+                onClick={() => setIsMobileSidebarOpen((prev) => !prev)}
+                className="lg:hidden p-1.5 sm:p-2 hover:bg-white/5 rounded-lg transition-colors"
+                aria-label="Toggle sidebar"
+              >
+                {isMobileSidebarOpen
+                  ? <PanelLeftClose className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-200" />
+                  : <PanelLeft className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-200" />}
+              </button>
               {/* View Tabs */}
-              <div className="flex bg-white/5 rounded-lg p-1">
+              <div className={`${isPhoneViewport ? 'grid grid-cols-3 flex-1' : 'flex w-full sm:w-auto'} min-w-0 bg-emerald-500/8 border border-emerald-400/20 rounded-lg p-1`}>
                 <button
-                  onClick={() => setActiveView('daily')}
-                  className={`px-2 sm:px-3 py-1 rounded text-xs sm:text-sm font-medium transition-colors ${
+                  onClick={() => switchToView('daily')}
+                  className={`px-2 sm:px-3 py-1 rounded text-xs sm:text-sm whitespace-nowrap ${isPhoneViewport ? 'w-full' : 'shrink-0'} font-medium transition-colors ${
                     activeView === 'daily'
-                      ? 'bg-white/20 text-white'
-                      : 'text-gray-400 hover:text-white'
+                      ? 'bg-emerald-500/22 text-emerald-100'
+                      : 'text-emerald-200/75 hover:text-emerald-100 hover:bg-emerald-500/10'
                   }`}
                 >
                   Daily
                 </button>
                 <button
-                  onClick={() => setActiveView('weekly')}
-                  className={`px-2 sm:px-3 py-1 rounded text-xs sm:text-sm font-medium transition-colors ${
+                  onClick={() => switchToView('weekly')}
+                  className={`px-2 sm:px-3 py-1 rounded text-xs sm:text-sm whitespace-nowrap ${isPhoneViewport ? 'w-full' : 'shrink-0'} font-medium transition-colors ${
                     activeView === 'weekly'
-                      ? 'bg-white/20 text-white'
-                      : 'text-gray-400 hover:text-white'
+                      ? 'bg-emerald-500/22 text-emerald-100'
+                      : 'text-emerald-200/75 hover:text-emerald-100 hover:bg-emerald-500/10'
                   }`}
                 >
                   Weekly
                 </button>
                 <button
-                  onClick={() => setActiveView('monthly')}
-                  className={`px-2 sm:px-3 py-1 rounded text-xs sm:text-sm font-medium transition-colors ${
+                  onClick={() => switchToView('monthly')}
+                  className={`px-2 sm:px-3 py-1 rounded text-xs sm:text-sm whitespace-nowrap ${isPhoneViewport ? 'w-full' : 'shrink-0'} font-medium transition-colors ${
                     activeView === 'monthly'
-                      ? 'bg-white/20 text-white'
-                      : 'text-gray-400 hover:text-white'
+                      ? 'bg-emerald-500/22 text-emerald-100'
+                      : 'text-emerald-200/75 hover:text-emerald-100 hover:bg-emerald-500/10'
                   }`}
                 >
                   Monthly
@@ -1144,17 +1720,18 @@ const Journal = () => {
               </div>
 
               {/* Settings and Refresh */}
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-2 shrink-0">
                 <button
                   onClick={refreshEntry}
-                  className="p-2 text-gray-400 hover:text-white transition-colors hover:bg-white/5 rounded-lg"
+                  className="p-2 text-emerald-300/80 hover:text-emerald-100 transition-colors hover:bg-emerald-500/12 rounded-lg border border-transparent hover:border-emerald-400/20"
                   title="Refresh journal"
                 >
                   <RefreshCw className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setShowSettings(!showSettings)}
-                  className="p-2 text-gray-400 hover:text-white transition-colors hover:bg-white/5 rounded-lg"
+                  data-tour="journal-settings-toggle"
+                  className="p-2 text-emerald-300/80 hover:text-emerald-100 transition-colors hover:bg-emerald-500/12 rounded-lg border border-transparent hover:border-emerald-400/20"
                   title="Journal settings"
                 >
                   <Settings className="w-4 h-4" />
@@ -1182,7 +1759,7 @@ const Journal = () => {
                     className="flex items-center"
                   >
                     {journalSettings.autoJournal ? (
-                      <ToggleRight className="w-8 h-8 text-blue-400" />
+                      <ToggleRight className="w-8 h-8 text-emerald-400" />
                     ) : (
                       <ToggleLeft className="w-8 h-8 text-gray-400" />
                     )}
@@ -1221,7 +1798,8 @@ const Journal = () => {
                   <div>
                     <h4 className="font-medium">Journal Templates</h4>
                     <p className="text-sm text-gray-400">
-                      Open a popup to edit the daily, weekly, or monthly template text.
+                        Open a popup to edit the daily, weekly, or monthly template text.
+                        Overview and Activities sections stay auto-managed.
                     </p>
                   </div>
 
@@ -1238,7 +1816,7 @@ const Journal = () => {
                   </div>
 
                   <p className="text-xs text-gray-400">
-                    Changes are saved into the template used for new daily entries and summary views.
+                    Changes apply to newly generated entries and summaries. Existing saved entries are not rewritten automatically.
                   </p>
                 </div>
 
@@ -1253,7 +1831,7 @@ const Journal = () => {
                     className="flex items-center"
                   >
                     {journalSettings.autoPush ? (
-                      <ToggleRight className="w-8 h-8 text-blue-400" />
+                      <ToggleRight className="w-8 h-8 text-emerald-400" />
                     ) : (
                       <ToggleLeft className="w-8 h-8 text-gray-400" />
                     )}
@@ -1286,7 +1864,7 @@ const Journal = () => {
                     />
                     <button
                       onClick={handleManualGitHubPush}
-                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+                      className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm transition-colors"
                     >
                       Push Now
                     </button>
@@ -1299,7 +1877,7 @@ const Journal = () => {
 
         {/* Content Area */}
         <div className="flex-1 p-3 sm:p-6 transition-all duration-300">
-          <div className={`${sidebarCollapsed ? 'mx-24' : ''}`}>
+          <div className={`${isSidebarCollapsed ? 'mx-24' : ''}`}>
             {activeView === 'daily' && (
               <div className="bg-black border border-white/20 rounded-xl p-4 sm:p-6 transition-all duration-300">
                 {/* Date Navigation */}
@@ -1313,11 +1891,10 @@ const Journal = () => {
                         <ChevronLeft className="w-5 h-5" />
                       </button>
 
-                      <div className="min-w-[16rem] text-center">
-                        <h2 className="text-lg font-semibold text-white tabular-nums whitespace-nowrap">
+                      <div className="min-w-0 flex-1 sm:flex-none sm:w-[260px] text-center">
+                        <h2 className={`text-lg font-semibold tabular-nums whitespace-nowrap ${isCurrentDateToday ? 'text-emerald-300' : 'text-white'}`}>
                           {formatDate(currentDate)}
                         </h2>
-                        <span className={`text-sm ${isToday ? 'text-blue-400' : 'invisible'}`}>Today</span>
                       </div>
 
                       <button
@@ -1328,20 +1905,52 @@ const Journal = () => {
                       </button>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0 w-full sm:w-auto">
                       <button
                         onClick={goToToday}
-                        className="px-3 py-1 bg-white/10 hover:bg-white/20 text-gray-300 rounded text-sm transition-colors"
+                        className="px-3 py-1 bg-white/10 hover:bg-white/20 text-gray-300 rounded text-sm transition-colors w-full sm:w-auto"
                       >
                         Today
                       </button>
-                      <input
-                        type="date"
-                        value={currentDate}
-                        onChange={(e) => setCurrentDate(e.target.value)}
-                        className="bg-white/5 border border-white/20 rounded px-3 py-1 text-white text-sm focus:outline-none focus:border-blue-400"
-                      />
+                      <div className="relative w-full sm:w-[220px]">
+                        <input
+                          type="text"
+                          value={currentDateInput}
+                          onChange={(e) => handleCurrentDateInputChange(e.target.value)}
+                          onBlur={handleCurrentDateInputBlur}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter') return;
+                            e.preventDefault();
+                            handleCurrentDateInputBlur();
+                          }}
+                          placeholder="dd/mm/yyyy"
+                          className={`w-full px-3 py-2 pr-10 bg-black border rounded-lg text-white text-sm placeholder-gray-400 focus:outline-none transition-colors ${currentDateInputError ? 'border-red-400 focus:border-red-400' : 'border-white/10 focus:border-blue-500'}`}
+                        />
+
+                        <button
+                          type="button"
+                          onClick={openCurrentDatePicker}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/15 bg-white/5 text-gray-400 transition-colors hover:border-cyan-300/50 hover:text-cyan-200"
+                          title="Pick date"
+                          aria-label="Pick date"
+                        >
+                          <Calendar className="h-4 w-4" />
+                        </button>
+
+                        <input
+                          ref={datePickerInputRef}
+                          type="date"
+                          value={currentDate}
+                          onChange={(e) => handleCurrentDatePickerChange(e.target.value)}
+                          className="sr-only"
+                          tabIndex={-1}
+                          aria-hidden="true"
+                        />
+                      </div>
                     </div>
+                    {currentDateInputError ? (
+                      <p className="text-[11px] text-red-300">{currentDateInputError}</p>
+                    ) : null}
                   </div>
                 </div>
 
@@ -1450,7 +2059,7 @@ const Journal = () => {
                         <ChevronLeft className="w-5 h-5" />
                       </button>
 
-                      <div className="min-w-[16rem] text-center">
+                      <div className="min-w-0 flex-1 text-center">
                         <h2 className="text-lg font-semibold text-white">
                           Weekly Summary
                         </h2>
@@ -1520,12 +2129,12 @@ const Journal = () => {
                         <ChevronLeft className="w-5 h-5" />
                       </button>
 
-                      <div className="min-w-[16rem] text-center">
+                      <div className="min-w-0 flex-1 text-center">
                         <h2 className="text-lg font-semibold text-white">
                           Monthly Summary
                         </h2>
                         <span className="text-sm text-gray-400 whitespace-nowrap tabular-nums">
-                          {new Date(`${currentDate}T00:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                          {formatDateDDMMYYYY(new Date(`${currentDate}T00:00:00`))}
                         </span>
                       </div>
 
@@ -1578,11 +2187,13 @@ const Journal = () => {
             )}
           </div>
         </div>
+
+        <DashboardFooter className="mt-1 border-t border-white/10 py-5 sm:py-6" />
       </div>
 
       {/* Template Editor Modal */}
       {templateEditor.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 px-4 py-8">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto scrollbar-themed bg-black/70 px-4 py-8">
           <div className="mt-6 w-full max-w-3xl overflow-hidden rounded-2xl border border-white/15 bg-black shadow-2xl max-h-[85vh] flex flex-col">
             <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
               <div>
@@ -1601,18 +2212,30 @@ const Journal = () => {
               </button>
             </div>
 
-            <div className="space-y-4 p-5 overflow-y-auto">
+            <div className="space-y-4 p-5 overflow-y-auto scrollbar-themed">
+              {templateEditorLockedSections.length > 0 && (
+                <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Read-only sections</p>
+                  {templateEditorLockedSections.map((section) => (
+                    <div key={section.title} className="rounded-lg border border-white/10 bg-black/40 p-3">
+                      <p className="text-sm font-medium text-white mb-2">{section.title}</p>
+                      <pre className="whitespace-pre-wrap break-words text-xs leading-5 text-gray-300 font-mono">{section.content}</pre>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <textarea
                 value={templateEditor.text}
                 onChange={(e) => setTemplateEditor(prev => ({ ...prev, text: e.target.value }))}
                 rows={16}
-                className="h-[42vh] w-full rounded-xl border border-white/10 bg-black px-4 py-3 font-mono text-sm leading-6 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+                  className="h-[42vh] w-full rounded-xl border border-white/10 bg-black px-4 py-3 font-mono text-sm leading-6 text-white placeholder-gray-500 focus:border-emerald-500 focus:outline-none"
                 spellCheck={false}
               />
 
               <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-xs text-gray-400 space-y-1">
                 <p>Supported placeholders: dateLabel, topicCount, focusSessions, studyTime, activities, weekRange, activeDays, avgTopicsPerDay, avgStudyTimePerDay, mostProductiveDay, dailyBreakdown, topicsSummary, summaryFooter, monthName, daysInMonth.</p>
-                <p>Use markdown headings, bullet points, or plain text. The template is saved as-is and reused for the matching view.</p>
+                <p>Use markdown headings, bullet points, or plain text. Read-only sections stay outside this editor and are auto-managed.</p>
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1631,7 +2254,7 @@ const Journal = () => {
                   </button>
                   <button
                     onClick={saveTemplateEditor}
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
                   >
                     Save Template
                   </button>
@@ -1647,7 +2270,7 @@ const Journal = () => {
         isVisible={toast.show}
         message={toast.message}
         type={toast.type}
-        onClose={() => setToast({ ...toast, show: false })}
+        onClose={() => setToast((prev) => ({ ...prev, show: false }))}
       />
 
       {/* Dialog */}

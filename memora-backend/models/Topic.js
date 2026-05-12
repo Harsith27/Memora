@@ -49,6 +49,11 @@ const topicSchema = new mongoose.Schema({
     max: [480, 'Estimated minutes cannot exceed 480'],
     default: 30
   },
+  revisionMode: {
+    type: String,
+    enum: ['inherit', 'competitive', 'engineering'],
+    default: 'inherit'
+  },
   category: {
     type: String,
     enum: ['Science', 'Mathematics', 'History', 'Language', 'Technology', 'Arts', 'Business', 'Other'],
@@ -227,6 +232,18 @@ const RETENTION_SPEED_MULTIPLIER = {
   slow: 0.95
 };
 
+const REVISION_MODES = {
+  competitive: 'competitive',
+  engineering: 'engineering',
+  hybrid: 'hybrid'
+};
+
+const TOPIC_REVISION_MODES = {
+  inherit: 'inherit',
+  competitive: 'competitive',
+  engineering: 'engineering'
+};
+
 const BASE_REVISION_COUNT_BY_DIFFICULTY = {
   1: 3,
   2: 4,
@@ -241,6 +258,22 @@ const BASE_PERIOD_DAYS_BY_DIFFICULTY = {
   3: 45,
   4: 60,
   5: 75
+};
+
+const ENGINEERING_REVISION_COUNT_BY_DIFFICULTY = {
+  1: 1,
+  2: 1,
+  3: 2,
+  4: 2,
+  5: 3
+};
+
+const ENGINEERING_PERIOD_DAYS_BY_DIFFICULTY = {
+  1: 8,
+  2: 12,
+  3: 18,
+  4: 26,
+  5: 36
 };
 
 const QUALITY_EASE_DELTA = {
@@ -303,6 +336,40 @@ const getTargetRevisionCount = (difficulty, memScore) => {
 
 const getTargetPeriodDays = (difficulty) => {
   return BASE_PERIOD_DAYS_BY_DIFFICULTY[difficulty] || 45;
+};
+
+const getEngineeringTargetRevisionCount = (difficulty, memScore) => {
+  const base = ENGINEERING_REVISION_COUNT_BY_DIFFICULTY[difficulty] || 2;
+  const safeMemScore = Math.max(0, Math.min(10, Number(memScore) || 0));
+
+  if (safeMemScore >= 9 && base > 1) {
+    return base - 1;
+  }
+
+  if (safeMemScore >= 7 && base > 2) {
+    return base - 1;
+  }
+
+  return base;
+};
+
+const getEngineeringTargetPeriodDays = (difficulty) => {
+  return ENGINEERING_PERIOD_DAYS_BY_DIFFICULTY[difficulty] || 18;
+};
+
+const resolveEffectiveRevisionMode = (topicMode, userMode, difficulty) => {
+  const safeTopicMode = TOPIC_REVISION_MODES[topicMode] || TOPIC_REVISION_MODES.inherit;
+  const safeUserMode = REVISION_MODES[userMode] || REVISION_MODES.competitive;
+
+  if (safeTopicMode !== TOPIC_REVISION_MODES.inherit) {
+    return safeTopicMode;
+  }
+
+  if (safeUserMode === REVISION_MODES.hybrid) {
+    return difficulty >= 4 ? REVISION_MODES.competitive : REVISION_MODES.engineering;
+  }
+
+  return safeUserMode;
 };
 
 const getDaysUntil = (dateValue) => {
@@ -373,27 +440,38 @@ topicSchema.methods.updateSpacedRepetition = async function(quality, responseTim
   const difficulty = Math.max(1, Math.min(5, Number(this.difficulty) || 3));
   const responseTimeSeconds = toSeconds(Number(responseTime) || 0);
   const responseBucket = getResponseBucket(responseTimeSeconds);
-  const responseMultiplier = RESPONSE_TIME_MULTIPLIER[responseBucket];
-  const difficultyMultiplier = DIFFICULTY_INTERVAL_MULTIPLIER[difficulty] || 1.0;
   const overdueDays = getOverdueDays(this.nextReviewDate);
 
-  const user = await User.findById(this.userId).select('memScore preferences.retentionSpeed').lean();
+  const user = await User.findById(this.userId).select('memScore preferences.retentionSpeed preferences.revisionMode').lean();
   const memScore = Number(user?.memScore) || 0;
   const memScoreMultiplier = getMemScoreMultiplier(memScore);
   const retentionSpeed = user?.preferences?.retentionSpeed || 'medium';
   const retentionSpeedMultiplier = RETENTION_SPEED_MULTIPLIER[retentionSpeed] || 1.0;
+  const userRevisionMode = user?.preferences?.revisionMode || REVISION_MODES.competitive;
+  const effectiveRevisionMode = resolveEffectiveRevisionMode(this.revisionMode, userRevisionMode, difficulty);
 
-  const targetRevisionCount = getTargetRevisionCount(difficulty, memScore);
-  const targetPeriodDays = getTargetPeriodDays(difficulty);
+  const competitiveTargetRevisionCount = getTargetRevisionCount(difficulty, memScore);
+  const competitiveTargetPeriodDays = getTargetPeriodDays(difficulty);
+  const engineeringTargetRevisionCount = getEngineeringTargetRevisionCount(difficulty, memScore);
+  const engineeringTargetPeriodDays = getEngineeringTargetPeriodDays(difficulty);
+
+  const targetRevisionCount = effectiveRevisionMode === REVISION_MODES.engineering
+    ? engineeringTargetRevisionCount
+    : competitiveTargetRevisionCount;
+  const targetPeriodDays = effectiveRevisionMode === REVISION_MODES.engineering
+    ? engineeringTargetPeriodDays
+    : competitiveTargetPeriodDays;
   const effectivePeriodDays = getEffectivePeriodDays(targetPeriodDays, this.deadlineDate, this.deadlineType);
-  const plannedRevisionCount = applyDeadlineCompression({
-    difficulty,
-    targetRevisionCount,
-    targetPeriodDays,
-    effectivePeriodDays,
-    deadlineDate: this.deadlineDate,
-    deadlineType: this.deadlineType
-  });
+  const plannedRevisionCount = effectiveRevisionMode === REVISION_MODES.engineering
+    ? clamp(targetRevisionCount, 1, targetRevisionCount)
+    : applyDeadlineCompression({
+      difficulty,
+      targetRevisionCount,
+      targetPeriodDays,
+      effectivePeriodDays,
+      deadlineDate: this.deadlineDate,
+      deadlineType: this.deadlineType
+    });
   const daysUntilDeadline = getDaysUntil(this.deadlineDate);
 
   this.reviewCount += 1;
@@ -414,32 +492,51 @@ topicSchema.methods.updateSpacedRepetition = async function(quality, responseTim
     this.repetitions = Math.max(0, previousRepetitions - 2);
   }
 
-  const baseGapDays = Math.max(1, Math.round(effectivePeriodDays / Math.max(1, plannedRevisionCount)));
-  const progressRatio = clamp(this.repetitions / Math.max(1, plannedRevisionCount), 0, 1);
-  const frontLoadMultiplier = 0.7 + progressRatio * 0.9;
-
-  const qualityMultiplier = QUALITY_INTERVAL_MULTIPLIER[safeQuality] || 1.0;
+  const stageProgress = clamp(previousRepetitions / Math.max(1, plannedRevisionCount - 1), 0, 1);
+  const qualityMultiplier = effectiveRevisionMode === REVISION_MODES.engineering
+    ? ({
+      0: 0.3,
+      1: 0.5,
+      2: 0.75,
+      3: 1.0,
+      4: 1.08,
+      5: 1.16
+    }[safeQuality] || 1.0)
+    : ({
+      0: 0.35,
+      1: 0.55,
+      2: 0.8,
+      3: 1.0,
+      4: 1.12,
+      5: 1.22
+    }[safeQuality] || 1.0);
   const overdueAdjustment = overdueDays > 0 && safeQuality >= 4
     ? Math.min(1.12, 1 + overdueDays * 0.01)
     : 1.0;
 
-  const rawIntervalDays = Math.round(
-    baseGapDays
-      * frontLoadMultiplier
-      * qualityMultiplier
-      * difficultyMultiplier
+  const adaptiveScale = clamp(
+    (effectiveRevisionMode === REVISION_MODES.engineering ? 1.0 : (DIFFICULTY_INTERVAL_MULTIPLIER[difficulty] || 1.0))
       * memScoreMultiplier
       * retentionSpeedMultiplier
-      * responseMultiplier
-      * overdueAdjustment
+      * (RESPONSE_TIME_MULTIPLIER[responseBucket] || 1.0)
+      * overdueAdjustment,
+    effectiveRevisionMode === REVISION_MODES.engineering ? 0.82 : 0.9,
+    effectiveRevisionMode === REVISION_MODES.engineering ? 1.08 : 1.15
   );
 
-  nextIntervalDays = Math.max(1, rawIntervalDays);
+  const curveGrowth = effectiveRevisionMode === REVISION_MODES.engineering
+    ? 1.35 + (stageProgress * 0.35)
+    : 1.55 + (stageProgress * 0.5);
+  const projectedIntervalDays = Math.round(previousInterval * curveGrowth * qualityMultiplier * adaptiveScale);
+
+  nextIntervalDays = Math.max(1, projectedIntervalDays);
 
   if (safeQuality <= 1) {
     nextIntervalDays = 1;
   } else if (safeQuality === 2) {
-    nextIntervalDays = Math.min(nextIntervalDays, 2);
+    nextIntervalDays = Math.max(2, Math.round(previousInterval * 0.8));
+    } else {
+    nextIntervalDays = Math.max(nextIntervalDays, Math.round(previousInterval * 1.1));
   }
 
   if (this.deadlineType === 'hard' && this.deadlineDate) {
@@ -469,14 +566,14 @@ topicSchema.methods.updateSpacedRepetition = async function(quality, responseTim
     previousInterval,
     nextIntervalDays,
     difficulty,
-    difficultyMultiplier,
+    difficultyMultiplier: effectiveRevisionMode === REVISION_MODES.engineering ? 1 : (DIFFICULTY_INTERVAL_MULTIPLIER[difficulty] || 1.0),
     memScore,
     memScoreMultiplier,
     retentionSpeed,
     retentionSpeedMultiplier,
     responseTimeSeconds,
     responseBucket,
-    responseMultiplier,
+    responseMultiplier: RESPONSE_TIME_MULTIPLIER[responseBucket] || 1.0,
     targetRevisionCount,
     plannedRevisionCount,
     targetPeriodDays,
@@ -487,7 +584,8 @@ topicSchema.methods.updateSpacedRepetition = async function(quality, responseTim
     easeFactor: this.easeFactor,
     repetitions: this.repetitions,
     isLearning: this.isLearning,
-    nextReviewDate: this.nextReviewDate
+    nextReviewDate: this.nextReviewDate,
+    revisionMode: effectiveRevisionMode
   };
 };
 

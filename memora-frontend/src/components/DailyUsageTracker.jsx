@@ -4,6 +4,7 @@ import { Globe, TrendingUp, Timer } from 'lucide-react';
 
 const SESSION_GAP_MS = 20 * 60 * 1000;
 const MAX_TICK_SECONDS = 20;
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const toLocalDateKey = (date = new Date()) => {
   const year = date.getFullYear();
@@ -125,7 +126,7 @@ const DailyUsageTracker = ({ userStorageKey = 'guest' }) => {
 
       realData.push({
         date: dateStr,
-        day: date.toLocaleDateString('en-US', { weekday: 'short' }),
+        day: WEEKDAY_SHORT[date.getDay()],
         minutes: dayUsage.minutes,
         sessions: dayUsage.sessions,
         isToday: i === 0

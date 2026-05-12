@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle, Flame, Award, X } from 'lucide-react';
+import { useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { CheckCircle, Flame, Award, X, AlertTriangle, Info } from 'lucide-react';
 
 const Toast = ({ message, type = 'success', isVisible, onClose, duration = 4000 }) => {
   useEffect(() => {
@@ -10,7 +10,7 @@ const Toast = ({ message, type = 'success', isVisible, onClose, duration = 4000 
       }, duration);
       return () => clearTimeout(timer);
     }
-  }, [isVisible, duration, onClose]);
+  }, [isVisible, duration, onClose, message, type]);
 
   const getIcon = () => {
     switch (type) {
@@ -20,6 +20,10 @@ const Toast = ({ message, type = 'success', isVisible, onClose, duration = 4000 
         return <Award className="w-5 h-5 text-yellow-400" />;
       case 'error':
         return <X className="w-5 h-5 text-red-400" />;
+      case 'warning':
+        return <AlertTriangle className="w-5 h-5 text-yellow-400" />;
+      case 'info':
+        return <Info className="w-5 h-5 text-blue-400" />;
       case 'success':
       default:
         return <CheckCircle className="w-5 h-5 text-green-400" />;
@@ -34,6 +38,10 @@ const Toast = ({ message, type = 'success', isVisible, onClose, duration = 4000 
         return 'bg-yellow-500/10 border-yellow-500/20 text-yellow-100';
       case 'error':
         return 'bg-red-500/10 border-red-500/20 text-red-100';
+      case 'warning':
+        return 'bg-yellow-500/10 border-yellow-500/20 text-yellow-100';
+      case 'info':
+        return 'bg-blue-500/10 border-blue-500/20 text-blue-100';
       case 'success':
       default:
         return 'bg-green-500/10 border-green-500/20 text-green-100';

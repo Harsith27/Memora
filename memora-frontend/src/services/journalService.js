@@ -1,3 +1,5 @@
+import { formatDateDDMMYYYY, formatDateWithWeekday } from '../utils/dateFormat';
+
 const getLocalDateString = (value = new Date()) => {
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return value;
@@ -16,7 +18,7 @@ const parseStoredJson = (value, fallback) => {
 
   try {
     return JSON.parse(value);
-  } catch (error) {
+  } catch {
     return fallback;
   }
 };
@@ -140,9 +142,56 @@ class JournalService {
     this.pushRetryTimeoutId = null;
   }
 
+  resolveUserStorageId(userOrId) {
+    if (!userOrId) return null;
+
+    if (typeof userOrId === 'object') {
+      const objectId = userOrId.id || userOrId._id || userOrId.email || null;
+      return objectId ? String(objectId) : null;
+    }
+
+    return String(userOrId);
+  }
+
+  migrateLegacyStorageForUser(resolvedUserId) {
+    if (!resolvedUserId) return;
+
+    const userSettingsKey = `journalSettings_${resolvedUserId}`;
+    const legacySettings = localStorage.getItem('journalSettings');
+    const currentSettings = localStorage.getItem(userSettingsKey);
+
+    if (!currentSettings && legacySettings) {
+      localStorage.setItem(userSettingsKey, legacySettings);
+    }
+
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key) continue;
+
+      if (!/^(activities|journal)_\d{4}-\d{2}-\d{2}$/.test(key)) {
+        continue;
+      }
+
+      const userScopedKey = `${key}_${resolvedUserId}`;
+      if (localStorage.getItem(userScopedKey)) continue;
+
+      const value = localStorage.getItem(key);
+      if (value === null) continue;
+      localStorage.setItem(userScopedKey, value);
+    }
+  }
+
   // Set current user for user-specific storage
-  setCurrentUser(userId) {
-    this.currentUserId = userId;
+  setCurrentUser(userOrId) {
+    const resolvedUserId = this.resolveUserStorageId(userOrId);
+    if (!resolvedUserId) {
+      console.warn('📝 Journal: Could not resolve user id, keeping previous user context');
+      return;
+    }
+
+    this.migrateLegacyStorageForUser(resolvedUserId);
+
+    this.currentUserId = resolvedUserId;
     this.settings = this.loadSettings(); // Reload settings for this user
   }
 
@@ -206,16 +255,6 @@ class JournalService {
       console.warn('📝 Journal: No user set, skipping activity log');
       return;
     }
-
-    const activity = {
-      type: 'topic_added',
-      timestamp: new Date().toISOString(),
-      data: {
-        title: topic.title,
-        difficulty: topic.difficulty,
-        tags: topic.tags || []
-      }
-    };
 
     this.addActivity(`Added topic: "${topic.title}" (Difficulty: ${topic.difficulty}/5)`);
   }
@@ -281,18 +320,51 @@ class JournalService {
     this.addActivity(`Completed MemScore evaluation - Score: ${score.toFixed(1)}/10`);
   }
 
+  logChronicleEventCreated(eventData = {}) {
+    const title = String(eventData.title || '').trim() || 'Untitled event';
+    const eventType = String(eventData.type || 'event').trim();
+    const eventDate = eventData.date ? new Date(eventData.date) : null;
+    const isValidDate = eventDate instanceof Date && !Number.isNaN(eventDate.getTime());
+    const dateLabel = isValidDate ? formatDateDDMMYYYY(eventDate) : 'unknown date';
+
+    this.addActivity(`Created chronicle ${eventType} "${title}" on ${dateLabel}`);
+  }
+
+  logMindmapCreated(mindmap = {}, source = 'manual') {
+    const title = String(mindmap.title || '').trim() || 'Untitled mindmap';
+    if (source === 'ai') {
+      this.addActivity(`Generated AI mindmap: "${title}"`);
+      return;
+    }
+
+    this.addActivity(`Created mindmap: "${title}"`);
+  }
+
+  logDocTagResourceCreated(resource = {}) {
+    const title = String(resource.name || resource.title || '').trim() || 'Untitled resource';
+    this.addActivity(`Added DocTags resource: "${title}"`);
+  }
+
   logFocusSession(duration, topicsStudied = []) {
     const minutes = Math.round(duration / 60000); // Convert ms to minutes
     let activity = `Focus session: ${minutes} minutes`;
 
     if (topicsStudied.length > 0) {
-      activity += ` (${topicsStudied.length} topics)`;
+      const cleanedTopics = topicsStudied
+        .map((topic) => String(topic || '').trim())
+        .filter(Boolean);
+
+      if (cleanedTopics.length === 1) {
+        activity += ` (Topic: ${cleanedTopics[0]})`;
+      } else if (cleanedTopics.length > 1) {
+        activity += ` (${cleanedTopics.length} topics: ${cleanedTopics.join(', ')})`;
+      }
     }
 
     this.addActivity(activity);
   }
 
-  logStudyStreak(currentStreak, isNewRecord = false) {
+  logStudyStreak() {
     // Study streak logging disabled - was causing too many duplicate entries
     return;
   }
@@ -304,6 +376,52 @@ class JournalService {
     const changeText = change > 0 ? `+${change.toFixed(1)}` : change.toFixed(1);
     
     this.addActivity(`MemScore updated: ${oldScore.toFixed(1)} -> ${newScore.toFixed(1)} (${changeText})`);
+  }
+
+  logTaskAdded(task, count = 1) {
+    const title = String(task?.title || '').trim() || 'Untitled task';
+    const quantity = Number(count) || 1;
+    const typeLabel = String(task?.taskType || '').toLowerCase().includes('recurring') ? 'habit' : 'task';
+
+    if (quantity > 1) {
+      this.addActivity(`Added ${quantity} ${typeLabel} entries for "${title}"`);
+      return;
+    }
+
+    this.addActivity(`Added ${typeLabel}: "${title}"`);
+  }
+
+  logTaskCompletion(task, completed) {
+    const title = String(task?.title || '').trim() || 'Untitled task';
+    const isHabit = String(task?.taskType || '').toLowerCase().includes('recurring');
+    const noun = isHabit ? 'Habit' : 'Task';
+    const status = completed ? 'completed' : 'marked pending';
+    this.addActivity(`${noun} ${status}: "${title}"`);
+  }
+
+  logTaskDeleted(task, scope = 'single') {
+    const title = String(task?.title || '').trim() || 'Untitled task';
+    const isHabit = String(task?.taskType || '').toLowerCase().includes('recurring');
+
+    if (isHabit && scope === 'series') {
+      this.addActivity(`Deleted full habit series: "${title}"`);
+      return;
+    }
+
+    this.addActivity(`Deleted ${isHabit ? 'habit occurrence' : 'task'}: "${title}"`);
+  }
+
+  logTaskEdited(beforeTask, afterTask) {
+    const previousTitle = String(beforeTask?.title || '').trim();
+    const nextTitle = String(afterTask?.title || '').trim();
+    const resolvedTitle = nextTitle || previousTitle || 'Untitled task';
+    this.addActivity(`Edited task: "${resolvedTitle}"`);
+  }
+
+  logHabitSeriesExtended(task, addedCount = 0) {
+    const title = String(task?.title || '').trim() || 'Untitled habit';
+    const count = Number(addedCount) || 0;
+    this.addActivity(`Extended habit for another 3 months: "${title}" (${count} new entries)`);
   }
 
   addActivity(activityText) {
@@ -361,10 +479,19 @@ class JournalService {
     const today = getLocalDateString();
     const activities = this.getTodayActivities();
 
-    const journalEntry = this.generateInitialEntry(today, activities);
+    const storageKey = this.getUserStorageKey(`journal_${today}`);
+    const existingEntry = localStorage.getItem(storageKey);
+    const hasExistingManualEntry = typeof existingEntry === 'string' && existingEntry.trim().length > 0;
 
-    // Save updated journal entry with user-specific key
-    localStorage.setItem(this.getUserStorageKey(`journal_${today}`), journalEntry);
+    // Do not overwrite user-authored entries when activities change.
+    const journalEntry = hasExistingManualEntry
+      ? existingEntry
+      : this.generateInitialEntry(today, activities);
+
+    if (!hasExistingManualEntry) {
+      // Save auto-generated entry only when one does not already exist.
+      localStorage.setItem(storageKey, journalEntry);
+    }
 
     // Trigger a custom event to notify the Journal component
     window.dispatchEvent(new CustomEvent('journalUpdated', {
@@ -385,15 +512,76 @@ class JournalService {
     return totalMinutes;
   }
 
+  buildActivitySections(activities = []) {
+    const rows = (Array.isArray(activities) ? activities : [])
+      .map((item) => String(item || '').trim())
+      .filter(Boolean);
+
+    const buckets = {
+      topics: [],
+      mindmaps: [],
+      tasks: [],
+      doctags: [],
+      other: []
+    };
+
+    rows.forEach((activity) => {
+      const normalized = activity.toLowerCase();
+
+      if (normalized.includes('mindmap')) {
+        buckets.mindmaps.push(activity);
+        return;
+      }
+
+      if (normalized.includes('doctags resource') || normalized.includes('workspace docs')) {
+        buckets.doctags.push(activity);
+        return;
+      }
+
+      if (normalized.includes('task') || normalized.includes('chronicle')) {
+        buckets.tasks.push(activity);
+        return;
+      }
+
+      if (
+        normalized.includes('reviewed "')
+        || normalized.includes('added topic')
+        || normalized.includes('edited "')
+        || normalized.includes('skipped "')
+        || normalized.includes('deleted "')
+      ) {
+        buckets.topics.push(activity);
+        return;
+      }
+
+      buckets.other.push(activity);
+    });
+
+    const toSection = (title, sectionRows, emptyText) => {
+      return [
+        `### ${title}`,
+        ...(sectionRows.length > 0 ? sectionRows.map((row) => `- ${row}`) : [`- ${emptyText}`])
+      ].join('\n');
+    };
+
+    const sections = [
+      toSection('Topics', buckets.topics, 'No topic activity logged yet'),
+      toSection('Mindmaps', buckets.mindmaps, 'No mindmap activity logged yet'),
+      toSection('Tasks', buckets.tasks, 'No task activity logged yet'),
+      toSection('DocTags', buckets.doctags, 'No DocTags activity logged yet')
+    ];
+
+    if (buckets.other.length > 0) {
+      sections.push(toSection('Other', buckets.other, 'No additional activity logged yet'));
+    }
+
+    return sections.join('\n\n');
+  }
+
   generateInitialEntry(forDate = getLocalDateString(), activities = null) {
     const dateString = getLocalDateString(forDate);
     const displayDate = new Date(`${dateString}T00:00:00`);
-    const dateLabel = displayDate.toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    });
+    const dateLabel = formatDateWithWeekday(displayDate, 'long');
 
     const dayActivities = Array.isArray(activities) ? activities : this.getTodayActivities();
 
@@ -407,9 +595,7 @@ class JournalService {
 
     const totalStudyTime = this.calculateTotalStudyTime(dayActivities);
 
-    const activitySection = dayActivities.length > 0
-      ? dayActivities.map(activity => `- ${activity}`).join('\n')
-      : '- No activities logged yet';
+    const activitySection = this.buildActivitySections(dayActivities);
 
     return renderJournalTemplate(this.getJournalTemplates().daily, {
       dateLabel,

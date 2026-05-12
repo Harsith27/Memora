@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Square, RotateCcw, Settings, Maximize, Minimize, History, Clock, ChevronUp, ChevronDown, Palette, Sparkles } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTimer } from '../contexts/TimerContext';
@@ -143,8 +143,29 @@ const getPatternLayer = (pattern, color, spacing = 42) => {
   };
 };
 
+const FOCUS_SESSION_TIMESTAMP_SKEW_MS = 15 * 60 * 1000;
+const MAX_FOCUS_SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
+
+const parseFocusSessionTimestamp = (...values) => {
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+
+    const numericValue = Number(value);
+    if (Number.isFinite(numericValue) && numericValue > 0) {
+      return numericValue;
+    }
+
+    const parsed = new Date(value).getTime();
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return Number.NaN;
+};
+
 const FocusMode = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const {
     isRunning,
@@ -167,14 +188,71 @@ const FocusMode = () => {
     clearCompleted
   } = useTimer();
 
+  const userStorageId = (() => {
+    const candidates = [user?.id, user?._id, user?.email, user?.username];
+    for (const candidate of candidates) {
+      const normalized = String(candidate || '').trim();
+      if (!normalized || normalized === 'undefined' || normalized === 'null') continue;
+      return normalized;
+    }
+    return null;
+  })();
+
   // Get user-specific localStorage keys
   const getUserStorageKey = (key) => {
-    return user ? `${key}_${user.id}` : key;
+    if (!userStorageId) return null;
+    return `${key}_${userStorageId}`;
+  };
+
+  const sanitizeFocusSessions = (sessions = []) => {
+    if (!Array.isArray(sessions)) return [];
+
+    const now = Date.now();
+    const createdAtMs = parseFocusSessionTimestamp(user?.createdAt);
+    const minAllowedMs = Number.isFinite(createdAtMs)
+      ? createdAtMs - FOCUS_SESSION_TIMESTAMP_SKEW_MS
+      : Number.NEGATIVE_INFINITY;
+    const maxAllowedMs = now + FOCUS_SESSION_TIMESTAMP_SKEW_MS;
+
+    return sessions
+      .filter((session) => {
+        if (!session || typeof session !== 'object') return false;
+
+        const timeReferenceMs = parseFocusSessionTimestamp(
+          session.endTime,
+          session.date,
+          session.startTime
+        );
+
+        if (!Number.isFinite(timeReferenceMs)) return false;
+        if (timeReferenceMs < minAllowedMs || timeReferenceMs > maxAllowedMs) return false;
+
+        const durationMs = Number(session.duration);
+        if (Number.isFinite(durationMs)) {
+          if (durationMs < 0 || durationMs > MAX_FOCUS_SESSION_DURATION_MS) return false;
+        }
+
+        if (session.mode && !['countdown', 'stopwatch'].includes(session.mode)) return false;
+        if (session.events && !Array.isArray(session.events)) return false;
+
+        return true;
+      })
+      .slice(0, 20);
   };
 
   // Load saved settings from localStorage (user-specific)
   const loadSettings = () => {
-    const saved = localStorage.getItem(getUserStorageKey('focusModeSettings'));
+    const storageKey = getUserStorageKey('focusModeSettings');
+    if (!storageKey) {
+      return {
+        timerMode: 'countdown',
+        studyMethod: 'pomodoro',
+        customMinutes: 25,
+        pomodoroSessions: 4
+      };
+    }
+
+    const saved = localStorage.getItem(storageKey);
     if (saved) {
       return JSON.parse(saved);
     }
@@ -188,7 +266,10 @@ const FocusMode = () => {
 
   // Load saved presets from localStorage (user-specific)
   const loadPresets = () => {
-    const saved = localStorage.getItem(getUserStorageKey('focusModePresets'));
+    const storageKey = getUserStorageKey('focusModePresets');
+    if (!storageKey) return [];
+
+    const saved = localStorage.getItem(storageKey);
     if (saved) {
       return JSON.parse(saved);
     }
@@ -197,126 +278,28 @@ const FocusMode = () => {
 
   // Load saved session history from localStorage (user-specific)
   const loadSessionHistory = () => {
-    const saved = localStorage.getItem(getUserStorageKey('focus_sessions'));
-    if (saved) {
-      return JSON.parse(saved);
+    const storageKey = getUserStorageKey('focus_sessions');
+    if (!storageKey) return [];
+
+    const saved = localStorage.getItem(storageKey);
+    if (!saved) return [];
+
+    try {
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) {
+        localStorage.removeItem(storageKey);
+        return [];
+      }
+
+      const sanitized = sanitizeFocusSessions(parsed);
+      if (sanitized.length !== parsed.length) {
+        localStorage.setItem(storageKey, JSON.stringify(sanitized));
+      }
+      return sanitized;
+    } catch {
+      localStorage.removeItem(storageKey);
+      return [];
     }
-    return [];
-  };
-
-  // Seed realistic subject-based presets and sessions for demo/testing when user has no data.
-  const seedFocusDemoData = () => {
-    const now = Date.now();
-
-    const presets = [
-      {
-        id: now + 1,
-        name: 'Mathematics Problem Sprint',
-        timerMode: 'countdown',
-        studyMethod: 'pomodoro',
-        customMinutes: 25,
-        pomodoroSessions: 4,
-        createdAt: new Date(now - 28 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        id: now + 2,
-        name: 'Physics Concept Block',
-        timerMode: 'countdown',
-        studyMethod: 'continuous',
-        customMinutes: 45,
-        pomodoroSessions: 4,
-        createdAt: new Date(now - 24 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        id: now + 3,
-        name: 'Organic Chemistry Revision',
-        timerMode: 'countdown',
-        studyMethod: 'pomodoro',
-        customMinutes: 25,
-        pomodoroSessions: 5,
-        createdAt: new Date(now - 21 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        id: now + 4,
-        name: 'History Timeline Mapping',
-        timerMode: 'countdown',
-        studyMethod: 'continuous',
-        customMinutes: 35,
-        pomodoroSessions: 4,
-        createdAt: new Date(now - 18 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        id: now + 5,
-        name: 'Biology Diagrams Drill',
-        timerMode: 'countdown',
-        studyMethod: 'pomodoro',
-        customMinutes: 25,
-        pomodoroSessions: 3,
-        createdAt: new Date(now - 14 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        id: now + 6,
-        name: 'English Essay Practice',
-        timerMode: 'countdown',
-        studyMethod: 'continuous',
-        customMinutes: 30,
-        pomodoroSessions: 4,
-        createdAt: new Date(now - 10 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-    ];
-
-    const generatedSessions = [];
-    for (let i = 0; i < 40; i += 1) {
-      const daysAgo = Math.floor((i / 39) * 29);
-      const dayTimestamp = now - daysAgo * 24 * 60 * 60 * 1000;
-
-      const startHour = 7 + (i % 10);
-      const startMinute = (i % 4) * 15;
-      const startTime = new Date(dayTimestamp);
-      startTime.setHours(startHour, startMinute, 0, 0);
-
-      const mode = i % 3 === 0 ? 'stopwatch' : 'countdown';
-      const method = i % 2 === 0 ? 'pomodoro' : 'continuous';
-      const preset = presets[i % presets.length];
-
-      const durationMinutes = mode === 'countdown'
-        ? Math.max(20, Math.min(60, preset.customMinutes + ((i % 5) - 2) * 5))
-        : Math.max(18, Math.min(75, 30 + (i % 6) * 8));
-
-      const durationMs = durationMinutes * 60 * 1000;
-      const endTime = new Date(startTime.getTime() + durationMs);
-
-      const initialSeconds = mode === 'countdown' ? durationMinutes * 60 : 0;
-
-      generatedSessions.push({
-        id: now + 100 + i,
-        startTime: startTime.toISOString(),
-        endTime: endTime.toISOString(),
-        method,
-        mode,
-        preset: preset.name,
-        phase: 'study',
-        session: method === 'pomodoro' ? 1 + (i % Math.max(1, preset.pomodoroSessions || 4)) : null,
-        initialTime: initialSeconds,
-        finalTime: mode === 'countdown' ? 0 : durationMinutes * 60,
-        events: [
-          {
-            timestamp: new Date(startTime.getTime() + Math.min(10 * 60 * 1000, durationMs / 2)).toISOString(),
-            type: 'checkpoint',
-          },
-        ],
-        completed: true,
-        duration: durationMs,
-        date: endTime.toISOString(),
-      });
-    }
-
-    generatedSessions.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
-
-    return {
-      presets,
-      sessions: generatedSessions,
-    };
   };
 
   // Initialize state with saved settings
@@ -339,6 +322,54 @@ const FocusMode = () => {
   const [showThemes, setShowThemes] = useState(false);
   const [pomodoroSessions, setPomodoroSessions] = useState(defaultSettings.pomodoroSessions);
   const [activeThemeId, setActiveThemeId] = useState('default');
+  const [launchTopic, setLaunchTopic] = useState(null);
+  const [pendingAutoStartTopic, setPendingAutoStartTopic] = useState(null);
+  const shouldShowSaveConfig = Boolean(launchTopic?.topicId);
+
+  const getSavedFocusConfig = () => {
+    const storageKey = getUserStorageKey('focusModeQuickConfig');
+    if (!storageKey) return null;
+
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return null;
+
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+
+  const applyConfigValues = (config) => {
+    if (!config) return;
+
+    const nextTimerMode = config.timerMode === 'stopwatch' ? 'stopwatch' : 'countdown';
+    const nextStudyMethod = config.studyMethod === 'continuous' ? 'continuous' : 'pomodoro';
+    const nextCustomMinutes = Number.isFinite(Number(config.customMinutes))
+      ? Math.max(1, Math.min(180, Number(config.customMinutes)))
+      : 25;
+    const nextPomodoroSessions = Number.isFinite(Number(config.pomodoroSessions))
+      ? Math.max(1, Math.min(12, Number(config.pomodoroSessions)))
+      : 4;
+
+    setGlobalTimerMode(nextTimerMode);
+    setGlobalStudyMethod(nextStudyMethod);
+    setCustomMinutes(nextCustomMinutes);
+    setPomodoroSessions(nextPomodoroSessions);
+
+    if (nextTimerMode === 'countdown') {
+      const nextInitialTime = nextStudyMethod === 'pomodoro' ? 25 * 60 : nextCustomMinutes * 60;
+      setGlobalInitialTime(nextInitialTime);
+    }
+
+    if (config.themeId && focusThemes.some((theme) => theme.id === config.themeId)) {
+      setActiveThemeId(config.themeId);
+      const themeStorageKey = getUserStorageKey('focusModeTheme');
+      if (themeStorageKey) {
+        localStorage.setItem(themeStorageKey, config.themeId);
+      }
+    }
+  };
 
   // Load settings when user changes (but don't reset running timer)
   useEffect(() => {
@@ -364,40 +395,57 @@ const FocusMode = () => {
 
     // Always reload presets
     setSavedPresets(loadPresets());
-    const savedTheme = localStorage.getItem(getUserStorageKey('focusModeTheme'));
+    const themeStorageKey = getUserStorageKey('focusModeTheme');
+    const savedTheme = themeStorageKey ? localStorage.getItem(themeStorageKey) : null;
     setActiveThemeId(
       savedTheme && focusThemes.some((theme) => theme.id === savedTheme)
         ? savedTheme
         : 'default'
     );
-  }, [user?.id]); // Only reload when user changes, not when timer state changes
+  }, [userStorageId]); // Only reload when user changes, not when timer state changes
 
-  // Load or seed focus history and presets for the active user.
   useEffect(() => {
-    if (!user?.id) return;
+    if (userStorageId) {
+      journalService.setCurrentUser(userStorageId);
+    }
+  }, [userStorageId]);
 
-    const sessionsKey = getUserStorageKey('focus_sessions');
-    const presetsKey = getUserStorageKey('focusModePresets');
-    const seededFlagKey = getUserStorageKey('focusModeDemoSeeded');
+  useEffect(() => {
+    if (!userStorageId) return;
 
-    const existingSessions = loadSessionHistory();
-    const existingPresets = loadPresets();
-    const alreadySeeded = localStorage.getItem(seededFlagKey) === 'true';
-
-    if (!alreadySeeded && existingSessions.length === 0 && existingPresets.length === 0) {
-      const demoData = seedFocusDemoData();
-      localStorage.setItem(sessionsKey, JSON.stringify(demoData.sessions));
-      localStorage.setItem(presetsKey, JSON.stringify(demoData.presets));
-      localStorage.setItem(seededFlagKey, 'true');
-
-      setSessionHistory(demoData.sessions);
-      setSavedPresets(demoData.presets);
+    const state = location.state || {};
+    if (!state.fromTopic || !state.topicId) {
+      setLaunchTopic(null);
+      setPendingAutoStartTopic(null);
       return;
     }
 
+    const nextTopic = {
+      topicId: state.topicId,
+      topicTitle: String(state.topicTitle || 'Focused Topic').trim()
+    };
+
+    setLaunchTopic(nextTopic);
+
+    const savedConfig = getSavedFocusConfig();
+    if (savedConfig) {
+      applyConfigValues(savedConfig);
+      setShowSettings(false);
+      setPendingAutoStartTopic(nextTopic);
+    } else {
+      setShowSettings(Boolean(state.openSettings ?? true));
+    }
+  }, [location.state, userStorageId]);
+
+  // Load focus history and presets for the active user.
+  useEffect(() => {
+    if (!userStorageId) return;
+    const existingSessions = loadSessionHistory();
+    const existingPresets = loadPresets();
+
     setSessionHistory(existingSessions);
     setSavedPresets(existingPresets);
-  }, [user?.id]);
+  }, [userStorageId]);
 
   // Handle timer completion
   useEffect(() => {
@@ -414,17 +462,47 @@ const FocusMode = () => {
 
   // Save settings to localStorage (user-specific)
   const saveSettings = () => {
+    const storageKey = getUserStorageKey('focusModeSettings');
+    if (!storageKey) return;
+
     const settings = {
       timerMode,
       studyMethod,
       customMinutes,
       pomodoroSessions
     };
-    localStorage.setItem(getUserStorageKey('focusModeSettings'), JSON.stringify(settings));
+    localStorage.setItem(storageKey, JSON.stringify(settings));
+  };
+
+  const saveQuickConfig = () => {
+    const storageKey = getUserStorageKey('focusModeQuickConfig');
+    if (!storageKey) {
+      showToast('Unable to save config for this account right now.', 'error');
+      return;
+    }
+
+    const config = {
+      timerMode,
+      studyMethod,
+      customMinutes,
+      pomodoroSessions,
+      themeId: activeThemeId,
+      presetName: activePreset?.name || null,
+      savedAt: new Date().toISOString()
+    };
+
+    localStorage.setItem(storageKey, JSON.stringify(config));
+    showToast('Config saved. Next Start Focus from a topic can auto-start with this setup.', 'success');
   };
 
   // Save preset to localStorage (user-specific)
   const savePreset = (name, autoLoad = true) => {
+    const storageKey = getUserStorageKey('focusModePresets');
+    if (!storageKey) {
+      showToast('Unable to save preset for this account right now.', 'error');
+      return null;
+    }
+
     const preset = {
       id: Date.now(),
       name,
@@ -436,7 +514,7 @@ const FocusMode = () => {
     };
     const updatedPresets = [...savedPresets, preset];
     setSavedPresets(updatedPresets);
-    localStorage.setItem(getUserStorageKey('focusModePresets'), JSON.stringify(updatedPresets));
+    localStorage.setItem(storageKey, JSON.stringify(updatedPresets));
 
     // Auto-load the newly created preset and close dialogs
     if (autoLoad) {
@@ -480,10 +558,13 @@ const FocusMode = () => {
 
   // Delete preset (user-specific)
   const deletePreset = (presetId) => {
+    const storageKey = getUserStorageKey('focusModePresets');
     const presetToDelete = savedPresets.find(p => p.id === presetId);
     const updatedPresets = savedPresets.filter(p => p.id !== presetId);
     setSavedPresets(updatedPresets);
-    localStorage.setItem(getUserStorageKey('focusModePresets'), JSON.stringify(updatedPresets));
+    if (storageKey) {
+      localStorage.setItem(storageKey, JSON.stringify(updatedPresets));
+    }
 
     // Clear active preset if it was the one deleted
     if (activePreset && activePreset.id === presetId) {
@@ -515,7 +596,10 @@ const FocusMode = () => {
 
   const applyTheme = (themeId) => {
     setActiveThemeId(themeId);
-    localStorage.setItem(getUserStorageKey('focusModeTheme'), themeId);
+    const storageKey = getUserStorageKey('focusModeTheme');
+    if (storageKey) {
+      localStorage.setItem(storageKey, themeId);
+    }
   };
 
   const activeTheme = focusThemes.find((theme) => theme.id === activeThemeId) || focusThemes[0];
@@ -541,7 +625,8 @@ const FocusMode = () => {
   };
 
   // Session management
-  const startSession = () => {
+  const startSession = (topicContext = null) => {
+    const effectiveTopic = topicContext || launchTopic;
     const sessionData = {
       id: Date.now(),
       startTime: new Date(),
@@ -552,6 +637,8 @@ const FocusMode = () => {
       phase: currentPhase,
       session: studyMethod === 'pomodoro' ? currentSession : null,
       initialTime: timerMode === 'countdown' ? timeLeft : 0,
+      topicId: effectiveTopic?.topicId || null,
+      topicTitle: effectiveTopic?.topicTitle || null,
       events: [], // Track pause/resume events
       completed: false
     };
@@ -572,7 +659,10 @@ const FocusMode = () => {
 
       // Log to journal if session was completed and lasted more than 1 minute
       if (completed && finalSession.duration > 60000) {
-        journalService.logFocusSession(finalSession.duration);
+        journalService.logFocusSession(
+          finalSession.duration,
+          finalSession.topicTitle ? [finalSession.topicTitle] : []
+        );
       }
 
       const updatedHistory = [finalSession, ...sessionHistory.slice(0, 19)]; // Keep last 20 sessions
@@ -580,7 +670,10 @@ const FocusMode = () => {
 
       // Save to localStorage for Analytics
       try {
-        localStorage.setItem(getUserStorageKey('focus_sessions'), JSON.stringify(updatedHistory));
+        const storageKey = getUserStorageKey('focus_sessions');
+        if (storageKey) {
+          localStorage.setItem(storageKey, JSON.stringify(updatedHistory));
+        }
       } catch (error) {
         console.warn('Failed to save session history:', error);
       }
@@ -650,19 +743,28 @@ const FocusMode = () => {
     }
   };
 
-  const handleStartTimer = () => {
+  const handleStartTimer = (topicContext = null) => {
     startTimer(); // Use global timer function
 
     // Start new session or resume existing one
     if (!currentSessionData) {
-      startSession();
+      startSession(topicContext);
     } else {
       addSessionEvent('resumed');
     }
 
     // Hide settings when timer starts for cleaner view
     setShowSettings(false);
+    setPendingAutoStartTopic(null);
   };
+
+  useEffect(() => {
+    if (!pendingAutoStartTopic) return;
+    if (isRunning || isPaused || currentSessionData) return;
+
+    handleStartTimer(pendingAutoStartTopic);
+    showToast(`Started focus for "${pendingAutoStartTopic.topicTitle}" using saved config.`, 'success');
+  }, [pendingAutoStartTopic, isRunning, isPaused, currentSessionData]);
 
   const handlePauseTimer = () => {
     pauseTimer(); // Use global timer function
@@ -838,68 +940,44 @@ const FocusMode = () => {
 
   return (
     <div
-      className="min-h-screen text-white flex flex-col relative overflow-hidden"
+      className="min-h-screen text-white flex flex-col relative overflow-x-hidden"
       style={{
         backgroundImage: activeTheme.backgroundImage,
         backgroundColor: '#000000',
         fontFamily: activeTheme.fontFamily
       }}
     >
-      <style>{`
-        @keyframes focusThemeFloatA {
-          0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.68; }
-          50% { transform: translate3d(28px, -24px, 0) scale(1.08); opacity: 1; }
-          100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.68; }
-        }
-        @keyframes focusThemeFloatB {
-          0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.58; }
-          50% { transform: translate3d(-30px, 22px, 0) scale(1.06); opacity: 0.95; }
-          100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.58; }
-        }
-      `}</style>
       <div className="pointer-events-none absolute inset-0">
-        <div
-          className="absolute -top-24 -left-20 w-[34rem] h-[34rem] rounded-full blur-3xl"
-          style={{
-            backgroundColor: activeTheme.blobA,
-            animation: 'focusThemeFloatA 18s ease-in-out infinite'
-          }}
-        />
-        <div
-          className="absolute -bottom-28 -right-20 w-[36rem] h-[36rem] rounded-full blur-3xl"
-          style={{
-            backgroundColor: activeTheme.blobB,
-            animation: 'focusThemeFloatB 22s ease-in-out infinite'
-          }}
-        />
         <div
           className="absolute inset-0"
           style={getPatternLayer(activeTheme.pattern, activeTheme.gridColor, 42)}
         />
       </div>
-      {/* Landscape orientation prompt for mobile */}
       <div className="sm:hidden portrait:flex hidden fixed inset-0 bg-black z-50 items-center justify-center p-6">
-        <div className="text-center">
-          <div className="text-6xl mb-4">📱</div>
-          <h2 className="text-xl font-bold mb-2">Rotate Your Device</h2>
-          <p className="text-gray-400 mb-4">Focus Mode works best in landscape orientation</p>
-          <div className="text-2xl animate-bounce">🔄</div>
-          <p className="text-xs text-gray-500 mt-4">Turn your phone sideways for the best experience</p>
+        <div className="rotate-phone-glyph relative h-28 w-28">
+          <div className="rotate-phone-ring absolute inset-0 rounded-full border border-white/30" />
+          <div className="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 rotate-45 border-t-2 border-r-2 border-white/90" />
+          <div className="absolute left-1/2 bottom-0 h-3 w-3 -translate-x-1/2 rotate-45 border-b-2 border-l-2 border-white/90" />
+          <div className="absolute left-1/2 top-1/2 h-20 w-12 -translate-x-1/2 -translate-y-1/2 rounded-[14px] border-2 border-white bg-transparent">
+            <div className="absolute left-1/2 top-1.5 h-1 w-4 -translate-x-1/2 rounded-full bg-white/85" />
+            <div className="absolute inset-x-1.5 top-4 bottom-3 rounded-[9px] border border-white/70" />
+            <div className="absolute left-1/2 bottom-1.5 h-1 w-4 -translate-x-1/2 rounded-full bg-white/85" />
+          </div>
         </div>
       </div>
 
       {/* Header - Hidden in fullscreen */}
       {!isFullscreen && (
-        <div className="relative z-10 flex items-center justify-between p-3 sm:p-6">
+        <div data-tour="focus-header" className="relative z-10 flex items-center justify-between gap-2 p-3 sm:p-6">
         <button
           onClick={() => navigate('/dashboard')}
           className="flex items-center space-x-1 sm:space-x-2 text-gray-400 hover:text-white transition-colors"
         >
           <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
-          <span className="text-sm sm:text-base">Back to Dashboard</span>
+          <span className="hidden sm:inline text-sm sm:text-base">Back to Dashboard</span>
         </button>
 
-        <div className="flex items-center space-x-2 sm:space-x-4">
+        <div className="flex items-center space-x-1.5 sm:space-x-4">
           <div className="hidden md:flex items-center space-x-3">
             <span className="text-xs sm:text-sm text-gray-300">Focus Mode</span>
             <button
@@ -982,7 +1060,7 @@ const FocusMode = () => {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 overflow-y-auto scrollbar-hide pr-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 overflow-y-auto scrollbar-themed pr-1">
               {focusThemes.map((theme) => {
                 const isActive = activeThemeId === theme.id;
 
@@ -1050,7 +1128,12 @@ const FocusMode = () => {
           <div className="bg-black border border-white/20 rounded-xl p-4 sm:p-6 max-w-4xl w-full mx-2 sm:mx-4 shadow-2xl animate-in zoom-in-95 duration-200">
             {/* Header */}
             <div className="flex items-center justify-between mb-4 sm:mb-6">
-              <h2 className="text-base sm:text-lg font-semibold text-white">Focus Mode Settings</h2>
+              <div>
+                <h2 className="text-base sm:text-lg font-semibold text-white">Focus Mode Settings</h2>
+                {launchTopic?.topicTitle && (
+                  <p className="text-xs text-cyan-300 mt-1">Topic: {launchTopic.topicTitle}</p>
+                )}
+              </div>
               <button
                 onClick={() => setShowSettings(false)}
                 className="text-gray-400 hover:text-white transition-colors"
@@ -1198,6 +1281,26 @@ const FocusMode = () => {
               </button>
 
               <div className="flex space-x-3">
+                {shouldShowSaveConfig && (
+                  <button
+                    onClick={() => {
+                      if (isRunning) {
+                        showToast(`Cannot save config while timer is running. Pause or stop the timer first.`, 'error');
+                        return;
+                      }
+                      saveSettings();
+                      saveQuickConfig();
+                    }}
+                    disabled={isRunning}
+                    className={`px-4 py-2 text-white rounded-lg transition-colors ${
+                      isRunning
+                        ? 'bg-gray-600 cursor-not-allowed opacity-50'
+                        : 'bg-cyan-600 hover:bg-cyan-700'
+                    }`}
+                  >
+                    Save Config
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     if (isRunning) {
@@ -1222,7 +1325,7 @@ const FocusMode = () => {
                       return;
                     }
                     saveSettings();
-                    setShowSettings(false);
+                    handleStartTimer(launchTopic);
                   }}
                   disabled={isRunning}
                   className={`px-4 py-2 text-white rounded-lg transition-colors ${
@@ -1347,7 +1450,7 @@ const FocusMode = () => {
             </div>
 
             {/* Presets List */}
-            <div className="flex-1 overflow-y-auto scrollbar-hide">
+            <div className="flex-1 overflow-y-auto scrollbar-themed">
               {savedPresets.length === 0 ? (
                 <div className="text-center text-gray-400 py-8">
                   <Clock className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -1454,7 +1557,7 @@ const FocusMode = () => {
             </div>
 
             {/* Session History List */}
-            <div className="flex-1 overflow-y-auto scrollbar-hide">
+            <div className="flex-1 overflow-y-auto scrollbar-themed">
               {sessionHistory.length === 0 ? (
                 <div className="text-center text-gray-400 py-8">
                   <Clock className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -1502,6 +1605,9 @@ const FocusMode = () => {
                             {session.mode === 'countdown' && (
                               <div>Time: {Math.floor(session.initialTime / 60)}:{(session.initialTime % 60).toString().padStart(2, '0')} → {Math.floor(session.finalTime / 60)}:{(session.finalTime % 60).toString().padStart(2, '0')}</div>
                             )}
+                            {session.topicTitle && (
+                              <div>Topic: {session.topicTitle}</div>
+                            )}
                             {session.events.length > 0 && (
                               <div className="mt-2">
                                 <div className="text-gray-400 mb-1">Events:</div>
@@ -1527,7 +1633,10 @@ const FocusMode = () => {
                 <button
                   onClick={() => {
                     setSessionHistory([]);
-                    localStorage.removeItem(getUserStorageKey('focus_sessions'));
+                    const storageKey = getUserStorageKey('focus_sessions');
+                    if (storageKey) {
+                      localStorage.removeItem(storageKey);
+                    }
                   }}
                   className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
                 >
@@ -1561,9 +1670,15 @@ const FocusMode = () => {
       )}
 
       {/* Main Timer Display */}
-      <div className={`relative z-10 flex-1 flex flex-col items-center px-3 sm:px-6 ${
+      <div className={`relative z-10 flex-1 min-h-0 w-full flex flex-col items-center px-3 sm:px-6 ${
         isFullscreen ? 'justify-center pt-8 sm:pt-16' : 'justify-center'
       }`}>
+
+        {launchTopic?.topicTitle && (
+          <div className={`${isFullscreen ? 'mb-1.5 sm:mb-2' : 'mb-3'} px-3 py-1 rounded-full border border-cyan-400/35 bg-cyan-500/10 text-cyan-200 text-xs sm:text-sm`}>
+            Focus Topic: {launchTopic.topicTitle}
+          </div>
+        )}
 
 
         {/* Mode Indicator - Smaller in fullscreen */}
@@ -1590,12 +1705,12 @@ const FocusMode = () => {
         </div>
 
         {/* Digital Clock Display - Massive in Fullscreen */}
-        <div className={`${isFullscreen ? 'mb-4 sm:mb-8 px-2 sm:px-4' : 'mb-6 sm:mb-12'}`}>
-          <div className="text-center">
+        <div className={`${isFullscreen ? 'mb-4 sm:mb-8 px-2 sm:px-4' : 'mb-6 sm:mb-12'} w-full`}>
+          <div className="text-center max-w-full overflow-hidden">
             <div className={`font-bold text-white leading-none select-none ${
               isFullscreen
-                ? 'text-[6rem] sm:text-[8rem] md:text-[12rem] lg:text-[16rem] xl:text-[20rem] tracking-tight'
-                : 'text-[3rem] sm:text-[4rem] md:text-[6rem] lg:text-[8rem] xl:text-[10rem] tracking-wider'
+                ? 'text-[clamp(3rem,24vw,18rem)] tracking-tight'
+                : 'text-[clamp(2.4rem,18vw,10rem)] tracking-wider'
             }`} style={{ fontFamily: activeTheme.clockFont || activeTheme.fontFamily }}>
               {formatTime(getCurrentTime())}
             </div>
@@ -1614,12 +1729,13 @@ const FocusMode = () => {
         <div className={`flex items-center ${isFullscreen ? 'space-x-3 sm:space-x-4' : 'space-x-3 sm:space-x-6'}`}>
           {!isRunning ? (
             <button
-              onClick={handleStartTimer}
+              onClick={() => handleStartTimer(launchTopic)}
+              data-tour="focus-start-button"
               disabled={timerMode === 'countdown' && timeLeft === 0}
-              className={`flex items-center justify-center rounded-full transition-colors shadow-lg border border-white/20 backdrop-blur-md ${
+              className={`flex items-center justify-center rounded-full transition-colors border border-white/20 ${
                 timerMode === 'countdown' && timeLeft === 0
                   ? 'bg-gray-700/50 text-gray-400 cursor-not-allowed'
-                  : 'bg-sky-300/20 text-sky-100 hover:bg-sky-300/30'
+                  : 'bg-sky-900/55 text-sky-100 border-sky-400/45 shadow-[0_12px_24px_rgba(14,116,144,0.28)] hover:bg-sky-800/60'
               } ${
                 isFullscreen ? 'w-12 h-12 sm:w-14 sm:h-14' : 'w-12 h-12 sm:w-16 sm:h-16'
               }`}
@@ -1629,7 +1745,7 @@ const FocusMode = () => {
           ) : (
             <button
               onClick={handlePauseTimer}
-              className={`flex items-center justify-center rounded-full transition-colors shadow-lg border border-white/20 backdrop-blur-md bg-amber-200/20 text-amber-100 hover:bg-amber-200/30 ${
+              className={`flex items-center justify-center rounded-full transition-colors border border-amber-400/45 bg-amber-900/55 text-amber-100 shadow-[0_12px_24px_rgba(180,83,9,0.28)] hover:bg-amber-800/60 ${
                 isFullscreen ? 'w-12 h-12 sm:w-14 sm:h-14' : 'w-12 h-12 sm:w-16 sm:h-16'
               }`}
             >
@@ -1639,7 +1755,7 @@ const FocusMode = () => {
 
           <button
             onClick={handleStopTimer}
-            className={`flex items-center justify-center rounded-full transition-colors shadow-lg border border-white/20 backdrop-blur-md bg-rose-300/20 text-rose-100 hover:bg-rose-300/30 ${
+            className={`flex items-center justify-center rounded-full transition-colors border border-rose-400/45 bg-rose-900/55 text-rose-100 shadow-[0_12px_24px_rgba(190,24,93,0.26)] hover:bg-rose-800/60 ${
               isFullscreen ? 'w-12 h-12 sm:w-14 sm:h-14' : 'w-12 h-12 sm:w-16 sm:h-16'
             }`}
           >
@@ -1648,12 +1764,12 @@ const FocusMode = () => {
 
           {/* Time Adjustment Control - Single Circle with Split Functionality */}
           <div
-            className={`relative rounded-full transition-colors shadow-lg border border-white/20 backdrop-blur-md ${
+            className={`relative rounded-full transition-colors border border-white/20 ${
               isFullscreen ? 'w-12 h-12 sm:w-14 sm:h-14' : 'w-12 h-12 sm:w-16 sm:h-16'
             } ${
               isRunning || timerMode !== 'countdown'
                 ? 'bg-gray-700/50 cursor-not-allowed opacity-50'
-                : 'bg-violet-300/18 hover:bg-violet-300/28'
+                : 'bg-violet-900/55 border-violet-400/45 shadow-[0_12px_24px_rgba(109,40,217,0.24)] hover:bg-violet-800/60'
             }`}
             title={isRunning || timerMode !== 'countdown' ? 'Time adjustment disabled' : 'Click top: +1 min, Click bottom: -1 min'}
           >

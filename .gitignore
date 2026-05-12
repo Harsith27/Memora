@@ -114,6 +114,15 @@ memora-backend/nul
 
 # Local deployment/build metadata
 memora-frontend/.vercel/
+.vercel/
+
+# Generated deployment artifacts
+backend-deploy-*.zip
+memora-backend/backend-deploy*.zip
+memora-backend/app-logs.zip
 
 # Runtime user-uploaded files
 memora-backend/uploads/
+
+# Local deployment notes with sensitive infra details
+DEPLOYMENT_RUNBOOK.md

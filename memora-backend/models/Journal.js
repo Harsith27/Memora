@@ -13,6 +13,17 @@ const getLocalDateString = (value = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
+const formatDateDDMMYYYY = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+
+  return `${day}/${month}/${year}`;
+};
+
 const journalSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -161,7 +172,7 @@ journalSchema.statics.generateMonthlySummaryText = async function(userId, year, 
   
   const totalWords = entries.reduce((sum, entry) => sum + entry.wordCount, 0);
   const avgWordsPerDay = Math.round(totalWords / entries.length);
-  const monthName = new Date(year, month - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const monthName = formatDateDDMMYYYY(new Date(year, month - 1, 1));
   
   let summary = `# Monthly Summary - ${monthName}\n\n`;
   summary += `## Overview\n`;

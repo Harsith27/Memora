@@ -1,11 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { jsPDF } from 'jspdf';
 import {
-  BarChart3, Brain, Calendar,
-  FileText, BookOpen, PanelLeft, PanelLeftClose,
-  Eye, RotateCcw, GitBranch, TrendingUp,
-  Linkedin, Twitter, Instagram, Globe
+  BarChart3, Calendar,
+  FileText, BookOpen, PanelLeft, PanelLeftClose, ChevronLeft, ChevronRight,
+  Eye, RotateCcw, GitBranch, TrendingUp, Download, Globe, Award, Mic
 } from 'lucide-react';
 import {
   Area,
@@ -14,7 +13,6 @@ import {
   BarChart as RechartsBarChart,
   Cell,
   CartesianGrid,
-  Legend,
   Pie,
   PieChart,
   PolarAngleAxis,
@@ -32,6 +30,10 @@ import Toast from '../components/Toast';
 import apiService from '../services/api';
 import ShadcnSelect from '../components/ShadcnSelect';
 import docTagsService from '../services/docTagsService';
+import taskService from '../services/taskService';
+import DashboardGlyph from '../components/DashboardGlyph';
+import DashboardFooter from '../components/DashboardFooter';
+import { formatDateDDMMYYYY, formatDateWithWeekday } from '../utils/dateFormat';
 
 const ANALYTICS_TOOLTIP_STYLE = {
   backgroundColor: '#000000',
@@ -42,6 +44,117 @@ const ANALYTICS_TOOLTIP_STYLE = {
 
 const ANALYTICS_TOOLTIP_LABEL_STYLE = { color: '#f3f4f6' };
 const ANALYTICS_TOOLTIP_ITEM_STYLE = { color: '#cbd5e1' };
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const FOCUS_SESSION_TIMESTAMP_SKEW_MS = 15 * 60 * 1000;
+const MAX_FOCUS_SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
+const ISO_DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_ALL_TIME_RENDER_DAYS = 3650;
+
+const toLocalDateKey = (value = new Date()) => {
+  if (value === null || value === undefined) return '';
+
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    if (!normalized) return '';
+    if (ISO_DATE_KEY_PATTERN.test(normalized)) return normalized;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toComparableTimestamp = (value) => {
+  if (value === null || value === undefined) return Number.NaN;
+
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    if (!normalized) return Number.NaN;
+    if (ISO_DATE_KEY_PATTERN.test(normalized)) {
+      const [year, month, day] = normalized.split('-').map(Number);
+      return new Date(year, month - 1, day, 12, 0, 0, 0).getTime();
+    }
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  const time = date.getTime();
+  return Number.isNaN(time) ? Number.NaN : time;
+};
+
+const parseFocusSessionTimestamp = (...values) => {
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+
+    const numericValue = Number(value);
+    if (Number.isFinite(numericValue) && numericValue > 0) {
+      return numericValue;
+    }
+
+    const parsed = new Date(value).getTime();
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+
+  return Number.NaN;
+};
+
+const parseAccountCreatedTimestamp = (user) => {
+  const explicitTimestamp = parseFocusSessionTimestamp(
+    user?.createdAt,
+    user?.created_at,
+    user?.profile?.createdAt,
+    user?.profile?.created_at
+  );
+
+  if (Number.isFinite(explicitTimestamp)) {
+    return explicitTimestamp;
+  }
+
+  const idCandidates = [user?.id, user?._id, user?.userId];
+  for (const candidate of idCandidates) {
+    const idValue = String(candidate || '').trim();
+    if (!/^[a-f\d]{24}$/i.test(idValue)) continue;
+
+    const seconds = Number.parseInt(idValue.slice(0, 8), 16);
+    if (!Number.isFinite(seconds) || seconds <= 0) continue;
+
+    return seconds * 1000;
+  }
+
+  return Number.NaN;
+};
+
+const normalizeMemScoreValue = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  if (numeric > 10 && numeric <= 100) return numeric / 10;
+  return Math.max(0, Math.min(10, numeric));
+};
+
+const resolveRangeDays = (range) => {
+  if (range === '7d') return 7;
+  if (range === '14d') return 14;
+  if (range === '28d') return 28;
+  if (range === '30d') return 30;
+  if (range === '90d') return 90;
+  if (range === 'all') return Number.POSITIVE_INFINITY;
+  return 30;
+};
+
+const getRangeLabel = (range) => {
+  if (range === '7d') return 'Last 7 days';
+  if (range === '14d') return 'Last 14 days';
+  if (range === '28d') return 'Last 28 days';
+  if (range === '30d') return 'Last 30 days';
+  if (range === '90d') return 'Last 90 days';
+  if (range === 'all') return 'All time';
+  return 'Last 30 days';
+};
 
 const AreaTrendChart = ({ data = [], series = [], height = 220 }) => {
   if (!Array.isArray(data) || data.length === 0 || series.length === 0) {
@@ -156,47 +269,61 @@ const AreaTrendChart = ({ data = [], series = [], height = 220 }) => {
 };
 
 const formatShortDate = (value) => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return formatDateDDMMYYYY(value);
 };
 
 const InteractiveActivityAreaChart = ({ data = [] }) => {
+  const activityLegend = [
+    { key: 'topicsRevised', label: 'Topics Revised', color: '#93c5fd' },
+    { key: 'focusSessions', label: 'Focus Sessions', color: '#3b82f6' },
+    { key: 'tasksCompleted', label: 'Tasks Completed', color: '#22d3ee' },
+    { key: 'mindmaps', label: 'Mindmaps', color: '#1d4ed8' },
+    { key: 'resourcesCreated', label: 'Resources Created', color: '#0ea5e9' }
+  ];
+
   if (!Array.isArray(data) || data.length === 0) {
     return (
       <div className="rounded-xl border border-white/20 bg-black p-6">
         <div className="h-72 rounded-lg border border-white/10 bg-white/[0.02] flex items-center justify-center">
-          <p className="text-sm text-gray-500">No activity data available</p>
+          <p className="text-sm text-gray-500">No activity intelligence data available</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-white/20 bg-black overflow-hidden">
+    <div data-tour="analytics-activity-intelligence" className="rounded-xl border border-white/20 bg-black overflow-hidden">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 border-b border-white/10 px-5 py-5">
         <div className="grid flex-1 gap-1">
           <h3 className="text-2xl font-semibold text-white">Activity Intelligence</h3>
-          <p className="text-sm text-gray-400">Revisions, focus minutes, and topics added over time</p>
+          <p className="text-sm text-gray-400">Topics revised, focus sessions, tasks completed, mindmaps, and resources created</p>
         </div>
       </div>
 
-      <div className="px-2 sm:px-4 pt-4 pb-3">
+      <div className="px-2 sm:px-4 pt-4 pb-2">
         <div className="h-[320px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <RechartsAreaChart data={data} margin={{ top: 10, right: 18, left: 6, bottom: 8 }}>
               <defs>
-                <linearGradient id="fillRevisions" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#93c5fd" stopOpacity={0.58} />
-                  <stop offset="95%" stopColor="#93c5fd" stopOpacity={0.06} />
+                <linearGradient id="fillTopicsRevised" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#93c5fd" stopOpacity={0.36} />
+                  <stop offset="95%" stopColor="#93c5fd" stopOpacity={0.03} />
                 </linearGradient>
-                <linearGradient id="fillFocusMinutes" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.52} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.05} />
+                <linearGradient id="fillFocusSessions" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.34} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.03} />
                 </linearGradient>
-                <linearGradient id="fillTopicsAdded" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#1d4ed8" stopOpacity={0.48} />
-                  <stop offset="95%" stopColor="#1d4ed8" stopOpacity={0.04} />
+                <linearGradient id="fillTasksCompleted" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.34} />
+                  <stop offset="95%" stopColor="#22d3ee" stopOpacity={0.03} />
+                </linearGradient>
+                <linearGradient id="fillMindmaps" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#1d4ed8" stopOpacity={0.32} />
+                  <stop offset="95%" stopColor="#1d4ed8" stopOpacity={0.03} />
+                </linearGradient>
+                <linearGradient id="fillResourcesCreated" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.34} />
+                  <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.03} />
                 </linearGradient>
               </defs>
 
@@ -214,6 +341,8 @@ const InteractiveActivityAreaChart = ({ data = [] }) => {
                 tickLine={false}
                 axisLine={false}
                 width={36}
+                domain={[0, 10]}
+                ticks={[0, 2, 4, 6, 8, 10]}
                 tick={{ fill: 'rgba(148,163,184,0.72)', fontSize: 11 }}
               />
               <Tooltip
@@ -221,23 +350,37 @@ const InteractiveActivityAreaChart = ({ data = [] }) => {
                 labelStyle={ANALYTICS_TOOLTIP_LABEL_STYLE}
                 itemStyle={ANALYTICS_TOOLTIP_ITEM_STYLE}
                 labelFormatter={(value) => formatShortDate(value)}
-                formatter={(value, name) => {
-                  if (name === 'Focus Minutes') return [`${value} min`, name];
-                  return [value, name];
+                formatter={(value, name, item) => {
+                  const payload = item?.payload || {};
+                  const countMap = {
+                    'Topics Revised': payload.topicsRevisedCount,
+                    'Focus Sessions': payload.focusSessionsCount,
+                    'Tasks Completed': payload.tasksCompletedCount,
+                    Mindmaps: payload.mindmapsCount,
+                    'Resources Created': payload.resourcesCreatedCount
+                  };
+                  const count = Number(countMap[name] || 0);
+                  return [`Count ${count.toLocaleString()}`, name];
                 }}
               />
-
-              <Area type="natural" dataKey="topicsAdded" name="Topics Added" stroke="#1d4ed8" fill="url(#fillTopicsAdded)" strokeWidth={2} stackId="activity" />
-              <Area type="natural" dataKey="focusMinutes" name="Focus Minutes" stroke="#3b82f6" fill="url(#fillFocusMinutes)" strokeWidth={2} stackId="activity" />
-              <Area type="natural" dataKey="revisions" name="Revisions" stroke="#93c5fd" fill="url(#fillRevisions)" strokeWidth={2} stackId="activity" />
-
-              <Legend
-                verticalAlign="bottom"
-                iconType="circle"
-                wrapperStyle={{ paddingTop: 10, color: '#cbd5e1', fontSize: 12 }}
-              />
+              <Area type="monotone" dataKey="resourcesCreated" name="Resources Created" stroke="#0ea5e9" fill="url(#fillResourcesCreated)" strokeWidth={2} />
+              <Area type="monotone" dataKey="mindmaps" name="Mindmaps" stroke="#1d4ed8" fill="url(#fillMindmaps)" strokeWidth={2} />
+              <Area type="monotone" dataKey="tasksCompleted" name="Tasks Completed" stroke="#22d3ee" fill="url(#fillTasksCompleted)" strokeWidth={2} />
+              <Area type="monotone" dataKey="focusSessions" name="Focus Sessions" stroke="#3b82f6" fill="url(#fillFocusSessions)" strokeWidth={2} />
+              <Area type="monotone" dataKey="topicsRevised" name="Topics Revised" stroke="#93c5fd" fill="url(#fillTopicsRevised)" strokeWidth={2} />
             </RechartsAreaChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="px-5 pb-5">
+        <div className="flex items-center gap-x-5 gap-y-2 overflow-x-auto sm:flex-nowrap sm:justify-end flex-wrap">
+          {activityLegend.map((item) => (
+            <div key={`activity-legend-${item.key}`} className="flex items-center gap-2 whitespace-nowrap text-xs text-gray-300">
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: item.color }} />
+              <span>{item.label}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -325,18 +468,21 @@ const DifficultyLongBarChart = ({ data = [] }) => {
 
 const ResourceDistributionPieCard = ({ data = [] }) => {
   const chartData = Array.isArray(data)
-    ? data.filter((item) => Number(item?.value || 0) > 0)
+    ? data.map((item) => ({
+      ...item,
+      value: Math.max(0, Number(item?.value || 0))
+    }))
     : [];
 
-  if (chartData.length === 0) {
-    return (
-      <div className="rounded-xl border border-white/20 bg-black p-6">
-        <div className="h-[280px] rounded-lg border border-white/10 bg-white/[0.02] flex items-center justify-center">
-          <p className="text-sm text-gray-500">No resource data available</p>
-        </div>
-      </div>
-    );
-  }
+  const hasAnyData = chartData.some((item) => item.value > 0);
+  const pieData = hasAnyData
+    ? chartData
+    : chartData.map((item) => ({
+      ...item,
+      value: 1,
+      actualValue: 0,
+      isPlaceholder: true
+    }));
 
   return (
     <div className="rounded-xl border border-white/20 bg-black p-6">
@@ -352,29 +498,37 @@ const ResourceDistributionPieCard = ({ data = [] }) => {
               contentStyle={ANALYTICS_TOOLTIP_STYLE}
               labelStyle={ANALYTICS_TOOLTIP_LABEL_STYLE}
               itemStyle={ANALYTICS_TOOLTIP_ITEM_STYLE}
-              formatter={(value) => [Number(value || 0).toLocaleString(), 'Count']}
+              formatter={(value, _name, context) => {
+                const actualValue = Number(context?.payload?.actualValue ?? value ?? 0);
+                return [actualValue.toLocaleString(), 'Count'];
+              }}
             />
             <Pie
-              data={chartData}
+              data={pieData}
               dataKey="value"
               nameKey="label"
               cx="50%"
               cy="50%"
               outerRadius={110}
+              stroke="none"
               labelLine={{ stroke: 'rgba(148,163,184,0.7)', strokeWidth: 1 }}
-              label={({ x, y, value }) => (
+              label={({ x, y, value, payload }) => (
                 <text x={x} y={y} fill="#f8fafc" fontSize={14} textAnchor="middle" dominantBaseline="central">
-                  {Number(value || 0).toLocaleString()}
+                  {Number(payload?.actualValue ?? value ?? 0).toLocaleString()}
                 </text>
               )}
             >
-              {chartData.map((entry) => (
-                <Cell key={entry.key} fill={entry.color} />
+              {pieData.map((entry) => (
+                <Cell key={entry.key} fill={entry.color} stroke="none" />
               ))}
             </Pie>
           </PieChart>
         </ResponsiveContainer>
       </div>
+
+      {!hasAnyData && (
+        <p className="mb-2 text-xs text-gray-500">All resource counts are currently zero for this range.</p>
+      )}
 
       <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
         {chartData.map((entry) => (
@@ -391,7 +545,7 @@ const ResourceDistributionPieCard = ({ data = [] }) => {
   );
 };
 
-const HealthActionRadarCard = ({ data = [], rangeLabel = '' }) => {
+const HealthActionRadarCard = ({ data = [] }) => {
   const topFactor = [...data].sort((a, b) => b.score - a.score)[0];
 
   if (!Array.isArray(data) || data.length === 0) {
@@ -407,8 +561,8 @@ const HealthActionRadarCard = ({ data = [], rangeLabel = '' }) => {
   return (
     <div className="rounded-xl border border-white/20 bg-black p-6">
       <div className="text-center mb-4">
-        <h3 className="text-lg font-semibold text-white">Radar Chart - Dots</h3>
-        <p className="text-sm text-gray-400 mt-1">Action profile for learning health factors</p>
+        <h3 className="text-lg font-semibold text-white">Learning Health Signals</h3>
+        <p className="text-sm text-gray-400 mt-1">Relative signal strength across your learning actions</p>
       </div>
 
       <div className="h-[300px] w-full">
@@ -450,9 +604,6 @@ const HealthActionRadarCard = ({ data = [], rangeLabel = '' }) => {
           <span>Strongest signal: {topFactor?.label || 'N/A'} ({topFactor?.score?.toFixed(1) || '0.0'}%)</span>
           <TrendingUp className="h-4 w-4 text-blue-300" />
         </div>
-        <div className="leading-none text-gray-400 mt-3 text-sm">
-          {rangeLabel || 'Current window'}
-        </div>
       </div>
     </div>
   );
@@ -462,13 +613,17 @@ const ConsistencyInteractiveBarCard = ({
   data = [],
   activeMetric = 'minutes',
   onMetricChange,
-  range = '28d',
+  range = 'global',
+  globalRange = '30d',
   onRangeChange,
   currentStreak = 0,
   totalTopics = 0
 }) => {
-  const rangeDays = range === '7d' ? 7 : range === '14d' ? 14 : 28;
-  const chartData = data.slice(-rangeDays);
+  const effectiveRange = range === 'global' ? globalRange : range;
+  const effectiveRangeDays = resolveRangeDays(effectiveRange);
+  const chartData = Number.isFinite(effectiveRangeDays)
+    ? data.slice(-effectiveRangeDays)
+    : data;
 
   const totals = {
     minutes: chartData.reduce((sum, day) => sum + Number(day.minutes || 0), 0),
@@ -478,9 +633,13 @@ const ConsistencyInteractiveBarCard = ({
   const activeDays = chartData.filter((day) => Number(day.minutes || 0) > 0 || Number(day.reviews || 0) > 0).length;
 
   const rangeOptions = [
+    { value: 'global', label: `Global filter (${getRangeLabel(globalRange)})` },
+    { value: '90d', label: 'Last 90 days' },
+    { value: '30d', label: 'Last 30 days' },
     { value: '28d', label: 'Last 28 days' },
     { value: '14d', label: 'Last 14 days' },
-    { value: '7d', label: 'Last 7 days' }
+    { value: '7d', label: 'Last 7 days' },
+    { value: 'all', label: 'All time' }
   ];
 
   if (!Array.isArray(data) || data.length === 0) {
@@ -497,14 +656,19 @@ const ConsistencyInteractiveBarCard = ({
     <div className="rounded-xl border border-white/20 bg-black overflow-hidden">
       <div className="flex flex-col md:flex-row md:items-stretch border-b border-white/10">
         <div className="flex-1 px-6 pt-5 pb-4">
-          <h3 className="text-lg font-semibold text-white">Bar Chart - Interactive</h3>
-          <p className="text-sm text-gray-400 mt-1">Focus and review cadence for the selected period</p>
+          <h3 className="text-lg font-semibold text-white">Focus Mode - Sessions</h3>
+          <p className="text-sm text-gray-400 mt-1">Session and review cadence for the selected period</p>
+          {range === 'global' ? (
+            <p className="text-[11px] text-gray-500 mt-1">Using global filter: {getRangeLabel(globalRange)}</p>
+          ) : (
+            <p className="text-[11px] text-gray-500 mt-1">Card override: {getRangeLabel(range)}</p>
+          )}
           <div className="mt-3">
             <ShadcnSelect
               value={range}
               onChange={onRangeChange}
               options={rangeOptions}
-              className="w-44"
+              className="w-56"
             />
           </div>
         </div>
@@ -543,8 +707,7 @@ const ConsistencyInteractiveBarCard = ({
                 minTickGap={24}
                 tick={{ fill: 'rgba(148,163,184,0.86)', fontSize: 12 }}
                 tickFormatter={(value) => {
-                  const date = new Date(value);
-                  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                  return formatShortDate(value);
                 }}
               />
               <Tooltip
@@ -553,8 +716,7 @@ const ConsistencyInteractiveBarCard = ({
                 labelStyle={ANALYTICS_TOOLTIP_LABEL_STYLE}
                 itemStyle={ANALYTICS_TOOLTIP_ITEM_STYLE}
                 labelFormatter={(value) => {
-                  const date = new Date(value);
-                  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                  return formatDateDDMMYYYY(value);
                 }}
                 formatter={(value) => {
                   if (activeMetric === 'minutes') return [`${value} min`, 'Focus Minutes'];
@@ -595,6 +757,16 @@ const Analytics = () => {
     const saved = localStorage.getItem('sidebarCollapsed');
     return saved ? JSON.parse(saved) : false;
   });
+  const [isDesktopViewport, setIsDesktopViewport] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth >= 1024;
+  });
+  const [isPhoneViewport, setIsPhoneViewport] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 640;
+  });
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const isSidebarCollapsed = isDesktopViewport && sidebarCollapsed;
 
   // Analytics data state
   const [analyticsData, setAnalyticsData] = useState({
@@ -618,35 +790,103 @@ const Analytics = () => {
     rawTopics: [],
     rawDueTopics: [],
     rawUpcomingTopics: [],
+    rawRevisionStats: [],
     rawFocusSessions: [],
+    rawTasks: [],
     rawDocTags: [],
+    rawMindmaps: [],
     mindmapCount: 0
   });
 
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [timeRange, setTimeRange] = useState('7d'); // 7d, 30d, 90d, all
-  const [consistencyBarRange, setConsistencyBarRange] = useState('28d');
+  const [consistencyBarRange, setConsistencyBarRange] = useState('global');
   const [consistencyBarMetric, setConsistencyBarMetric] = useState('minutes');
-  const userStorageKey = user?.id || user?._id || user?.email || 'guest';
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportPreviewText, setReportPreviewText] = useState('');
+  const userStorageKey = (() => {
+    const candidates = [user?.id, user?._id, user?.email, user?.username];
+    for (const candidate of candidates) {
+      const normalized = String(candidate || '').trim();
+      if (!normalized || normalized === 'undefined' || normalized === 'null') continue;
+      return normalized;
+    }
+    return null;
+  })();
+
+  const accountCreatedAtMs = useMemo(() => {
+    return parseAccountCreatedTimestamp(user);
+  }, [user]);
+
+  const accountAgeDays = useMemo(() => {
+    if (!Number.isFinite(accountCreatedAtMs)) return 3650;
+    const elapsedMs = Math.max(0, Date.now() - accountCreatedAtMs);
+    return Math.max(1, Math.ceil(elapsedMs / (24 * 60 * 60 * 1000)) + 1);
+  }, [accountCreatedAtMs]);
 
   const getRangeDays = () => {
     if (timeRange === '7d') return 7;
     if (timeRange === '30d') return 30;
     if (timeRange === '90d') return 90;
-    return 3650; // "all" fallback
+    return accountAgeDays; // "all" starts from account creation
+  };
+
+  const sanitizeFocusSessions = (sessions = []) => {
+    if (!Array.isArray(sessions)) return [];
+
+    const now = Date.now();
+    const minAllowedMs = Number.isFinite(accountCreatedAtMs)
+      ? accountCreatedAtMs - FOCUS_SESSION_TIMESTAMP_SKEW_MS
+      : Number.NEGATIVE_INFINITY;
+    const maxAllowedMs = now + FOCUS_SESSION_TIMESTAMP_SKEW_MS;
+
+    return sessions.filter((session) => {
+      if (!session || typeof session !== 'object') return false;
+
+      const timeReferenceMs = parseFocusSessionTimestamp(
+        session.endTime,
+        session.date,
+        session.startTime
+      );
+
+      if (!Number.isFinite(timeReferenceMs)) return false;
+      if (timeReferenceMs < minAllowedMs || timeReferenceMs > maxAllowedMs) return false;
+
+      const durationMs = Number(session.duration);
+      if (Number.isFinite(durationMs)) {
+        if (durationMs < 0 || durationMs > MAX_FOCUS_SESSION_DURATION_MS) return false;
+      }
+
+      if (session.mode && !['countdown', 'stopwatch'].includes(session.mode)) return false;
+      if (session.events && !Array.isArray(session.events)) return false;
+
+      return true;
+    });
   };
 
   const getFocusSessions = () => {
-    // Primary key after user-scoped migration.
-    const scoped = JSON.parse(localStorage.getItem(`focus_sessions_${userStorageKey}`) || '[]');
-    if (Array.isArray(scoped) && scoped.length > 0) return scoped;
+    if (!userStorageKey) return [];
 
-    // Legacy fallback for older data.
-    const legacy = JSON.parse(localStorage.getItem('focus_sessions_harsith') || '[]');
-    if (Array.isArray(legacy)) return legacy;
+    const storageKey = `focus_sessions_${userStorageKey}`;
 
-    return [];
+    try {
+      // Primary key after user-scoped migration.
+      const scoped = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      if (!Array.isArray(scoped)) {
+        localStorage.removeItem(storageKey);
+        return [];
+      }
+
+      const sanitized = sanitizeFocusSessions(scoped);
+      if (sanitized.length !== scoped.length) {
+        localStorage.setItem(storageKey, JSON.stringify(sanitized));
+      }
+      return sanitized;
+    } catch {
+      localStorage.removeItem(storageKey);
+      return [];
+    }
   };
 
   const getReviewTimestamp = (topic) => {
@@ -667,20 +907,56 @@ const Analytics = () => {
 
   // Sidebar navigation items
   const sidebarItems = [
-    { icon: Brain, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
+    { icon: DashboardGlyph, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
     { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
     { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
     { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
+    { icon: Mic, label: "Listener", active: location.pathname === "/listener", path: "/listener" },
     { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
-    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" }
+    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
+    { icon: Award, label: "Achievements", active: location.pathname === "/achievements", path: "/achievements" }
   ];
 
   // Quick actions for Analytics
   const quickActions = [
-    { icon: Eye, label: "View Report", action: () => generateReport(), primary: true },
+    { icon: Eye, label: "View Report", action: () => openReportPreview(), primary: true },
     { icon: RotateCcw, label: "Refresh Data", action: () => loadAnalyticsData(), primary: false }
   ];
+
+  useEffect(() => {
+    if (!isReportModalOpen) return undefined;
+
+    const handleEscape = (event) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      setIsReportModalOpen(false);
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isReportModalOpen]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsDesktopViewport(window.innerWidth >= 1024);
+      setIsPhoneViewport(window.innerWidth < 640);
+    };
+
+    window.addEventListener('resize', handleResize);
+    handleResize();
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isDesktopViewport) {
+      setIsMobileSidebarOpen(false);
+    }
+  }, [isDesktopViewport]);
 
   // Helper functions
   const showToast = (message, type = 'success') => {
@@ -701,6 +977,52 @@ const Analytics = () => {
     }
   }, [user, timeRange]);
 
+  const fetchAllTopicsForAnalytics = async () => {
+    const limitPerPage = 200;
+    let page = 1;
+    let totalPages = 1;
+    const mergedTopics = [];
+
+    while (page <= totalPages && page <= 100) {
+      const response = await apiService.getTopics({ page, limit: limitPerPage });
+      if (!response?.success) {
+        break;
+      }
+
+      const batch = Array.isArray(response.topics) ? response.topics : [];
+      mergedTopics.push(...batch);
+
+      const apiPages = Number(response?.pagination?.pages);
+      if (Number.isFinite(apiPages) && apiPages > 0) {
+        totalPages = apiPages;
+      } else if (batch.length < limitPerPage) {
+        totalPages = page;
+      } else {
+        totalPages = page + 1;
+      }
+
+      page += 1;
+    }
+
+    const seen = new Set();
+    const deduped = [];
+
+    mergedTopics.forEach((topic, index) => {
+      const key = topic?._id
+        ? String(topic._id)
+        : `${topic?.title || 'topic'}-${topic?.createdAt || ''}-${index}`;
+
+      if (seen.has(key)) return;
+      seen.add(key);
+      deduped.push(topic);
+    });
+
+    return {
+      success: true,
+      topics: deduped
+    };
+  };
+
   const loadAnalyticsData = async () => {
     setLoading(true);
     try {
@@ -710,9 +1032,10 @@ const Analytics = () => {
       let upcomingResponse = { success: false, topics: [] };
       let memScoreResponse = { success: false, data: [] };
       let docTagsResponse = { success: false, docTags: [] };
+      let revisionStatsResponse = { success: false, stats: [] };
 
       try {
-        topicsResponse = await apiService.getTopics();
+        topicsResponse = await fetchAllTopicsForAnalytics();
       } catch (error) {
         console.warn('Failed to load topics:', error);
       }
@@ -740,7 +1063,7 @@ const Analytics = () => {
             memScoreResponse = {
               success: true,
               data: [{
-                date: new Date().toISOString().split('T')[0],
+                date: toLocalDateKey(new Date()),
                 score: currentMemScore.memScore,
                 label: 'Today'
               }]
@@ -757,24 +1080,38 @@ const Analytics = () => {
         console.warn('Failed to load DocTags:', error);
       }
 
+      try {
+        revisionStatsResponse = await apiService.getRevisionDailyStats(Math.max(getRangeDays(), 120));
+      } catch (error) {
+        console.warn('Failed to load revision stats:', error);
+      }
+
       // Process overview data with safe defaults
       const totalTopics = (topicsResponse.success && topicsResponse.topics) ? topicsResponse.topics.length : 0;
       const dueToday = (dueTopicsResponse.success && dueTopicsResponse.topics) ? dueTopicsResponse.topics.length : 0;
       const upcomingTopics = (upcomingResponse.success && upcomingResponse.topics) ? upcomingResponse.topics : [];
       const allDocTags = Array.isArray(docTagsResponse?.docTags) ? docTagsResponse.docTags : [];
+      const allTasks = userStorageKey ? taskService.getTasks(userStorageKey) : [];
 
       let mindmapCount = 0;
+      let savedMindmaps = [];
       try {
-        const savedMindmaps = JSON.parse(localStorage.getItem(`memora_mindmaps_${userStorageKey}`) || '[]');
+        savedMindmaps = userStorageKey
+          ? JSON.parse(localStorage.getItem(`memora_mindmaps_${userStorageKey}`) || '[]')
+          : [];
         mindmapCount = Array.isArray(savedMindmaps) ? savedMindmaps.length : 0;
       } catch (error) {
         console.warn('Failed to parse saved mindmaps:', error);
+        savedMindmaps = [];
       }
 
       // Calculate study streak and other metrics
       const studyStreak = calculateStudyStreak();
       const totalStudyTime = calculateTotalStudyTime(getRangeDays());
-      const averageMemScore = calculateAverageMemScore(memScoreResponse.data || []);
+      const averageMemScore = calculateAverageMemScore(
+        memScoreResponse.data || [],
+        (topicsResponse.success && topicsResponse.topics) ? topicsResponse.topics : []
+      );
       const completionRate = calculateCompletionRate((topicsResponse.success && topicsResponse.topics) ? topicsResponse.topics : []);
 
       // Process topic performance data
@@ -790,7 +1127,7 @@ const Analytics = () => {
       if (memScoreHistory.length === 0 && averageMemScore > 0) {
         // Create a single data point for today if we have a current score
         memScoreHistory = [{
-          date: new Date().toISOString().split('T')[0],
+          date: toLocalDateKey(new Date()),
           score: averageMemScore,
           label: 'Current'
         }];
@@ -813,8 +1150,11 @@ const Analytics = () => {
         rawTopics: (topicsResponse.success && topicsResponse.topics) ? topicsResponse.topics : [],
         rawDueTopics: (dueTopicsResponse.success && dueTopicsResponse.topics) ? dueTopicsResponse.topics : [],
         rawUpcomingTopics: (upcomingResponse.success && upcomingResponse.topics) ? upcomingResponse.topics : [],
+        rawRevisionStats: (revisionStatsResponse.success && Array.isArray(revisionStatsResponse.stats)) ? revisionStatsResponse.stats : [],
         rawFocusSessions: getFocusSessions(),
+        rawTasks: Array.isArray(allTasks) ? allTasks : [],
         rawDocTags: allDocTags,
+        rawMindmaps: Array.isArray(savedMindmaps) ? savedMindmaps : [],
         mindmapCount
       });
 
@@ -830,7 +1170,7 @@ const Analytics = () => {
   const calculateStudyStreak = () => {
     try {
       // Get study streak from localStorage or calculate from session history
-      const streak = localStorage.getItem(`study_streak_${userStorageKey}`);
+      const streak = userStorageKey ? localStorage.getItem(`study_streak_${userStorageKey}`) : null;
       if (streak) return parseInt(streak) || 0;
       return user?.currentStreak || 0;
     } catch (error) {
@@ -862,10 +1202,23 @@ const Analytics = () => {
     }
   };
 
-  const calculateAverageMemScore = (memScoreData) => {
-    if (!memScoreData.length) return 0;
-    const sum = memScoreData.reduce((total, entry) => total + entry.score, 0);
-    return sum / memScoreData.length;
+  const calculateAverageMemScore = (memScoreData = [], topics = []) => {
+    const topicScores = (Array.isArray(topics) ? topics : [])
+      .map((topic) => normalizeMemScoreValue(topic?.memScore))
+      .filter((score) => score > 0);
+
+    if (topicScores.length > 0) {
+      const sum = topicScores.reduce((total, score) => total + score, 0);
+      return sum / topicScores.length;
+    }
+
+    const historyScores = (Array.isArray(memScoreData) ? memScoreData : [])
+      .map((entry) => normalizeMemScoreValue(entry?.score))
+      .filter((score) => score > 0);
+
+    if (historyScores.length === 0) return 0;
+    const sum = historyScores.reduce((total, score) => total + score, 0);
+    return sum / historyScores.length;
   };
 
   const calculateCompletionRate = (topics) => {
@@ -887,7 +1240,7 @@ const Analytics = () => {
         successRate: getSuccessRatePercent(topic),
         lastReviewed: getReviewTimestamp(topic),
         nextReview: topic.nextReviewDate,
-        memScore: topic.memScore || 0
+        memScore: normalizeMemScoreValue(topic.memScore)
       }))
       .sort((a, b) => b.reviewCount - a.reviewCount)
       .slice(0, 10);
@@ -954,7 +1307,7 @@ const Analytics = () => {
     for (let i = 6; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(today.getDate() - i);
-      const dateStr = date.toISOString().split('T')[0];
+      const dateStr = toLocalDateKey(date);
 
       const daySessions = sessions.filter(session =>
         session && session.date && session.date.startsWith(dateStr)
@@ -966,7 +1319,7 @@ const Analytics = () => {
 
       last7Days.push({
         date: dateStr,
-        day: date.toLocaleDateString('en-US', { weekday: 'short' }),
+        day: WEEKDAY_SHORT[date.getDay()],
         minutes: Math.round(totalMinutes / 60000), // Convert ms to minutes
         sessions: daySessions.length || 0
       });
@@ -1040,107 +1393,485 @@ const Analytics = () => {
     return colors[difficulty] || 'text-gray-400';
   };
 
+  const getReportPreviewText = () => {
+    const selectedRangeLabel = {
+      '7d': 'Last 7 days',
+      '30d': 'Last 30 days',
+      '90d': 'Last 90 days',
+      all: 'All time'
+    }[timeRange] || 'Custom';
+
+    const generatedAt = new Date().toLocaleString('en-GB', {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    const topTopics = (analyticsData.topicPerformance || []).slice(0, 5);
+    const totalMindmapsInRange = interactiveAreaData.reduce((sum, row) => sum + Number(row.mindmapsCount || 0), 0);
+    const totalResourcesInRange = interactiveAreaData.reduce((sum, row) => sum + Number(row.resourcesCreatedCount || 0), 0);
+    const totalFocusSessionsInRange = interactiveAreaData.reduce((sum, row) => sum + Number(row.focusSessionsCount || 0), 0);
+    const totalTasksCompletedInRange = interactiveAreaData.reduce((sum, row) => sum + Number(row.tasksCompletedCount || 0), 0);
+    const consistencyMinutesTotal = consistencyData.reduce((sum, day) => sum + Number(day.minutes || 0), 0);
+    const consistencyReviewsTotal = consistencyData.reduce((sum, day) => sum + Number(day.reviews || 0), 0);
+    const rankedFactors = [...healthRadarData].sort((a, b) => b.count - a.count);
+    const memScoreTrendStart = retentionAreaData.length > 0 ? Number(retentionAreaData[0].score || 0) : 0;
+    const memScoreTrendEnd = retentionAreaData.length > 0 ? Number(retentionAreaData[retentionAreaData.length - 1].score || 0) : 0;
+    const memScoreDelta = memScoreTrendEnd - memScoreTrendStart;
+
+    const lines = [
+      'MEMORA ANALYTICS REPORT',
+      `Generated: ${generatedAt}`,
+      `Time Range: ${selectedRangeLabel}`,
+      '',
+      'OVERVIEW',
+      `- Total Topics: ${analyticsData.overview.totalTopics || 0}`,
+      `- Current Streak: ${analyticsData.overview.currentStreak || 0} days`,
+      `- Completion Rate: ${Number(analyticsData.overview.completionRate || 0).toFixed(1)}%`,
+      `- Average MemScore: ${Number(analyticsData.overview.averageMemScore || 0).toFixed(2)} / 10`,
+      `- Total Study Time: ${formatMinutes((Number(analyticsData.overview.totalStudyTime || 0) / 60000))}`,
+      '',
+      'SUMMARY CARDS',
+      `- Revisions (${activityChartRangeLabel}): ${activityChartSummary.revisions}`,
+      `- Focus Time (${activityChartRangeLabel}): ${formatMinutes(activityChartSummary.focusMinutes)}`,
+      `- Topics Added (${activityChartRangeLabel}): ${activityChartSummary.topicsAdded}`,
+      '',
+      'ACTIVITY INTELLIGENCE',
+      `- Focus Sessions (${activityChartRangeLabel}): ${totalFocusSessionsInRange}`,
+      `- Tasks Completed (${activityChartRangeLabel}): ${totalTasksCompletedInRange}`,
+      `- Mindmaps (${activityChartRangeLabel}): ${totalMindmapsInRange}`,
+      `- Resources Created (${activityChartRangeLabel}): ${totalResourcesInRange}`,
+      `- Active Focus Days: ${activeFocusDays}`,
+      `- Avg Session Length: ${avgFocusSessionMinutes} min`,
+      '',
+      'FOCUS MODE - SESSIONS',
+      `- Consistency Active Days: ${consistencyActiveDays}/${consistencyData.length}`,
+      `- Total Focus Minutes: ${consistencyMinutesTotal}`,
+      `- Total Reviews: ${consistencyReviewsTotal}`,
+      '',
+      'MEMSCORE TREND',
+      `- Start Score: ${memScoreTrendStart.toFixed(2)} / 10`,
+      `- Latest Score: ${memScoreTrendEnd.toFixed(2)} / 10`,
+      `- Delta: ${memScoreDelta >= 0 ? '+' : ''}${memScoreDelta.toFixed(2)}`,
+      '',
+      'DIFFICULTY DISTRIBUTION',
+      ...difficultyMixData.map((item) => `- ${item.label}: ${item.count} topic(s) (${Number(item.percentage || 0).toFixed(1)}%)`),
+      '',
+      'RESOURCE DISTRIBUTION',
+      ...resourceDistributionData.map((item) => `- ${item.label}: ${Number(item.value || 0).toLocaleString()}`),
+      '',
+      'LEARNING HEALTH SIGNALS',
+      ...rankedFactors.map((factor) => `- ${factor.label}: count ${factor.count}, normalized score ${factor.score}%`),
+      '',
+      'TOP REVIEWED TOPICS (TOP 5)'
+    ];
+
+    if (topTopics.length > 0) {
+      lines.push('');
+      topTopics.forEach((topic, index) => {
+        lines.push(
+          `${index + 1}. ${topic.title || 'Untitled'} | Reviews: ${topic.reviewCount || 0} | Success: ${Number(topic.successRate || 0).toFixed(1)}% | Difficulty: ${getDifficultyLabel(Number(topic.difficulty || 0))} | MemScore: ${Number(topic.memScore || 0).toFixed(2)}`
+        );
+      });
+    } else {
+      lines.push('- No topic review data available.');
+    }
+
+    return lines.join('\n');
+  };
+
+  const openReportPreview = () => {
+    setReportPreviewText(getReportPreviewText());
+    setIsReportModalOpen(true);
+  };
+
+  useEffect(() => {
+    if (!isReportModalOpen) return;
+
+    if (loading) {
+      setReportPreviewText('Loading report data...');
+      return;
+    }
+
+    setReportPreviewText(getReportPreviewText());
+  }, [
+    isReportModalOpen,
+    loading,
+    analyticsData,
+    timeRange,
+    consistencyBarRange,
+    consistencyBarMetric
+  ]);
+
   const generateReport = () => {
-    showToast('📊 Analytics report generated!', 'success');
-    // In a real app, this would generate and download a PDF report
+    try {
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 40;
+      const lineHeight = 15;
+      let y = margin;
+
+      const ensureSpace = (lines = 1) => {
+        if (y + lines * lineHeight > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+      };
+
+      const writeText = (text, options = {}) => {
+        const {
+          size = 10,
+          style = 'normal',
+          color = [31, 41, 55],
+          spacingAfter = lineHeight,
+          indent = 0
+        } = options;
+
+        doc.setFont('helvetica', style);
+        doc.setFontSize(size);
+        doc.setTextColor(...color);
+
+        const maxWidth = pageWidth - margin * 2 - indent;
+        const lines = doc.splitTextToSize(String(text), maxWidth);
+        ensureSpace(lines.length);
+        doc.text(lines, margin + indent, y);
+        y += lines.length * lineHeight;
+        y += Math.max(0, spacingAfter - lineHeight);
+      };
+
+      const section = (title) => {
+        ensureSpace(2);
+        y += 4;
+        writeText(title, {
+          size: 12,
+          style: 'bold',
+          color: [15, 23, 42],
+          spacingAfter: 12
+        });
+      };
+
+      const selectedRangeLabel = {
+        '7d': 'Last 7 days',
+        '30d': 'Last 30 days',
+        '90d': 'Last 90 days',
+        all: 'All time'
+      }[timeRange] || 'Custom';
+
+      const generatedAt = new Date().toLocaleString('en-GB', {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+      writeText('Memora Analytics Report', {
+        size: 18,
+        style: 'bold',
+        color: [2, 6, 23],
+        spacingAfter: 10
+      });
+      writeText(`Generated: ${generatedAt}`);
+      writeText(`Time Range: ${selectedRangeLabel}`, { spacingAfter: 18 });
+
+      section('Overview');
+      writeText(`Total Topics: ${analyticsData.overview.totalTopics || 0}`);
+      writeText(`Current Streak: ${analyticsData.overview.currentStreak || 0} days`);
+      writeText(`Completion Rate: ${Number(analyticsData.overview.completionRate || 0).toFixed(1)}%`);
+      writeText(`Average MemScore: ${Number(analyticsData.overview.averageMemScore || 0).toFixed(2)} / 10`);
+
+      section('Activity Snapshot');
+      writeText(`Revisions (${activityChartRangeLabel}): ${activityChartSummary.revisions}`);
+      writeText(`Focus Time (${activityChartRangeLabel}): ${formatMinutes(activityChartSummary.focusMinutes)}`);
+      writeText(`Topics Added (${activityChartRangeLabel}): ${activityChartSummary.topicsAdded}`);
+      writeText(`Focus Sessions (${activityChartRangeLabel}): ${interactiveAreaData.reduce((sum, row) => sum + Number(row.focusSessionsCount || 0), 0)}`);
+      writeText(`Tasks Completed (${activityChartRangeLabel}): ${interactiveAreaData.reduce((sum, row) => sum + Number(row.tasksCompletedCount || 0), 0)}`);
+      writeText(`Mindmaps (${activityChartRangeLabel}): ${interactiveAreaData.reduce((sum, row) => sum + Number(row.mindmapsCount || 0), 0)}`);
+      writeText(`Resources Created (${activityChartRangeLabel}): ${interactiveAreaData.reduce((sum, row) => sum + Number(row.resourcesCreatedCount || 0), 0)}`);
+      writeText(`Active Focus Days: ${activeFocusDays}`);
+      writeText(`Average Session Length: ${avgFocusSessionMinutes} min`);
+
+      section('Focus Mode - Sessions');
+      writeText(`Consistency Active Days: ${consistencyActiveDays}/${consistencyData.length}`);
+      writeText(`Total Focus Minutes: ${consistencyData.reduce((sum, day) => sum + Number(day.minutes || 0), 0)}`);
+      writeText(`Total Reviews: ${consistencyData.reduce((sum, day) => sum + Number(day.reviews || 0), 0)}`);
+
+      section('MemScore Trend');
+      const memScoreTrendStart = retentionAreaData.length > 0 ? Number(retentionAreaData[0].score || 0) : 0;
+      const memScoreTrendEnd = retentionAreaData.length > 0 ? Number(retentionAreaData[retentionAreaData.length - 1].score || 0) : 0;
+      const memScoreDelta = memScoreTrendEnd - memScoreTrendStart;
+      writeText(`Start Score: ${memScoreTrendStart.toFixed(2)} / 10`);
+      writeText(`Latest Score: ${memScoreTrendEnd.toFixed(2)} / 10`);
+      writeText(`Delta: ${memScoreDelta >= 0 ? '+' : ''}${memScoreDelta.toFixed(2)}`);
+
+      section('Resource Distribution');
+      resourceDistributionData.forEach((item) => {
+        writeText(`${item.label}: ${Number(item.value || 0).toLocaleString()}`, { indent: 6 });
+      });
+
+      section('Difficulty Breakdown');
+      const populatedDifficulty = difficultyMixData.filter((item) => Number(item.count || 0) > 0);
+      if (populatedDifficulty.length === 0) {
+        writeText('No difficulty distribution data available.');
+      } else {
+        populatedDifficulty.forEach((item) => {
+          writeText(`${item.label}: ${item.count} topic(s) (${Number(item.percentage || 0).toFixed(1)}%)`, { indent: 6 });
+        });
+      }
+
+      section('Top Reviewed Topics');
+      const topTopics = (analyticsData.topicPerformance || []).slice(0, 5);
+      if (topTopics.length === 0) {
+        writeText('No topic review data available.');
+      } else {
+        topTopics.forEach((topic, index) => {
+          const title = String(topic.title || 'Untitled').trim();
+          const success = Number(topic.successRate || 0).toFixed(1);
+          const difficulty = getDifficultyLabel(Number(topic.difficulty || 0));
+          const memScore = Number(topic.memScore || 0).toFixed(2);
+          writeText(
+            `${index + 1}. ${title} | Reviews: ${topic.reviewCount || 0} | Success: ${success}% | Difficulty: ${difficulty} | MemScore: ${memScore}`,
+            { indent: 6 }
+          );
+        });
+      }
+
+      section('Health Factors');
+      const rankedFactors = [...healthRadarData].sort((a, b) => b.count - a.count);
+      rankedFactors.forEach((factor) => {
+        writeText(`${factor.label}: count ${factor.count}, normalized score ${factor.score}%`, { indent: 6 });
+      });
+
+      const fileDate = toLocalDateKey(new Date());
+      doc.save(`memora-analytics-report-${fileDate}.pdf`);
+      showToast('Analytics PDF report downloaded successfully.', 'success');
+    } catch (error) {
+      console.error('Failed to generate analytics PDF report:', error);
+      showToast('Failed to generate analytics PDF report.', 'error');
+    }
   };
 
   const rangeDays = getRangeDays();
   const rawTopics = analyticsData.rawTopics || [];
   const rawDueTopics = analyticsData.rawDueTopics || [];
   const rawUpcomingTopics = analyticsData.rawUpcomingTopics || [];
+  const rawRevisionStats = analyticsData.rawRevisionStats || [];
   const rawFocusSessions = analyticsData.rawFocusSessions || [];
+  const rawTasks = analyticsData.rawTasks || [];
+  const rawMindmaps = analyticsData.rawMindmaps || [];
+
+  const revisionCountByDate = useMemo(() => {
+    const map = new Map();
+
+    rawRevisionStats.forEach((row) => {
+      const timestamp = row?.date;
+      if (!timestamp) return;
+
+      const key = toLocalDateKey(timestamp);
+      if (!key) return;
+
+      const count = Number(row?.count || 0);
+      map.set(key, (map.get(key) || 0) + count);
+    });
+
+    if (map.size === 0) {
+      // Fallback for older datasets where only topic-level lastReviewed exists.
+      rawTopics.forEach((topic) => {
+        const reviewTimestamp = getReviewTimestamp(topic);
+        if (!reviewTimestamp) return;
+        const key = toLocalDateKey(reviewTimestamp);
+        map.set(key, (map.get(key) || 0) + 1);
+      });
+    }
+
+    return map;
+  }, [rawRevisionStats, rawTopics]);
 
   const withinRange = (value, days) => {
-    const time = new Date(value).getTime();
+    const time = toComparableTimestamp(value);
     if (Number.isNaN(time)) return false;
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
     return time >= cutoff;
   };
 
   const focusTrendData = useMemo(() => {
-    const days = Math.min(rangeDays, 90);
     const byDate = new Map();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    for (let i = days - 1; i >= 0; i -= 1) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      const key = date.toISOString().split('T')[0];
-      byDate.set(key, {
-        key,
-        label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        minutes: 0,
-        reviews: 0
-      });
+    const shouldUseAccountBaseline = timeRange === 'all' && Number.isFinite(accountCreatedAtMs);
+
+    if (shouldUseAccountBaseline) {
+      const startDate = new Date(accountCreatedAtMs);
+      startDate.setHours(0, 0, 0, 0);
+
+      const baselineStartDate = startDate > today ? new Date(today) : startDate;
+
+      for (let cursor = new Date(baselineStartDate); cursor <= today; cursor.setDate(cursor.getDate() + 1)) {
+        const key = toLocalDateKey(cursor);
+        byDate.set(key, {
+          key,
+          label: formatShortDate(cursor),
+          minutes: 0,
+          reviews: 0
+        });
+      }
+    } else {
+      const days = Math.min(rangeDays, 90);
+
+      for (let i = days - 1; i >= 0; i -= 1) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        const key = toLocalDateKey(date);
+        byDate.set(key, {
+          key,
+          label: formatShortDate(date),
+          minutes: 0,
+          reviews: 0
+        });
+      }
     }
 
     rawFocusSessions.forEach((session) => {
       const timestamp = session?.date || session?.endTime || session?.startTime;
       if (!timestamp) return;
-      const key = new Date(timestamp).toISOString().split('T')[0];
+      const key = toLocalDateKey(timestamp);
       const row = byDate.get(key);
       if (!row) return;
       row.minutes += Math.round((session.duration || 0) / 60000);
     });
 
-    rawTopics.forEach((topic) => {
-      const reviewTimestamp = getReviewTimestamp(topic);
-      if (!reviewTimestamp) return;
-      const key = new Date(reviewTimestamp).toISOString().split('T')[0];
+    revisionCountByDate.forEach((count, key) => {
       const row = byDate.get(key);
       if (!row) return;
-      row.reviews += 1;
+      row.reviews += Number(count || 0);
     });
 
     return Array.from(byDate.values());
-  }, [rawFocusSessions, rawTopics, rangeDays]);
+  }, [rawFocusSessions, revisionCountByDate, rangeDays, timeRange, accountCreatedAtMs]);
 
   const activityTimelineData = useMemo(() => {
-    const days = 120;
     const byDate = new Map();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    for (let i = days - 1; i >= 0; i -= 1) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      const key = date.toISOString().split('T')[0];
+    const shouldUseAccountBaseline = timeRange === 'all' && Number.isFinite(accountCreatedAtMs);
 
-      byDate.set(key, {
-        date: key,
-        label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        revisions: 0,
-        focusMinutes: 0,
-        topicsAdded: 0
-      });
+    if (shouldUseAccountBaseline) {
+      const startDate = new Date(accountCreatedAtMs);
+      startDate.setHours(0, 0, 0, 0);
+
+      const baselineStartDate = startDate > today ? new Date(today) : startDate;
+
+      for (let cursor = new Date(baselineStartDate); cursor <= today; cursor.setDate(cursor.getDate() + 1)) {
+        const key = toLocalDateKey(cursor);
+
+        byDate.set(key, {
+          date: key,
+          label: formatShortDate(cursor),
+          revisions: 0,
+          focusMinutes: 0,
+          focusSessions: 0,
+          tasksCompleted: 0,
+          topicsAdded: 0,
+          mindmaps: 0,
+          resourcesCreated: 0
+        });
+      }
+    } else {
+      const days = 120;
+
+      for (let i = days - 1; i >= 0; i -= 1) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        const key = toLocalDateKey(date);
+
+        byDate.set(key, {
+          date: key,
+          label: formatShortDate(date),
+          revisions: 0,
+          focusMinutes: 0,
+          focusSessions: 0,
+          tasksCompleted: 0,
+          topicsAdded: 0,
+          mindmaps: 0,
+          resourcesCreated: 0
+        });
+      }
     }
 
     rawFocusSessions.forEach((session) => {
       const timestamp = session?.date || session?.endTime || session?.startTime;
       if (!timestamp) return;
 
-      const key = new Date(timestamp).toISOString().split('T')[0];
+      const key = toLocalDateKey(timestamp);
       const row = byDate.get(key);
       if (!row) return;
 
       row.focusMinutes += Math.round((session.duration || 0) / 60000);
+      row.focusSessions += 1;
     });
 
     rawTopics.forEach((topic) => {
-      const reviewTimestamp = getReviewTimestamp(topic);
-      if (reviewTimestamp) {
-        const reviewKey = new Date(reviewTimestamp).toISOString().split('T')[0];
-        const reviewRow = byDate.get(reviewKey);
-        if (reviewRow) reviewRow.revisions += 1;
-      }
-
       if (topic?.createdAt) {
-        const createdKey = new Date(topic.createdAt).toISOString().split('T')[0];
+        const createdKey = toLocalDateKey(topic.createdAt);
         const createdRow = byDate.get(createdKey);
         if (createdRow) createdRow.topicsAdded += 1;
       }
     });
 
+    rawTasks.forEach((task) => {
+      if (!task?.completed) return;
+
+      const timestamp = task?.updatedAt || task?.completedAt || task?.date;
+      if (!timestamp) return;
+
+      const key = toLocalDateKey(timestamp);
+      const row = byDate.get(key);
+      if (!row) return;
+      row.tasksCompleted += 1;
+    });
+
+    revisionCountByDate.forEach((count, key) => {
+      const row = byDate.get(key);
+      if (!row) return;
+      row.revisions += Number(count || 0);
+    });
+
+    (analyticsData.rawDocTags || []).forEach((item) => {
+      const timestamp = item?.createdAt;
+      if (!timestamp) return;
+
+      const key = toLocalDateKey(timestamp);
+      const row = byDate.get(key);
+      if (!row) return;
+      row.resourcesCreated += 1;
+    });
+
+    rawMindmaps.forEach((map) => {
+      const timestamp = map?.createdAt || map?.updatedAt;
+      if (!timestamp) return;
+
+      const key = toLocalDateKey(timestamp);
+      const row = byDate.get(key);
+      if (!row) return;
+      row.mindmaps += 1;
+    });
+
     return Array.from(byDate.values());
-  }, [rawFocusSessions, rawTopics]);
+  }, [
+    rawFocusSessions,
+    rawTopics,
+    rawTasks,
+    revisionCountByDate,
+    analyticsData.rawDocTags,
+    rawMindmaps,
+    accountCreatedAtMs,
+    timeRange
+  ]);
 
   const activityChartDays = timeRange === '7d'
     ? 7
@@ -1178,10 +1909,29 @@ const Analytics = () => {
   const activeFocusDays = focusTrendData.filter(day => day.minutes > 0).length;
   const avgFocusSessionMinutes = totalFocusSessions > 0 ? Math.round(totalFocusMinutes / totalFocusSessions) : 0;
 
+  const activityIntelligenceData = useMemo(() => {
+    if (!Array.isArray(interactiveAreaData) || interactiveAreaData.length === 0) return [];
+
+    return interactiveAreaData.map((row) => ({
+      date: row.date,
+      label: row.label,
+      topicsRevised: Math.min(10, Math.max(0, Number(row.revisions || 0))),
+      focusSessions: Math.min(10, Math.max(0, Number(row.focusSessions || 0))),
+      tasksCompleted: Math.min(10, Math.max(0, Number(row.tasksCompleted || 0))),
+      mindmaps: Math.min(10, Math.max(0, Number(row.mindmaps || 0))),
+      resourcesCreated: Math.min(10, Math.max(0, Number(row.resourcesCreated || 0))),
+      topicsRevisedCount: Number(row.revisions || 0),
+      focusSessionsCount: Number(row.focusSessions || 0),
+      tasksCompletedCount: Number(row.tasksCompleted || 0),
+      mindmapsCount: Number(row.mindmaps || 0),
+      resourcesCreatedCount: Number(row.resourcesCreated || 0)
+    }));
+  }, [interactiveAreaData]);
+
   const retentionTrendData = useMemo(() => {
     const history = (analyticsData.memScoreHistory || []).slice(-20);
     return history.map((entry, index) => ({
-      label: entry.label || new Date(entry.date || Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      label: entry.label || formatShortDate(entry.date || Date.now()),
       score: Number(entry.score || 0),
       index: index + 1
     }));
@@ -1209,10 +1959,16 @@ const Analytics = () => {
 
   const resourceDistributionData = useMemo(() => {
     const docTags = analyticsData.rawDocTags || [];
-    const filesCount = docTags.filter((item) => item?.type === 'document').length;
-    const workspacesCount = docTags.filter((item) => item?.type === 'folder').length;
-    const mindmapsCount = Number(analyticsData.mindmapCount || 0);
-    const topicsCount = Number(analyticsData.overview.totalTopics || 0);
+    const inSelectedRange = (value) => {
+      if (timeRange === 'all') return true;
+      if (!value) return false;
+      return withinRange(value, rangeDays);
+    };
+
+    const filesCount = docTags.filter((item) => item?.type === 'document' && inSelectedRange(item?.createdAt)).length;
+    const workspacesCount = docTags.filter((item) => item?.type === 'folder' && inSelectedRange(item?.createdAt)).length;
+    const mindmapsCount = rawMindmaps.filter((map) => inSelectedRange(map?.createdAt || map?.updatedAt)).length;
+    const topicsCount = rawTopics.filter((topic) => inSelectedRange(topic?.createdAt)).length;
 
     return [
       { key: 'files', label: 'Files', value: filesCount, color: '#82b5ff' },
@@ -1220,20 +1976,61 @@ const Analytics = () => {
       { key: 'mindmaps', label: 'Mindmaps', value: mindmapsCount, color: '#2563eb' },
       { key: 'topics', label: 'Total Topics', value: topicsCount, color: '#1d4ed8' }
     ];
-  }, [analyticsData.rawDocTags, analyticsData.mindmapCount, analyticsData.overview.totalTopics]);
+  }, [analyticsData.rawDocTags, rawMindmaps, rawTopics, timeRange, rangeDays]);
 
   const consistencyData = useMemo(() => {
-    const days = 28;
+    const finiteRanges = [timeRange, consistencyBarRange]
+      .filter((range) => range !== 'global')
+      .map((range) => resolveRangeDays(range))
+      .filter((days) => Number.isFinite(days));
+
+    const includesAllRange = [timeRange, consistencyBarRange].some((range) => range === 'all');
+
+    let days = Math.max(90, ...(finiteRanges.length > 0 ? finiteRanges : [0]));
+
+    if (includesAllRange) {
+      if (Number.isFinite(accountCreatedAtMs)) {
+        days = Math.max(days, accountAgeDays);
+      } else {
+        let earliestTimestamp = Number.POSITIVE_INFINITY;
+
+        rawFocusSessions.forEach((session) => {
+          const timestamp = session?.date || session?.endTime || session?.startTime;
+          if (!timestamp) return;
+
+          const millis = new Date(timestamp).getTime();
+          if (!Number.isNaN(millis)) {
+            earliestTimestamp = Math.min(earliestTimestamp, millis);
+          }
+        });
+
+        revisionCountByDate.forEach((_, key) => {
+          const millis = toComparableTimestamp(key);
+          if (!Number.isNaN(millis)) {
+            earliestTimestamp = Math.min(earliestTimestamp, millis);
+          }
+        });
+
+        if (Number.isFinite(earliestTimestamp)) {
+          const allTimeDays = Math.ceil((Date.now() - earliestTimestamp) / (24 * 60 * 60 * 1000)) + 1;
+          days = Math.max(days, allTimeDays);
+        }
+      }
+    }
+
+    const maxAllowedDays = includesAllRange ? MAX_ALL_TIME_RENDER_DAYS : 1825;
+    days = Math.min(Math.max(days, 7), maxAllowedDays);
+
     const map = new Map();
 
     for (let i = days - 1; i >= 0; i -= 1) {
       const date = new Date();
       date.setDate(date.getDate() - i);
-      const key = date.toISOString().split('T')[0];
+      const key = toLocalDateKey(date);
       map.set(key, {
         key,
-        label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        day: date.toLocaleDateString('en-US', { weekday: 'short' }),
+        label: formatShortDate(date),
+        day: WEEKDAY_SHORT[date.getDay()],
         intensity: 0,
         minutes: 0,
         reviews: 0
@@ -1243,19 +2040,16 @@ const Analytics = () => {
     rawFocusSessions.forEach((session) => {
       const timestamp = session?.date || session?.endTime || session?.startTime;
       if (!timestamp) return;
-      const key = new Date(timestamp).toISOString().split('T')[0];
+      const key = toLocalDateKey(timestamp);
       const row = map.get(key);
       if (!row) return;
       row.minutes += Math.round((session.duration || 0) / 60000);
     });
 
-    rawTopics.forEach((topic) => {
-      const reviewTimestamp = getReviewTimestamp(topic);
-      if (!reviewTimestamp) return;
-      const key = new Date(reviewTimestamp).toISOString().split('T')[0];
+    revisionCountByDate.forEach((count, key) => {
       const row = map.get(key);
       if (!row) return;
-      row.reviews += 1;
+      row.reviews += Number(count || 0);
     });
 
     const result = Array.from(map.values()).map((day) => {
@@ -1264,7 +2058,7 @@ const Analytics = () => {
     });
 
     return result;
-  }, [rawFocusSessions, rawTopics]);
+  }, [rawFocusSessions, revisionCountByDate, timeRange, consistencyBarRange, accountCreatedAtMs]);
 
   const journalActionStats = useMemo(() => {
     const stats = {
@@ -1274,6 +2068,10 @@ const Analytics = () => {
       deleted: 0,
       created: 0
     };
+
+    if (!userStorageKey) {
+      return stats;
+    }
 
     const consumeActivities = (activities = []) => {
       activities.forEach((entry) => {
@@ -1310,7 +2108,7 @@ const Analytics = () => {
     for (let i = 0; i < rangeDays; i += 1) {
       const date = new Date();
       date.setDate(date.getDate() - i);
-      const dayKey = date.toISOString().split('T')[0];
+      const dayKey = toLocalDateKey(date);
       const storageKey = `activities_${dayKey}_${userStorageKey}`;
       const raw = localStorage.getItem(storageKey);
       if (!raw) continue;
@@ -1351,11 +2149,10 @@ const Analytics = () => {
       return reviewTimestamp ? inPastWindow(reviewTimestamp) : false;
     }).length;
 
-    const reviewedCount = rawTopics.filter((topic) => {
-      const reviewTimestamp = getReviewTimestamp(topic);
-      if (!reviewTimestamp) return false;
-      return Number(topic?.reviewCount || 0) > 0 && inPastWindow(reviewTimestamp);
-    }).length;
+    const reviewedCount = Array.from(revisionCountByDate.entries()).reduce((sum, [dayKey, count]) => {
+      if (!inPastWindow(dayKey)) return sum;
+      return sum + Number(count || 0);
+    }, 0);
 
     const dueCount = [...rawDueTopics, ...rawUpcomingTopics].filter((topic) => {
       return topic?.nextReviewDate ? inDueWindow(topic.nextReviewDate) : false;
@@ -1384,11 +2181,7 @@ const Analytics = () => {
       ...item,
       score: Number(((item.count / maxCount) * 100).toFixed(1))
     }));
-  }, [rawTopics, rawDueTopics, rawUpcomingTopics, rangeDays, journalActionStats]);
-
-  const healthRangeLabel = timeRange === 'all'
-    ? 'Based on all-time analytics data'
-    : `Based on the last ${rangeDays} days`;
+  }, [rawTopics, rawDueTopics, rawUpcomingTopics, rangeDays, journalActionStats, revisionCountByDate]);
 
   const timeRangeOptions = [
     { value: '7d', label: 'Last 7 days' },
@@ -1429,16 +2222,31 @@ const Analytics = () => {
   return (
     <div className="bg-black text-white min-h-screen flex">
       {/* Sidebar */}
-      <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} bg-black border-r border-white/10 flex flex-col fixed left-0 top-0 h-screen z-10 transition-all duration-300`}>
+      <div className={`${
+        isDesktopViewport
+          ? (isSidebarCollapsed ? 'w-16' : 'w-64')
+          : `w-72 max-w-[82vw] ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`
+      } bg-black border-r border-white/10 flex flex-col fixed left-0 top-0 h-screen z-40 transition-[width,transform] duration-300`}>
         {/* Logo */}
-        <div className={`h-16 sm:h-20 border-b border-white/10 flex items-center ${sidebarCollapsed ? 'justify-center px-2' : 'px-4'}`}>
+        <div className={`h-16 sm:h-20 border-b border-white/10 flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'}`}>
           <button
-            onClick={() => navigate('/dashboard')}
-            className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+            onClick={() => navigate('/')}
+            className={`flex items-center hover:opacity-80 transition-opacity ${isSidebarCollapsed ? 'justify-center w-full' : 'gap-2 min-w-0'}`}
           >
-            <Logo size={sidebarCollapsed ? "md" : "sm"} className="text-white" />
-            {!sidebarCollapsed && <span className="text-lg font-semibold text-white">Memora</span>}
+            <Logo size="sm" className="text-white scale-90" />
+            {!isSidebarCollapsed && <span className="text-lg font-semibold text-white">Memora</span>}
           </button>
+
+          {isDesktopViewport && !isSidebarCollapsed && (
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(true)}
+              aria-label="Collapse sidebar"
+              className="inline-flex items-center justify-center rounded-md border border-white/10 bg-white/[0.03] p-1.5 text-gray-300 hover:bg-white/10 hover:text-white transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         {/* Navigation */}
@@ -1447,34 +2255,44 @@ const Analytics = () => {
             {sidebarItems.map((item) => (
               <button
                 key={item.label}
-                onClick={() => navigate(item.path)}
-                className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-1' : 'space-x-3 px-3'} py-2 rounded-lg text-sm transition-colors ${
+                onClick={() => {
+                  navigate(item.path);
+                  if (!isDesktopViewport) {
+                    setIsMobileSidebarOpen(false);
+                  }
+                }}
+                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-1' : 'space-x-3 px-3'} py-2 rounded-lg text-sm transition-colors ${
                   item.active
                     ? 'bg-white/10 text-white font-medium'
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
-                title={sidebarCollapsed ? item.label : ''}
+                title={isSidebarCollapsed ? item.label : ''}
               >
-                <item.icon className={`${sidebarCollapsed ? "w-5 h-5" : "w-4 h-4"} ${
-                  location.pathname === item.path ? 'text-blue-400' : ''
+                <item.icon className={`${isSidebarCollapsed ? "w-5 h-5" : "w-4 h-4"} ${
+                  location.pathname === item.path ? 'text-blue-300' : ''
                 }`} />
-                {!sidebarCollapsed && <span>{item.label}</span>}
+                {!isSidebarCollapsed && <span>{item.label}</span>}
               </button>
             ))}
           </div>
 
           {/* Quick Actions */}
-          {!sidebarCollapsed && (
+          {!isSidebarCollapsed && (
             <div className="mt-8">
               <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Quick Actions</p>
               <div className="space-y-1">
                 {quickActions.map((action) => (
                   <button
                     key={action.label}
-                    onClick={action.action}
+                    onClick={() => {
+                      action.action();
+                      if (!isDesktopViewport) {
+                        setIsMobileSidebarOpen(false);
+                      }
+                    }}
                     className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                       action.primary
-                        ? 'bg-white text-black hover:bg-gray-100'
+                        ? 'border border-blue-400/35 bg-blue-500/12 text-blue-100 hover:bg-blue-500/18'
                         : 'text-gray-400 hover:text-white hover:bg-white/5'
                     }`}
                   >
@@ -1488,54 +2306,68 @@ const Analytics = () => {
         </nav>
       </div>
 
+      {!isDesktopViewport && isMobileSidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          onClick={() => setIsMobileSidebarOpen(false)}
+          className="fixed inset-0 z-30 bg-black/55 backdrop-blur-sm"
+        />
+      )}
+
       {/* Main Content */}
-      <div className={`flex-1 flex flex-col transition-all duration-300 ${
-        sidebarCollapsed
-          ? 'ml-16'
-          : 'ml-64'
+      <div className={`flex-1 flex flex-col transition-[margin] duration-300 ${
+        isDesktopViewport
+          ? (isSidebarCollapsed ? 'ml-16' : 'ml-64')
+          : 'ml-0'
       }`}>
         {/* Header */}
-        <header className="bg-black border-b border-white/10 h-16 sm:h-20 px-3 sm:px-4 flex items-center">
-          <div className="flex items-center justify-between w-full">
+        <header data-tour="analytics-header" className="bg-black border-b border-white/10 h-16 sm:h-20 px-3 sm:px-4 flex items-center">
+          <div className="flex items-center justify-between gap-2 sm:gap-3 w-full">
             {/* Left: Sidebar toggle and title */}
-            <div className="flex items-center space-x-2 sm:space-x-4">
-              <button
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="p-1.5 sm:p-2 hover:bg-white/5 rounded-lg transition-colors"
-              >
-                {sidebarCollapsed ? (
-                  <PanelLeft className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-                ) : (
-                  <PanelLeftClose className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-                )}
-              </button>
-              <div>
-                <h1 className="text-xl sm:text-2xl font-semibold text-white">Analytics</h1>
-                <p className="text-xs sm:text-sm text-gray-400">
-                  {new Date().toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
-                </p>
+            <div className="flex items-center gap-2 min-w-0">
+              {isDesktopViewport && isSidebarCollapsed && (
+                <button
+                  type="button"
+                  onClick={() => setSidebarCollapsed(false)}
+                  aria-label="Expand sidebar"
+                  className="hidden lg:inline-flex p-0 text-blue-200 hover:text-blue-100 transition-colors"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              )}
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-2xl font-semibold text-blue-100 inline-flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-blue-200" />
+                  Analytics
+                </h1>
+                <p className="hidden sm:block text-xs text-gray-400 mt-0.5">Track learning trends, resource growth, and review consistency over time.</p>
               </div>
             </div>
 
             {/* Right: Time range selector */}
-            <div className="flex items-center space-x-2 sm:space-x-3">
+            <div className="flex items-center justify-end w-auto shrink-0">
+              <button
+                onClick={() => setIsMobileSidebarOpen((prev) => !prev)}
+                className="lg:hidden p-1.5 sm:p-2 hover:bg-white/5 rounded-lg transition-colors mr-2"
+                aria-label="Toggle sidebar"
+              >
+                {isMobileSidebarOpen
+                  ? <PanelLeftClose className="w-4 h-4 sm:w-5 sm:h-5 text-blue-200" />
+                  : <PanelLeft className="w-4 h-4 sm:w-5 sm:h-5 text-blue-200" />}
+              </button>
               <ShadcnSelect
                 value={timeRange}
                 onChange={setTimeRange}
                 options={timeRangeOptions}
-                className="w-44"
+                className="w-[132px] sm:w-44"
               />
             </div>
           </div>
         </header>
 
         {/* Analytics Content */}
-        <div className="flex-1 p-4 overflow-auto scrollbar-hide">
+        <div className="flex-1 p-3 sm:p-4 overflow-auto scrollbar-hide">
           {loading ? (
             <div className="text-center py-12">
               <div className="inline-flex items-center space-x-2">
@@ -1544,25 +2376,25 @@ const Analytics = () => {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
               <section className="xl:col-span-2 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3">
                   <div className="rounded-lg border border-white/20 bg-black p-3">
                     <p className="text-xs text-gray-400">Revisions ({activityChartRangeLabel})</p>
-                    <p className="text-2xl font-semibold text-white">{activityChartSummary.revisions}</p>
+                    <p className="text-lg sm:text-2xl font-semibold text-white">{activityChartSummary.revisions}</p>
                   </div>
                   <div className="rounded-lg border border-white/20 bg-black p-3">
                     <p className="text-xs text-gray-400">Focus time ({activityChartRangeLabel})</p>
-                    <p className="text-2xl font-semibold text-white">{formatMinutes(activityChartSummary.focusMinutes)}</p>
+                    <p className="text-lg sm:text-2xl font-semibold text-white">{formatMinutes(activityChartSummary.focusMinutes)}</p>
                   </div>
                   <div className="rounded-lg border border-white/20 bg-black p-3">
                     <p className="text-xs text-gray-400">Topics added ({activityChartRangeLabel})</p>
-                    <p className="text-2xl font-semibold text-white">{activityChartSummary.topicsAdded}</p>
+                    <p className="text-lg sm:text-2xl font-semibold text-white">{activityChartSummary.topicsAdded}</p>
                   </div>
                 </div>
 
                 <InteractiveActivityAreaChart
-                  data={interactiveAreaData}
+                  data={activityIntelligenceData}
                 />
               </section>
 
@@ -1580,6 +2412,7 @@ const Analytics = () => {
                   activeMetric={consistencyBarMetric}
                   onMetricChange={setConsistencyBarMetric}
                   range={consistencyBarRange}
+                  globalRange={timeRange}
                   onRangeChange={setConsistencyBarRange}
                   currentStreak={analyticsData.overview.currentStreak}
                   totalTopics={analyticsData.overview.totalTopics}
@@ -1589,100 +2422,65 @@ const Analytics = () => {
               <section>
                 <HealthActionRadarCard
                   data={healthRadarData}
-                  rangeLabel={healthRangeLabel}
                 />
               </section>
             </div>
           )}
         </div>
 
-        {/* Footer */}
-        <footer className="mt-1 border-t border-white/10 py-6">
-          <div className="max-w-6xl mx-auto px-6">
-            <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
-              {/* Left: Memora Branding */}
-              <div className="flex items-center space-x-3">
-                <Logo size="sm" className="text-white" />
-                <div>
-                  <div className="text-lg font-bold text-white">Memora</div>
-                  <div className="text-xs text-gray-400">Sets your memory in motion</div>
-                </div>
-              </div>
+        <DashboardFooter className="mt-1 border-t border-white/10 py-5 sm:py-6" />
+      </div>
 
-              {/* Center: Social Icons */}
-              <div className="flex items-center space-x-3">
-                <motion.a
-                  href="https://linkedin.com/company/memora"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 hover:border-blue-400/20 transition-all"
-                  title="LinkedIn"
-                  whileHover={{ scale: 1.1, rotate: 5 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Linkedin className="w-4 h-4" />
-                </motion.a>
-                <motion.a
-                  href="https://twitter.com/memoraapp"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 hover:border-blue-400/20 transition-all"
-                  title="Twitter"
-                  whileHover={{ scale: 1.1, rotate: -5 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Twitter className="w-4 h-4" />
-                </motion.a>
-                <motion.a
-                  href="https://instagram.com/memoraapp"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-pink-400 hover:bg-pink-400/10 hover:border-pink-400/20 transition-all"
-                  title="Instagram"
-                  whileHover={{ scale: 1.1, rotate: 5 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Instagram className="w-4 h-4" />
-                </motion.a>
+      {isReportModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-[1px] flex items-center justify-center p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setIsReportModalOpen(false);
+            }
+          }}
+        >
+          <div className="w-full max-w-3xl max-h-[82vh] bg-black border border-white/15 rounded-xl shadow-2xl overflow-hidden">
+            <div className="px-4 sm:px-5 py-3 border-b border-white/10 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base sm:text-lg font-semibold text-white">Analytics Report Preview</h2>
+                <p className="text-xs text-gray-400">Review report text and download full PDF.</p>
               </div>
-
-              {/* Right: Navigation Links */}
-              <div className="flex flex-wrap items-center space-x-4 text-sm text-gray-400">
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => navigate('/profile')}
-                  className="hover:text-white transition-colors"
+                  type="button"
+                  onClick={generateReport}
+                  className="h-9 w-9 rounded-md border border-blue-400/35 bg-blue-500/12 text-blue-200 hover:bg-blue-500/22 transition-colors inline-flex items-center justify-center"
+                  title="Download PDF report"
+                  aria-label="Download PDF report"
                 >
-                  Support
+                  <Download className="w-4 h-4" />
                 </button>
-                <a
-                  href="mailto:hello@memora.app"
-                  className="hover:text-white transition-colors"
+                <button
+                  type="button"
+                  onClick={() => setIsReportModalOpen(false)}
+                  className="px-3 py-1.5 rounded-md border border-white/15 text-xs text-gray-300 hover:bg-white/10 transition-colors"
                 >
-                  Contact Us
-                </a>
-                <button className="hover:text-white transition-colors">
-                  Privacy
-                </button>
-                <button className="hover:text-white transition-colors">
-                  Terms
+                  Close
                 </button>
               </div>
             </div>
 
-            {/* Bottom Copyright */}
-            <div className="mt-4 pt-4 border-t border-white/10 text-center text-sm text-gray-500">
-              © 2025 Memora, Inc. All rights reserved.
+            <div className="p-4 sm:p-5 overflow-y-auto scrollbar-themed max-h-[calc(82vh-70px)]">
+              <pre className="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed text-gray-200 font-mono">
+                {reportPreviewText}
+              </pre>
             </div>
           </div>
-        </footer>
-      </div>
+        </div>
+      ) : null}
 
       {/* Toast Notifications */}
       <Toast
         isVisible={toast.show}
         message={toast.message}
         type={toast.type}
-        onClose={() => setToast({ ...toast, show: false })}
+        onClose={() => setToast((prev) => ({ ...prev, show: false }))}
       />
     </div>
   );

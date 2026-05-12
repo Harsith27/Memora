@@ -1,29 +1,100 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  Calendar, ChevronLeft, ChevronRight, Plus, Filter, Search,
-  Clock, BookOpen, Target, Star, AlertCircle, CheckCircle,
-  Brain, FileText, BarChart3, Settings, PanelLeft, PanelLeftClose,
+  Calendar, ChevronLeft, ChevronRight, Plus, Filter,
+  BookOpen, Target, Star, AlertCircle, CheckCircle, Circle,
+  CheckSquare,
+  FileText, BarChart3, Settings, PanelLeft, PanelLeftClose,
   X, Edit3, Trash2, Save, MapPin, Users, Gift,
-  Linkedin, Twitter, Instagram, Globe, GitBranch
+  Globe, GitBranch, Award, Mic
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import Logo from '../components/Logo';
 import Toast from '../components/Toast';
 import Dialog from '../components/Dialog';
 import ShadcnSelect from '../components/ShadcnSelect';
+import DashboardGlyph from '../components/DashboardGlyph';
+import DashboardFooter from '../components/DashboardFooter';
 import apiService from '../services/api';
+import journalService from '../services/journalService';
+import taskService from '../services/taskService';
+import { formatDateDDMMYYYY, formatDateWithWeekday, getTodayIsoDateKey, parseDateInputToIso } from '../utils/dateFormat';
+
+const toLocalDateKey = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const DEFAULT_EVENT_FILTERS = {
+  categories: {
+    revisions: true,
+    completedRevisions: true,
+    festivals: true,
+    hobbies: true,
+    tasks: true,
+    events: true,
+    deadlines: true,
+    meetings: true
+  },
+  revisionTypes: {
+    due: true,
+    scheduled: true,
+    completed: true
+  },
+  difficulties: [1, 2, 3, 4, 5]
+};
+
+const FILTER_CATEGORY_OPTIONS = [
+  ['revisions', 'Revisions'],
+  ['completedRevisions', 'Completed Revisions'],
+  ['festivals', 'Festivals'],
+  ['hobbies', 'Hobbies'],
+  ['tasks', 'Tasks'],
+  ['events', 'Events'],
+  ['deadlines', 'Deadlines'],
+  ['meetings', 'Meetings']
+];
+
+const REVISION_TYPE_OPTIONS = [
+  ['due', 'Due Revisions'],
+  ['scheduled', 'Scheduled Revisions'],
+  ['completed', 'Completed Revisions']
+];
+
+const toLocalTimeHHMM = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '09:00';
+
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
 
 const Chronicle = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, isLoading } = useAuth();
+  const [isDesktopViewport, setIsDesktopViewport] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth >= 1024;
+  });
+  const [isPhoneViewport, setIsPhoneViewport] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 640;
+  });
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Sidebar state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const saved = localStorage.getItem('sidebarCollapsed');
     return saved ? JSON.parse(saved) : false;
   });
+  const isSidebarCollapsed = isDesktopViewport && sidebarCollapsed;
 
   // Calendar state
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -33,20 +104,22 @@ const Chronicle = () => {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
-  // Religion/Culture preferences
-  const [showReligionModal, setShowReligionModal] = useState(false);
+  // Settings + Festival preferences
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showFilterModal, setShowFilterModal] = useState(false);
   const [selectedReligions, setSelectedReligions] = useState(['general', 'indian_national', 'christian', 'hindu', 'telugu', 'muslim']);
+  const [eventFilters, setEventFilters] = useState(DEFAULT_EVENT_FILTERS);
 
   // Event management state
   const [showEventModal, setShowEventModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
+  const [eventFormError, setEventFormError] = useState('');
   const [eventForm, setEventForm] = useState({
     title: '',
     description: '',
-    date: '',
+    date: formatDateDDMMYYYY(getTodayIsoDateKey()),
     time: '',
     type: 'revision', // revision, event, festival, deadline
-    difficulty: 3,
     color: 'blue'
   });
 
@@ -64,13 +137,15 @@ const Chronicle = () => {
 
   // Sidebar navigation items
   const sidebarItems = [
-    { icon: Brain, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
+    { icon: DashboardGlyph, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
     { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
     { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
     { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
+    { icon: Mic, label: "Listener", active: location.pathname === "/listener", path: "/listener" },
     { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
-    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" }
+    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
+    { icon: Award, label: "Achievements", active: location.pathname === "/achievements", path: "/achievements" }
   ];
 
   // Handle sidebar navigation
@@ -102,8 +177,18 @@ const Chronicle = () => {
       return;
     }
 
+    if (item.label === "Listener") {
+      navigate('/listener');
+      return;
+    }
+
     if (item.label === "Graph Mode") {
       navigate('/graph');
+      return;
+    }
+
+    if (item.label === "Achievements") {
+      navigate('/achievements');
       return;
     }
   };
@@ -111,7 +196,7 @@ const Chronicle = () => {
   // Quick actions for Chronicle
   const quickActions = [
     { icon: Plus, label: "Add Event", action: () => openEventModal(), primary: true },
-    { icon: Settings, label: "Festival Preferences", action: () => setShowReligionModal(true), primary: false }
+    { icon: Settings, label: "Settings", action: () => setShowSettingsModal(true), primary: false }
   ];
 
   // Religion/Culture options
@@ -129,7 +214,7 @@ const Chronicle = () => {
   // Event types configuration
   const eventTypes = {
     revision: { label: 'Revision', icon: BookOpen, color: 'blue' },
-    event: { label: 'Event', icon: Calendar, color: 'green' },
+    event: { label: 'Event', icon: Calendar, color: 'blue' },
     festival: { label: 'Festival', icon: Gift, color: 'purple' },
     deadline: { label: 'Deadline', icon: AlertCircle, color: 'red' },
     meeting: { label: 'Meeting', icon: Users, color: 'orange' }
@@ -161,7 +246,7 @@ const Chronicle = () => {
   const saveReligionPreferences = () => {
     if (user) {
       localStorage.setItem(`festival_preferences_${user.id}`, JSON.stringify(selectedReligions));
-      setShowReligionModal(false);
+      setShowSettingsModal(false);
       loadCalendarData(); // Reload calendar with new preferences
       showToast('Festival preferences updated successfully!');
     }
@@ -182,12 +267,98 @@ const Chronicle = () => {
     setSelectedReligions(defaultReligions);
   };
 
+  const resetFiltersToDefaults = () => {
+    setEventFilters(DEFAULT_EVENT_FILTERS);
+  };
+
+  const toggleFilterCategory = (key) => {
+    setEventFilters((prev) => ({
+      ...prev,
+      categories: {
+        ...prev.categories,
+        [key]: !prev.categories[key]
+      }
+    }));
+  };
+
+  const toggleRevisionTypeFilter = (key) => {
+    setEventFilters((prev) => ({
+      ...prev,
+      revisionTypes: {
+        ...prev.revisionTypes,
+        [key]: !prev.revisionTypes[key]
+      }
+    }));
+  };
+
+  const setAllDifficulties = () => {
+    setEventFilters((prev) => ({
+      ...prev,
+      difficulties: [1, 2, 3, 4, 5]
+    }));
+  };
+
+  const toggleDifficultyFilter = (difficultyLevel) => {
+    setEventFilters((prev) => {
+      const hasLevel = prev.difficulties.includes(difficultyLevel);
+      const next = hasLevel
+        ? prev.difficulties.filter((value) => value !== difficultyLevel)
+        : [...prev.difficulties, difficultyLevel].sort((a, b) => a - b);
+
+      return {
+        ...prev,
+        difficulties: next.length > 0 ? next : [1, 2, 3, 4, 5]
+      };
+    });
+  };
+
+  const toggleSidebar = () => {
+    const newCollapsed = !sidebarCollapsed;
+    setSidebarCollapsed(newCollapsed);
+    localStorage.setItem('sidebarCollapsed', JSON.stringify(newCollapsed));
+  };
+
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!isLoading && !user) {
       navigate('/login');
     }
   }, [user, isLoading, navigate]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsDesktopViewport(window.innerWidth >= 1024);
+      setIsPhoneViewport(window.innerWidth < 640);
+    };
+
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (isDesktopViewport) {
+      setIsMobileSidebarOpen(false);
+    }
+  }, [isDesktopViewport]);
+
+  useEffect(() => {
+    if (isDesktopViewport) return undefined;
+
+    document.body.style.overflow = isMobileSidebarOpen ? 'hidden' : '';
+
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isDesktopViewport, isMobileSidebarOpen]);
+
+  useEffect(() => {
+    if (!user) return;
+    const userStorageId = user.id || user._id || user.email;
+    if (userStorageId) {
+      journalService.setCurrentUser(userStorageId);
+    }
+  }, [user]);
 
   // Load festival preferences when user is available
   useEffect(() => {
@@ -207,6 +378,64 @@ const Chronicle = () => {
     }
   }, [user, currentDate, selectedReligions]);
 
+  useEffect(() => {
+    const globalSearch = location.state?.globalSearch;
+    if (!globalSearch || globalSearch.source !== 'dashboard-global-search') return;
+
+    const clearGlobalSearchState = () => {
+      const { globalSearch: _globalSearch, ...restState } = location.state || {};
+      navigate(location.pathname, {
+        replace: true,
+        state: Object.keys(restState).length > 0 ? restState : null
+      });
+    };
+
+    if (globalSearch.action === 'focus-date' || globalSearch.action === 'open-event') {
+      const parsedDate = new Date(globalSearch.date);
+      if (!Number.isNaN(parsedDate.getTime())) {
+        const selected = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
+        setCurrentDate(new Date(selected.getFullYear(), selected.getMonth(), 1));
+        setSelectedDate(selected);
+        setShowDayDetails(true);
+      }
+    }
+
+    clearGlobalSearchState();
+  }, [location.state, location.pathname, navigate]);
+
+  useEffect(() => {
+    if (!showEventModal && !showSettingsModal && !showDayDetails && !showFilterModal) return undefined;
+
+    const handleEscape = (event) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+
+      if (showEventModal) {
+        setEventFormError('');
+        setShowEventModal(false);
+        return;
+      }
+
+      if (showFilterModal) {
+        setShowFilterModal(false);
+        return;
+      }
+
+      if (showSettingsModal) {
+        setShowSettingsModal(false);
+        return;
+      }
+
+      if (showDayDetails) {
+        setShowDayDetails(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [showDayDetails, showEventModal, showSettingsModal, showFilterModal]);
+
   const loadCalendarData = async () => {
     setLoading(true);
     try {
@@ -216,6 +445,8 @@ const Chronicle = () => {
 
       if (dueTopicsResponse.success && dueTopicsResponse.topics) {
         dueTopicsResponse.topics.forEach(topic => {
+          if (topic?.isLearning === false) return;
+
           const dateKey = new Date().toDateString(); // Today's date
           if (!revisionEvents[dateKey]) {
             revisionEvents[dateKey] = [];
@@ -238,6 +469,8 @@ const Chronicle = () => {
       const upcomingResponse = await apiService.getUpcomingTopics(30, 100);
       if (upcomingResponse.success && upcomingResponse.topics) {
         upcomingResponse.topics.forEach(topic => {
+          if (topic?.isLearning === false) return;
+
           const dateKey = new Date(topic.nextReviewDate).toDateString();
           if (!revisionEvents[dateKey]) {
             revisionEvents[dateKey] = [];
@@ -245,12 +478,44 @@ const Chronicle = () => {
           revisionEvents[dateKey].push({
             id: `revision-${topic._id}`,
             title: topic.title,
-            description: `Scheduled review: ${topic.title}`,
+            description: '',
             type: 'revision',
             color: getDifficultyColor(topic.difficulty),
             difficulty: topic.difficulty,
             time: '09:00',
             topicId: topic._id
+          });
+        });
+      }
+
+      // Load completed revisions from history so each day shows what was revised
+      const revisionHistoryResponse = await apiService.getRevisionHistory(180);
+      if (revisionHistoryResponse.success && Array.isArray(revisionHistoryResponse.entries)) {
+        revisionHistoryResponse.entries.forEach((entry) => {
+          const completedAt = entry?.completedAt ? new Date(entry.completedAt) : null;
+          if (!completedAt || Number.isNaN(completedAt.getTime())) return;
+
+          const dateKey = completedAt.toDateString();
+          if (!revisionEvents[dateKey]) {
+            revisionEvents[dateKey] = [];
+          }
+
+          const revisionNumber = Math.max(1, Number(entry?.revisionNumber || 1));
+
+          revisionEvents[dateKey].push({
+            id: `revision-completed-${entry.id}`,
+            title: entry.topicTitle || 'Untitled topic',
+            description: `Completed revision #${revisionNumber}`,
+            type: 'revision',
+            color: getDifficultyColor(entry.difficulty),
+            difficulty: Number(entry.difficulty) || 3,
+            time: toLocalTimeHHMM(completedAt),
+            topicId: entry.topicId,
+            completed: true,
+            isCompletedRevision: true,
+            revisionNumber,
+            quality: Number(entry.quality || 0),
+            wasCorrect: Boolean(entry.wasCorrect)
           });
         });
       }
@@ -261,8 +526,54 @@ const Chronicle = () => {
       // Load custom events from localStorage (in a real app, this would be from API)
       const customEvents = loadCustomEvents();
 
+      // Load task events from task manager storage
+      const taskEvents = {};
+      const userTaskStorageKey = taskService.resolveUserStorageKey(user);
+      const userTasks = taskService.getTasks(userTaskStorageKey);
+      const todayTaskDate = taskService.normalizeDate(new Date());
+
+      userTasks.forEach((task) => {
+        const normalizedDate = taskService.normalizeDate(task?.date);
+        if (!normalizedDate) return;
+
+        const taskDate = new Date(`${normalizedDate}T00:00:00`);
+        if (Number.isNaN(taskDate.getTime())) return;
+
+        const dateKey = taskDate.toDateString();
+        if (!taskEvents[dateKey]) {
+          taskEvents[dateKey] = [];
+        }
+
+        const isMissed = Boolean(
+          !task.completed
+          && todayTaskDate
+          && normalizedDate < todayTaskDate
+        );
+
+        taskEvents[dateKey].push({
+          id: `task-${task.id}`,
+          title: task.title,
+          description: task.description,
+          type: 'task',
+          color: task.completed ? 'slate' : (isMissed ? 'rose' : 'teal'),
+          time: task.completed ? '23:59' : '20:00',
+          taskId: task.id,
+          completed: Boolean(task.completed),
+          isMissed,
+          taskType: task.taskType || taskService.TASK_TYPES.ONE_TIME
+        });
+      });
+
       // Merge all events
       const allEvents = { ...revisionEvents };
+
+      // Add task events
+      Object.keys(taskEvents).forEach(dateKey => {
+        if (!allEvents[dateKey]) {
+          allEvents[dateKey] = [];
+        }
+        allEvents[dateKey] = [...allEvents[dateKey], ...taskEvents[dateKey]];
+      });
 
       // Add festivals
       Object.keys(festivalEvents).forEach(dateKey => {
@@ -278,6 +589,10 @@ const Chronicle = () => {
           allEvents[dateKey] = [];
         }
         allEvents[dateKey] = [...allEvents[dateKey], ...customEvents[dateKey]];
+      });
+
+      Object.keys(allEvents).forEach((dateKey) => {
+        allEvents[dateKey] = sortEventsForDisplay(allEvents[dateKey]);
       });
 
       setCalendarEvents(allEvents);
@@ -407,8 +722,6 @@ const Chronicle = () => {
             description: `${religionOptions.find(r => r.id === religion)?.label || 'Festival'}: ${festival.name}`,
             type: 'festival',
             color: getFestivalColor(religion, index),
-            difficulty: 1,
-            time: 'All Day',
             isHoliday: true,
             religion: religion
           });
@@ -430,8 +743,6 @@ const Chronicle = () => {
           description: 'Christian: Easter Sunday',
           type: 'festival',
           color: getFestivalColor('christian', 0),
-          difficulty: 1,
-          time: 'All Day',
           isHoliday: true,
           religion: 'christian'
         });
@@ -449,8 +760,6 @@ const Chronicle = () => {
           description: 'Christian: Good Friday',
           type: 'festival',
           color: getFestivalColor('christian', 1),
-          difficulty: 1,
-          time: 'All Day',
           isHoliday: true,
           religion: 'christian'
         });
@@ -511,7 +820,7 @@ const Chronicle = () => {
       const dateKey = currentDateObj.toDateString();
       const isCurrentMonth = currentDateObj.getMonth() === month;
       const isToday = dateKey === new Date().toDateString();
-      const events = calendarEvents[dateKey] || [];
+      const events = filteredCalendarEvents[dateKey] || [];
       
       days.push({
         date: new Date(currentDateObj),
@@ -531,13 +840,13 @@ const Chronicle = () => {
 
   // Event management
   const openEventModal = (type = 'event', date = null) => {
+    setEventFormError('');
     setEventForm({
       title: '',
       description: '',
-      date: date ? date.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      date: formatDateDDMMYYYY(date ? toLocalDateKey(date) : getTodayIsoDateKey()),
       time: '09:00',
       type,
-      difficulty: 3,
       color: eventTypes[type]?.color || 'blue'
     });
     setEditingEvent(null);
@@ -545,17 +854,41 @@ const Chronicle = () => {
   };
 
   const openEditEventModal = (event) => {
+    const eventDateKey = toLocalDateKey(event.date || selectedDate) || getTodayIsoDateKey();
+
+    setEventFormError('');
     setEventForm({
       title: event.title,
       description: event.description || '',
-      date: new Date(event.date || selectedDate).toISOString().split('T')[0],
+      date: formatDateDDMMYYYY(eventDateKey),
       time: event.time || '09:00',
       type: event.type || 'event',
-      difficulty: event.difficulty || 3,
       color: event.color || 'blue'
     });
     setEditingEvent(event);
     setShowEventModal(true);
+  };
+
+  const handleEventDateChange = (value) => {
+    setEventForm((prev) => ({ ...prev, date: value }));
+    setEventFormError('');
+  };
+
+  const handleEventDateBlur = () => {
+    const trimmedValue = String(eventForm.date || '').trim();
+    if (!trimmedValue) {
+      setEventFormError('Use DD/MM/YYYY (for example, 07/04/2026).');
+      return;
+    }
+
+    const parsedDate = parseDateInputToIso(trimmedValue);
+    if (!parsedDate) {
+      setEventFormError('Use DD/MM/YYYY (for example, 07/04/2026).');
+      return;
+    }
+
+    setEventForm((prev) => ({ ...prev, date: formatDateDDMMYYYY(parsedDate) }));
+    setEventFormError('');
   };
 
   const saveEvent = () => {
@@ -564,7 +897,15 @@ const Chronicle = () => {
       return;
     }
 
-    const eventDate = new Date(eventForm.date);
+    const parsedEventDate = parseDateInputToIso(eventForm.date);
+    if (!parsedEventDate) {
+      setEventFormError('Use DD/MM/YYYY (for example, 07/04/2026).');
+      return;
+    }
+
+    setEventFormError('');
+
+    const eventDate = new Date(`${parsedEventDate}T00:00:00`);
     const dateKey = eventDate.toDateString();
     
     const newEvent = {
@@ -574,8 +915,8 @@ const Chronicle = () => {
       date: eventDate,
       time: eventForm.time,
       type: eventForm.type,
-      difficulty: Number(eventForm.difficulty) || 3,
-      color: eventForm.color
+      color: eventForm.color,
+      source: 'custom'
     };
 
     const customEvents = loadCustomEvents();
@@ -597,7 +938,11 @@ const Chronicle = () => {
     
     saveCustomEvents(customEvents);
     loadCalendarData();
+    setEventFormError('');
     setShowEventModal(false);
+    if (!editingEvent) {
+      journalService.logChronicleEventCreated(newEvent);
+    }
     showToast(editingEvent ? 'Event updated successfully' : 'Event created successfully');
   };
 
@@ -635,8 +980,21 @@ const Chronicle = () => {
     setShowDayDetails(true);
   };
 
-  const getEventIcon = (type) => {
-    return eventTypes[type]?.icon || Calendar;
+  const isHabitTaskEvent = (event) => {
+    if (event?.type !== 'task') return false;
+    const taskType = String(event?.taskType || '').toLowerCase();
+    return taskType === taskService.TASK_TYPES.RECURRING || taskType === taskService.TASK_TYPES.CUSTOM_RECURRING;
+  };
+
+  const getEventIcon = (event) => {
+    if (event?.type === 'task') {
+      if (isHabitTaskEvent(event)) {
+        return event?.completed ? CheckCircle : Circle;
+      }
+      return CheckSquare;
+    }
+
+    return eventTypes[event?.type]?.icon || Calendar;
   };
 
   const getEventColor = (event) => {
@@ -655,17 +1013,101 @@ const Chronicle = () => {
       indigo: 'bg-[#6366F1]/30 text-[#ECEEFF] border-[#6366F1]/55',
       fuchsia: 'bg-[#D946EF]/30 text-[#FFEFFF] border-[#D946EF]/55',
       pink: 'bg-[#EC4899]/30 text-[#FFF0F7] border-[#EC4899]/55',
-      teal: 'bg-[#14B8A6]/30 text-[#EAFFFB] border-[#14B8A6]/55'
+      teal: 'bg-[#14B8A6]/30 text-[#EAFFFB] border-[#14B8A6]/55',
+      slate: 'bg-[#64748B]/30 text-[#EEF2F8] border-[#64748B]/55'
+    };
+
+    const outlineColors = {
+      blue: 'bg-transparent text-[#EAF2FF] border-[#6EA8FE]/55',
+      green: 'bg-transparent text-[#EAFFF4] border-[#58D68D]/55',
+      red: 'bg-transparent text-[#FFECEC] border-[#FF6B6B]/55',
+      yellow: 'bg-transparent text-[#FFF5DE] border-[#FFD166]/55',
+      orange: 'bg-transparent text-[#FFF1E0] border-[#FE9000]/55',
+      purple: 'bg-transparent text-[#F4EAFF] border-[#B084F5]/55',
+      emerald: 'bg-transparent text-[#E9FFF6] border-[#10B981]/55',
+      cyan: 'bg-transparent text-[#E8FCFF] border-[#06B6D4]/55',
+      amber: 'bg-transparent text-[#FFF3CF] border-[#D9A404]/55',
+      rose: 'bg-transparent text-[#FFEAF0] border-[#F43F5E]/55',
+      violet: 'bg-transparent text-[#F0EAFF] border-[#8B5CF6]/55',
+      indigo: 'bg-transparent text-[#ECEEFF] border-[#6366F1]/55',
+      fuchsia: 'bg-transparent text-[#FFEFFF] border-[#D946EF]/55',
+      pink: 'bg-transparent text-[#FFF0F7] border-[#EC4899]/55',
+      teal: 'bg-transparent text-[#EAFFFB] border-[#14B8A6]/55',
+      slate: 'bg-transparent text-[#EEF2F8] border-[#64748B]/55'
     };
 
     if (event?.type === 'festival') {
-      return 'bg-gray-500/20 text-gray-200 border-gray-400/45';
+      return 'bg-transparent text-gray-200 border-gray-400/45';
+    }
+    if (event?.type === 'task') {
+      if (event?.isMissed && !event?.completed) {
+        return 'bg-transparent text-rose-100 border-rose-400/45';
+      }
+      return event?.completed
+        ? 'bg-transparent text-gray-300 border-white/20'
+        : 'bg-transparent text-teal-100 border-teal-400/45';
     }
     if (event?.type === 'revision') {
+      if (event?.completed) {
+        return 'bg-slate-500/28 text-slate-100 border-slate-300/45';
+      }
       return colors[event?.color] || colors.cyan;
     }
 
-    return colors[event.color] || colors.blue;
+    return outlineColors[event?.color] || outlineColors.blue;
+  };
+
+  const getEventDotColor = (event) => {
+    if (event?.type === 'festival' || event?.isHoliday) return 'bg-gray-400';
+    if (event?.type === 'task') {
+      if (event?.isMissed && !event?.completed) return 'bg-rose-400';
+      return event?.completed ? 'bg-slate-300' : 'bg-teal-400';
+    }
+    if (event?.type === 'revision') {
+      if (event?.completed) return 'bg-slate-300';
+      if (event?.isDue || event?.isMissed) return 'bg-red-400';
+      const revisionDifficultyMap = {
+        1: 'bg-emerald-400',
+        2: 'bg-cyan-400',
+        3: 'bg-amber-400',
+        4: 'bg-indigo-400',
+        5: 'bg-rose-400'
+      };
+      return revisionDifficultyMap[Number(event?.difficulty)] || 'bg-cyan-400';
+    }
+
+    const map = {
+      blue: 'bg-blue-400',
+      green: 'bg-green-400',
+      red: 'bg-red-400',
+      yellow: 'bg-yellow-400',
+      orange: 'bg-orange-400',
+      purple: 'bg-purple-400',
+      emerald: 'bg-emerald-400',
+      cyan: 'bg-cyan-400',
+      amber: 'bg-amber-400',
+      rose: 'bg-rose-400',
+      violet: 'bg-violet-400',
+      indigo: 'bg-indigo-400',
+      fuchsia: 'bg-fuchsia-400',
+      pink: 'bg-pink-400',
+      teal: 'bg-teal-400',
+      slate: 'bg-slate-400'
+    };
+
+    return map[event?.color] || 'bg-blue-400';
+  };
+
+  const getCalendarTaskColor = (event) => {
+    if (event?.isMissed && !event?.completed) {
+      return 'bg-rose-500/30 text-rose-100 border-rose-400/50';
+    }
+
+    if (event?.completed) {
+      return 'bg-slate-500/30 text-slate-100 border-slate-300/40';
+    }
+
+    return 'bg-teal-500/30 text-teal-100 border-teal-300/55';
   };
 
   const getDifficultyBadgeColor = (difficulty) => {
@@ -680,6 +1122,131 @@ const Chronicle = () => {
     return badgeColors[difficulty] || badgeColors[3];
   };
 
+  const getRevisionPopupAccent = (difficulty) => {
+    const accents = {
+      1: { borderClass: 'border-emerald-500/65', titleClass: 'text-emerald-300' },
+      2: { borderClass: 'border-cyan-500/65', titleClass: 'text-cyan-300' },
+      3: { borderClass: 'border-amber-500/70', titleClass: 'text-amber-300' },
+      4: { borderClass: 'border-indigo-500/65', titleClass: 'text-indigo-300' },
+      5: { borderClass: 'border-rose-500/65', titleClass: 'text-rose-300' }
+    };
+
+    return accents[Number(difficulty)] || { borderClass: 'border-cyan-500/65', titleClass: 'text-cyan-300' };
+  };
+
+  const getRevisionDifficultyDots = (difficulty) => {
+    const level = Math.max(0, Math.round(Number(difficulty) || 0));
+    const visibleCount = Math.min(6, level);
+    const overflow = Math.max(0, level - 6);
+
+    const dotColorByLevel = {
+      1: 'bg-emerald-400',
+      2: 'bg-cyan-400',
+      3: 'bg-amber-400',
+      4: 'bg-indigo-400',
+      5: 'bg-rose-400'
+    };
+
+    return {
+      visibleCount,
+      overflow,
+      dotClass: dotColorByLevel[Math.max(1, Math.min(5, level || 3))] || 'bg-cyan-400'
+    };
+  };
+
+  const sortEventsForDisplay = (events = []) => {
+    const getPriority = (event) => {
+      const isCustomEvent = event?.source === 'custom' || String(event?.id || '').startsWith('custom-');
+      if (isCustomEvent) return 0;
+      if (event?.isDue) return 1;
+      if (event?.type === 'revision' && event?.completed) return 2;
+      if (event?.type === 'revision') return 3;
+      if (event?.type === 'task') {
+        return event?.completed ? 5 : 4;
+      }
+      if (event?.type === 'festival' || event?.isHoliday) return 6;
+      return 7;
+    };
+
+    const toMinutes = (value) => {
+      const text = String(value || '');
+      const match = text.match(/^(\d{1,2}):(\d{2})$/);
+      if (!match) return Number.POSITIVE_INFINITY;
+      return Number(match[1]) * 60 + Number(match[2]);
+    };
+
+    return [...events].sort((a, b) => {
+      const priorityDelta = getPriority(a) - getPriority(b);
+      if (priorityDelta !== 0) return priorityDelta;
+
+      const timeDelta = toMinutes(a?.time) - toMinutes(b?.time);
+      if (timeDelta !== 0) return timeDelta;
+
+      return String(a?.title || '').localeCompare(String(b?.title || ''));
+    });
+  };
+
+  const filteredCalendarEvents = useMemo(() => {
+    const source = calendarEvents || {};
+    const dateKeys = Object.keys(source);
+    if (dateKeys.length === 0) return source;
+
+    const isDifficultyVisible = (event) => {
+      if (event?.type !== 'revision') return true;
+      const difficulty = Number(event?.difficulty || 3);
+      return eventFilters.difficulties.includes(difficulty);
+    };
+
+    const isHabitTask = (event) => {
+      if (event?.type !== 'task') return false;
+      const taskType = String(event?.taskType || '').toLowerCase();
+      return taskType === taskService.TASK_TYPES.RECURRING || taskType === taskService.TASK_TYPES.CUSTOM_RECURRING;
+    };
+
+    const isVisibleByCategory = (event) => {
+      if (!event || typeof event !== 'object') return false;
+
+      if (event.type === 'revision') {
+        if (event.completed) {
+          return eventFilters.categories.completedRevisions && eventFilters.revisionTypes.completed;
+        }
+
+        if (!eventFilters.categories.revisions) return false;
+        if (event.isDue) return eventFilters.revisionTypes.due;
+        return eventFilters.revisionTypes.scheduled;
+      }
+
+      if (event.type === 'task') {
+        return isHabitTask(event)
+          ? eventFilters.categories.hobbies
+          : eventFilters.categories.tasks;
+      }
+
+      if (event.type === 'festival' || event.isHoliday) {
+        return eventFilters.categories.festivals;
+      }
+
+      if (event.type === 'deadline') return eventFilters.categories.deadlines;
+      if (event.type === 'meeting') return eventFilters.categories.meetings;
+      if (event.type === 'event') return eventFilters.categories.events;
+
+      return true;
+    };
+
+    const result = {};
+    dateKeys.forEach((dateKey) => {
+      const filtered = (source[dateKey] || []).filter((event) => {
+        return isVisibleByCategory(event) && isDifficultyVisible(event);
+      });
+
+      if (filtered.length > 0) {
+        result[dateKey] = filtered;
+      }
+    });
+
+    return result;
+  }, [calendarEvents, eventFilters]);
+
   if (isLoading) {
     return (
       <div className="bg-black text-white min-h-screen flex items-center justify-center">
@@ -689,6 +1256,7 @@ const Chronicle = () => {
   }
 
   const calendarDays = generateCalendarDays();
+  const selectedDateEvents = selectedDate ? (filteredCalendarEvents[selectedDate.toDateString()] || []) : [];
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
@@ -698,16 +1266,31 @@ const Chronicle = () => {
   return (
     <div className="bg-black text-white min-h-screen flex">
       {/* Sidebar */}
-      <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} bg-black border-r border-white/10 flex flex-col fixed left-0 top-0 h-screen z-10 transition-all duration-300`}>
+      <div className={`${
+        isDesktopViewport
+          ? (isSidebarCollapsed ? 'w-16' : 'w-64')
+          : `w-64 ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`
+      } bg-black border-r border-white/10 flex flex-col fixed left-0 top-0 h-screen ${isDesktopViewport ? 'z-10' : 'z-40'} transition-[width,transform] duration-300`}>
         {/* Logo */}
-        <div className={`h-16 sm:h-20 border-b border-white/10 flex items-center ${sidebarCollapsed ? 'justify-center px-2' : 'px-4'}`}>
+        <div className={`h-16 sm:h-20 border-b border-white/10 flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'}`}>
           <button
-            onClick={() => navigate('/dashboard')}
-            className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+            onClick={() => navigate('/')}
+            className={`flex items-center hover:opacity-80 transition-opacity ${isSidebarCollapsed ? 'justify-center w-full' : 'gap-2 min-w-0'}`}
           >
-            <Logo size={sidebarCollapsed ? "md" : "sm"} className="text-white" />
-            {!sidebarCollapsed && <span className="text-lg font-semibold text-white">Memora</span>}
+            <Logo size="sm" className="text-white scale-90" />
+            {!isSidebarCollapsed && <span className="text-lg font-semibold text-white">Memora</span>}
           </button>
+
+          {isDesktopViewport && !isSidebarCollapsed && (
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(true)}
+              aria-label="Collapse sidebar"
+              className="inline-flex items-center justify-center rounded-md border border-white/10 bg-white/[0.03] p-1.5 text-gray-300 hover:bg-white/10 hover:text-white transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         {/* Navigation */}
@@ -716,24 +1299,29 @@ const Chronicle = () => {
             {sidebarItems.map((item) => (
               <button
                 key={item.label}
-                onClick={() => navigate(item.path)}
-                className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-1' : 'space-x-3 px-3'} py-2 rounded-lg text-sm transition-colors ${
+                onClick={() => {
+                  handleSidebarClick(item);
+                  if (!isDesktopViewport) {
+                    setIsMobileSidebarOpen(false);
+                  }
+                }}
+                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-1' : 'space-x-3 px-3'} py-2 rounded-lg text-sm transition-colors ${
                   item.active
                     ? 'bg-white/10 text-white font-medium'
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
-                title={sidebarCollapsed ? item.label : ''}
+                title={isSidebarCollapsed ? item.label : ''}
               >
-                <item.icon className={`${sidebarCollapsed ? "w-5 h-5" : "w-4 h-4"} ${
-                  location.pathname === item.path ? 'text-blue-400' : ''
+                <item.icon className={`${isSidebarCollapsed ? "w-5 h-5" : "w-4 h-4"} ${
+                  location.pathname === item.path ? 'text-yellow-300' : ''
                 }`} />
-                {!sidebarCollapsed && <span>{item.label}</span>}
+                {!isSidebarCollapsed && <span>{item.label}</span>}
               </button>
             ))}
           </div>
 
           {/* Quick Actions */}
-          {!sidebarCollapsed && (
+          {!isSidebarCollapsed && (
             <div className="mt-8">
               <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Quick Actions</p>
               <div className="space-y-1">
@@ -743,7 +1331,7 @@ const Chronicle = () => {
                     onClick={action.action}
                     className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                       action.primary
-                        ? 'bg-white text-black hover:bg-gray-100'
+                        ? 'border border-yellow-400/35 bg-yellow-500/12 text-yellow-100 hover:bg-yellow-500/18'
                         : 'text-gray-400 hover:text-white hover:bg-white/5'
                     }`}
                   >
@@ -757,79 +1345,95 @@ const Chronicle = () => {
         </nav>
       </div>
 
+      {!isDesktopViewport && isMobileSidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          onClick={() => setIsMobileSidebarOpen(false)}
+          className="fixed inset-0 z-30 bg-black/55 backdrop-blur-sm"
+        />
+      )}
+
       {/* Main Content */}
-      <div className={`flex-1 flex flex-col transition-all duration-300 ${
-        sidebarCollapsed
-          ? 'ml-16'
-          : 'ml-64'
+      <div className={`flex-1 flex flex-col transition-[margin] duration-300 ${
+        isDesktopViewport
+          ? (isSidebarCollapsed ? 'ml-16' : 'ml-64')
+          : 'ml-0'
       }`}>
         {/* Header */}
-        <header className="bg-black border-b border-white/10 h-16 sm:h-20 px-3 sm:px-4 flex items-center">
-          <div className="flex items-center justify-between w-full">
+        <header data-tour="chronicle-header" className="bg-black border-b border-white/10 h-16 sm:h-20 px-3 sm:px-4 flex items-center">
+          <div className="flex items-center justify-between gap-2 sm:gap-3 w-full">
             {/* Left: Sidebar toggle and title */}
-            <div className="flex items-center space-x-2 sm:space-x-4">
-              <button
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="p-1.5 sm:p-2 hover:bg-white/5 rounded-lg transition-colors"
-              >
-                {sidebarCollapsed ? (
-                  <PanelLeft className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-                ) : (
-                  <PanelLeftClose className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-                )}
-              </button>
-              <div>
-                <h1 className="text-xl sm:text-2xl font-semibold text-white">Chronicle</h1>
-                <p className="text-xs sm:text-sm text-gray-400">
-                  {new Date().toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
-                </p>
+            <div className="flex items-center gap-2 min-w-0">
+              {isDesktopViewport && isSidebarCollapsed && (
+                <button
+                  type="button"
+                  onClick={toggleSidebar}
+                  aria-label="Expand sidebar"
+                  className="hidden lg:inline-flex p-0 text-yellow-200 hover:text-yellow-100 transition-colors"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              )}
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-2xl font-semibold text-yellow-100 inline-flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-yellow-200" />
+                  Chronicle
+                </h1>
+                <p className="hidden sm:block text-xs text-gray-400 mt-0.5">Plan events, revision milestones, and important dates in one timeline.</p>
               </div>
             </div>
 
             {/* Right: Calendar controls */}
-            <div className="flex items-center space-x-2 sm:space-x-3">
+            <div className="flex items-center justify-end gap-1.5 sm:gap-3 w-auto shrink-0">
               <button
-                onClick={() => setShowReligionModal(true)}
-                className="px-3 py-1.5 text-sm bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 rounded-lg transition-colors flex items-center space-x-1"
-                title="Festival Preferences"
+                onClick={() => setIsMobileSidebarOpen((prev) => !prev)}
+                className="lg:hidden p-1.5 sm:p-2 hover:bg-white/5 rounded-lg transition-colors"
+                aria-label="Toggle sidebar"
               >
-                <Gift className="w-3 h-3" />
-                <span className="hidden sm:inline">{selectedReligions.length} Categories</span>
+                {isMobileSidebarOpen
+                  ? <PanelLeftClose className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-200" />
+                  : <PanelLeft className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-200" />}
+              </button>
+              <button
+                onClick={() => setShowFilterModal(true)}
+                className="h-8 w-8 sm:h-9 sm:w-9 text-sm bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white rounded-lg transition-colors inline-flex items-center justify-center"
+                title="Filters"
+                aria-label="Open filters"
+              >
+                <Filter className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
               <button
                 onClick={goToToday}
-                className="px-3 py-1.5 text-sm bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
+                className="px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
               >
                 Today
               </button>
               <button
                 onClick={() => openEventModal()}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
+                data-tour="chronicle-add-event"
+                className="bg-yellow-500 hover:bg-yellow-600 text-black px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg inline-flex items-center space-x-1.5 transition-colors"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 <span className="hidden sm:inline">Add Event</span>
+                <span className="sm:hidden">Add</span>
               </button>
             </div>
           </div>
         </header>
 
         {/* Calendar Navigation */}
-        <div className="border-b border-white/10 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+        <div className="border-b border-white/10 px-3 sm:px-4 py-3 sm:py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center justify-between sm:justify-start gap-1 sm:gap-3">
               <button
                 onClick={() => navigateMonth(-1)}
                 className="p-2 hover:bg-white/5 rounded-lg transition-colors"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <div className="w-[220px] sm:w-[260px] text-center">
-                <h2 className="text-xl font-semibold whitespace-nowrap">
+              <div className="min-w-0 flex-1 sm:flex-none sm:w-[260px] text-center">
+                <h2 className="text-lg sm:text-xl font-semibold whitespace-nowrap">
                   {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
                 </h2>
               </div>
@@ -841,8 +1445,8 @@ const Chronicle = () => {
               </button>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <div className="flex items-center space-x-4 text-xs text-gray-400">
+            <div className="overflow-x-auto scrollbar-hide">
+              <div className="flex items-center space-x-4 text-xs text-gray-400 whitespace-nowrap min-w-max">
                 <div className="flex items-center space-x-1">
                   <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                   <span>Revision</span>
@@ -850,6 +1454,10 @@ const Chronicle = () => {
                 <div className="flex items-center space-x-1">
                   <div className="w-2 h-2 bg-red-500 rounded-full"></div>
                   <span>Due Now</span>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <div className="w-2 h-2 bg-teal-500 rounded-full"></div>
+                  <span>Task</span>
                 </div>
                 <div className="flex items-center space-x-1">
                   <div className="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -865,13 +1473,13 @@ const Chronicle = () => {
         </div>
 
         {/* Calendar Grid */}
-        <div className="flex-1 p-4 overflow-auto scrollbar-hide">
-          <div className="bg-white/5 rounded-lg border border-white/10 overflow-hidden">
+        <div className="flex-1 px-3 sm:px-4 py-3 sm:py-4 overflow-auto scrollbar-hide">
+          <div className="bg-black rounded-lg border border-white/10 overflow-hidden">
             {/* Day headers */}
             <div className="grid grid-cols-7 border-b border-white/10">
               {dayNames.map((day) => (
-                <div key={day} className="p-3 text-center text-sm font-medium text-gray-400 border-r border-white/10 last:border-r-0">
-                  {day}
+                <div key={day} className="p-2 sm:p-3 text-center text-xs sm:text-sm font-medium text-gray-400 border-r border-white/10 last:border-r-0">
+                  {isPhoneViewport ? day.charAt(0) : day}
                 </div>
               ))}
             </div>
@@ -881,145 +1489,95 @@ const Chronicle = () => {
               {calendarDays.map((day, index) => (
                 <div
                   key={index}
-                  className={`min-h-[120px] border-r border-b border-white/10 last:border-r-0 p-2 cursor-pointer hover:bg-white/5 transition-colors ${
-                    !day.isCurrentMonth ? 'opacity-40' : ''
-                  } ${day.isToday ? 'bg-blue-500/10' : ''}`}
+                  className={`border-r border-b border-white/10 last:border-r-0 p-1.5 sm:p-2 cursor-pointer hover:bg-white/5 transition-colors ${
+                    isPhoneViewport ? 'min-h-[64px]' : 'min-h-[120px]'
+                  } ${!day.isCurrentMonth ? 'opacity-40' : ''} ${day.isToday ? 'bg-yellow-500/10' : ''}`}
                   onClick={() => openDayDetails(day)}
                 >
-                  <div className={`text-sm font-medium mb-1 ${
-                    day.isToday ? 'text-blue-400' : day.isCurrentMonth ? 'text-white' : 'text-gray-500'
+                  <div className={`text-xs sm:text-sm font-medium ${isPhoneViewport ? 'mb-0.5' : 'mb-1'} ${
+                    day.isToday ? 'text-yellow-300' : day.isCurrentMonth ? 'text-white' : 'text-gray-500'
                   }`}>
                     {day.day}
                   </div>
 
-                  {/* Events */}
-                  <div className="space-y-1">
-                    {day.events.slice(0, 3).map((event, eventIndex) => {
-                      const EventIcon = getEventIcon(event.type);
-                      return (
-                        <div
-                          key={eventIndex}
-                          className={`text-xs p-1 rounded border ${getEventColor(event)} truncate`}
-                          title={event.isDue ? `DUE: ${event.title}` : event.title}
-                        >
-                          <div className="flex items-center space-x-1">
-                            <EventIcon className="w-3 h-3 flex-shrink-0" />
-                            {event.isDue && <span className="text-red-400 font-bold">•</span>}
-                            <span className="truncate">{event.title}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {day.events.length > 3 && (
-                      <div className="text-xs text-gray-400 pl-1">
-                        +{day.events.length - 3} more
+                  {isPhoneViewport ? (
+                    <div className="flex flex-col items-start gap-0.5">
+                      <div className="grid grid-cols-3 gap-1 w-fit">
+                        {day.events.slice(0, 6).map((event, eventIndex) => (
+                          <span
+                            key={eventIndex}
+                            className={`h-1.5 w-1.5 rounded-full ${getEventDotColor(event)}`}
+                            title={`${event.isDue ? 'DUE: ' : (event.type === 'revision' && event.completed ? 'DONE: ' : '')}${event.title}${event.type === 'revision' && Number(event.revisionNumber) > 0 ? ` (R${event.revisionNumber})` : ''}`}
+                          />
+                        ))}
                       </div>
-                    )}
-                  </div>
+                      {day.events.length > 6 && (
+                        <span className="text-[10px] text-gray-400 leading-none">+{day.events.length - 6}</span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {day.events.slice(0, 3).map((event, eventIndex) => {
+                        const EventIcon = getEventIcon(event);
+                        const eventColorClass = event.type === 'task'
+                          ? getCalendarTaskColor(event)
+                          : getEventColor(event);
+                        const isCompletedRevision = event.type === 'revision' && Boolean(event.completed);
+                        const monthCellEventClass = isCompletedRevision
+                          ? 'bg-transparent text-slate-100 border-slate-300/45'
+                          : eventColorClass;
+
+                        return (
+                          <div
+                            key={eventIndex}
+                            className={`text-xs p-1 rounded border ${monthCellEventClass} truncate`}
+                            title={`${event.isDue ? 'DUE: ' : (isCompletedRevision ? 'DONE: ' : '')}${event.title}${event.type === 'revision' && Number(event.revisionNumber) > 0 ? ` (R${event.revisionNumber})` : ''}`}
+                          >
+                            <div className="flex items-center space-x-1">
+                              <EventIcon className="w-3 h-3 flex-shrink-0" />
+                              {(event.isDue || event.isMissed) && <span className="text-red-400 font-bold">•</span>}
+                              {event.type === 'revision' && Number(event.revisionNumber) > 0 && (
+                                <span className="text-[10px] px-1 py-0.5 rounded bg-white/15 shrink-0">R{event.revisionNumber}</span>
+                              )}
+                              <span className={`truncate ${isCompletedRevision ? 'line-through opacity-85' : ''}`}>{event.title}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {day.events.length > 3 && (
+                        <div className="text-xs text-gray-400 pl-1">
+                          +{day.events.length - 3} more
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           </div>
         </div>
 
-        {/* Footer */}
-        <footer className="mt-1 border-t border-white/10 py-6">
-          <div className="max-w-6xl mx-auto px-6">
-            <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
-              {/* Left: Memora Branding */}
-              <div className="flex items-center space-x-3">
-                <Logo size="sm" className="text-white" />
-                <div>
-                  <div className="text-lg font-bold text-white">Memora</div>
-                  <div className="text-xs text-gray-400">Sets your memory in motion</div>
-                </div>
-              </div>
-
-              {/* Center: Social Icons */}
-              <div className="flex items-center space-x-3">
-                <a
-                  href="https://linkedin.com/company/memora"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 hover:border-blue-400/20 transition-all"
-                  title="LinkedIn"
-                >
-                  <Linkedin className="w-4 h-4" />
-                </a>
-                <a
-                  href="https://twitter.com/memoraapp"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 hover:border-blue-400/20 transition-all"
-                  title="Twitter"
-                >
-                  <Twitter className="w-4 h-4" />
-                </a>
-                <a
-                  href="https://instagram.com/memoraapp"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-pink-400 hover:bg-pink-400/10 hover:border-pink-400/20 transition-all"
-                  title="Instagram"
-                >
-                  <Instagram className="w-4 h-4" />
-                </a>
-              </div>
-
-              {/* Right: Navigation Links */}
-              <div className="flex flex-wrap items-center space-x-4 text-sm text-gray-400">
-                <button
-                  onClick={() => navigate('/profile')}
-                  className="hover:text-white transition-colors"
-                >
-                  Support
-                </button>
-                <a
-                  href="mailto:hello@memora.app"
-                  className="hover:text-white transition-colors"
-                >
-                  Contact Us
-                </a>
-                <button className="hover:text-white transition-colors">
-                  Privacy
-                </button>
-                <button className="hover:text-white transition-colors">
-                  Terms
-                </button>
-              </div>
-            </div>
-
-            {/* Bottom Copyright */}
-            <div className="mt-4 pt-4 border-t border-white/10 text-center text-sm text-gray-500">
-              © 2025 Memora, Inc. All rights reserved.
-            </div>
-          </div>
-        </footer>
+        <DashboardFooter className="mt-1 border-t border-white/10 py-5 sm:py-6" />
       </div>
 
       {/* Day Details Modal */}
       {showDayDetails && selectedDate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-black rounded-lg border border-white/20 w-full max-w-2xl max-h-[80vh] flex flex-col">
-            <div className="p-6 border-b border-white/10 flex-shrink-0">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3 sm:p-4">
+          <div className={`bg-black rounded-xl border border-white/20 w-full ${isPhoneViewport ? 'max-w-md max-h-[78vh]' : 'max-w-2xl max-h-[80vh]'} flex flex-col`}>
+            <div className={`${isPhoneViewport ? 'p-3' : 'p-4 sm:p-6'} border-b border-white/10 flex-shrink-0`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-xl font-semibold text-white">
-                    {selectedDate.toLocaleDateString('en-US', {
-                      weekday: 'long',
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
+                  <h3 className={`${isPhoneViewport ? 'text-base' : 'text-lg sm:text-xl'} font-semibold text-white`}>
+                    {formatDateWithWeekday(selectedDate, 'long')}
                   </h3>
-                  <p className="text-sm text-gray-400 mt-1">
-                    {calendarEvents[selectedDate.toDateString()]?.length || 0} events scheduled
+                  <p className={`${isPhoneViewport ? 'text-[11px]' : 'text-xs sm:text-sm'} text-gray-400 mt-1`}>
+                    {selectedDateEvents.length} events scheduled
                   </p>
                 </div>
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => openEventModal('event', selectedDate)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm transition-colors"
+                    className="bg-yellow-500 hover:bg-yellow-600 text-black px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm transition-colors"
                   >
                     Add Event
                   </button>
@@ -1033,59 +1591,73 @@ const Chronicle = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
-              {calendarEvents[selectedDate.toDateString()]?.length > 0 ? (
-                <div className="space-y-3">
-                  {calendarEvents[selectedDate.toDateString()].map((event, index) => {
-                    const EventIcon = getEventIcon(event.type);
+            <div className={`flex-1 overflow-y-auto ${isPhoneViewport ? 'p-3' : 'p-4 sm:p-6'} scrollbar-themed`}>
+              {selectedDateEvents.length > 0 ? (
+                <div className={`${isPhoneViewport ? 'space-y-2' : 'space-y-3'}`}>
+                  {selectedDateEvents.map((event, index) => {
+                    const EventIcon = getEventIcon(event);
+                    const isFestival = event.type === 'festival';
+                    const isRevision = event.type === 'revision';
+                    const revisionAccent = isRevision ? getRevisionPopupAccent(event.difficulty) : null;
                     return (
                       <div
                         key={index}
-                        className={`p-4 rounded-lg border ${getEventColor(event)} hover:bg-white/5 transition-colors`}
+                        className={`${isPhoneViewport ? 'p-2.5' : 'p-4'} rounded-xl border transition-colors ${
+                          isRevision
+                            ? `bg-black ${revisionAccent.borderClass} hover:bg-white/[0.03]`
+                            : `${getEventColor(event)} hover:bg-white/5`
+                        }`}
                       >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2 mb-2">
-                              <EventIcon className="w-4 h-4" />
-                              <span className="font-medium">{event.title}</span>
+                        <div className="flex items-start justify-between gap-2 min-w-0">
+                          <div className="flex-1 min-w-0 overflow-hidden">
+                            <div className={`flex items-center ${isPhoneViewport ? 'gap-1.5' : 'space-x-2'} mb-1.5 min-w-0`}>
+                              <EventIcon className={`w-4 h-4 shrink-0 ${isRevision ? revisionAccent.titleClass : ''}`} />
+                              <span className={`font-medium ${isRevision ? revisionAccent.titleClass : ''} min-w-0 block truncate ${isRevision && event.completed ? 'line-through opacity-80' : ''}`}>
+                                {event.title}
+                              </span>
+                              {!isFestival && !isPhoneViewport && (
+                                <span className="text-xs px-2 py-1 bg-white/10 rounded shrink-0">
+                                  {eventTypes[event.type]?.label || (event.type === 'task' ? 'Task' : 'Event')}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className={`flex items-center ${isPhoneViewport ? 'flex-wrap gap-1.5' : 'gap-2'} min-w-0`}>
                               {event.isDue && (
-                                <span className="text-xs px-2 py-1 bg-red-500/20 text-red-400 rounded font-medium">
+                                <span className="text-[10px] px-1.5 py-0.5 bg-red-500/20 text-red-400 rounded font-medium shrink-0">
                                   DUE NOW
                                 </span>
                               )}
-                              <span className="text-xs px-2 py-1 bg-white/10 rounded">
-                                {eventTypes[event.type]?.label}
-                              </span>
-                              {event.time && (
-                                <span className="text-xs text-gray-400 flex items-center">
-                                  <Clock className="w-3 h-3 mr-1" />
-                                  {event.time}
+                              {!isFestival && isPhoneViewport && (
+                                <span className="text-[10px] px-1.5 py-0.5 bg-white/10 rounded shrink-0">
+                                  {eventTypes[event.type]?.label || (event.type === 'task' ? 'Task' : 'Event')}
+                                </span>
+                              )}
+                              {event.type === 'revision' && typeof event.difficulty === 'number' && (
+                                <span className={`${isPhoneViewport ? 'text-[10px] px-1.5 py-0.5' : 'px-2 py-1 text-xs'} rounded ${getDifficultyBadgeColor(event.difficulty)} shrink-0`}>
+                                  Difficulty:{event.difficulty}
+                                </span>
+                              )}
+                              {event.type === 'revision' && Number(event.revisionNumber) > 0 && (
+                                <span className={`${isPhoneViewport ? 'text-[10px] px-1.5 py-0.5' : 'px-2 py-1 text-xs'} rounded bg-white/10 text-gray-200 shrink-0`}>
+                                  R{event.revisionNumber}
+                                </span>
+                              )}
+                              {event.type === 'revision' && event.completed && (
+                                <span className={`${isPhoneViewport ? 'text-[10px] px-1.5 py-0.5' : 'px-2 py-1 text-xs'} rounded bg-slate-500/25 text-slate-200 shrink-0`}>
+                                  Completed
                                 </span>
                               )}
                             </div>
-                            {event.description && (
-                              <p className="text-sm text-gray-300 mb-2">{event.description}</p>
+
+                            {event.description && !(isRevision && isPhoneViewport) && (
+                              <p className={`${isPhoneViewport ? 'text-xs mt-1.5' : 'text-sm mt-1.5'} text-gray-300 line-clamp-1`}>
+                                {event.description}
+                              </p>
                             )}
-                            <div className="flex items-center space-x-2 text-xs">
-                              {typeof event.difficulty === 'number' && (
-                                <span className={`px-2 py-1 rounded ${getDifficultyBadgeColor(event.difficulty)}`}>
-                                  Difficulty {event.difficulty}
-                                </span>
-                              )}
-                              {event.topicId && (
-                                <span className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded">
-                                  Auto-generated
-                                </span>
-                              )}
-                              {event.isHoliday && (
-                                <span className="px-2 py-1 bg-gray-500/20 text-gray-300 rounded">
-                                  Holiday
-                                </span>
-                              )}
-                            </div>
                           </div>
                           {!event.topicId && (
-                            <div className="flex items-center space-x-1 ml-4">
+                            <div className="flex items-center space-x-1 ml-2 sm:ml-4">
                               <button
                                 onClick={() => openEditEventModal(event)}
                                 className="p-1.5 hover:bg-white/10 rounded transition-colors"
@@ -1114,7 +1686,7 @@ const Chronicle = () => {
                   <p className="text-gray-400 mb-4">Add an event to get started</p>
                   <button
                     onClick={() => openEventModal('event', selectedDate)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+                    className="bg-yellow-500 hover:bg-yellow-600 text-black px-4 py-2 rounded-lg transition-colors"
                   >
                     Add Event
                   </button>
@@ -1127,15 +1699,18 @@ const Chronicle = () => {
 
       {/* Event Modal */}
       {showEventModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-black rounded-lg border border-white/20 w-full max-w-md">
-            <div className="p-6 border-b border-white/10">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3 sm:p-4">
+          <div className="bg-black rounded-xl border border-white/20 w-full max-w-md max-h-[86vh] sm:max-h-[80vh] overflow-y-auto">
+            <div className="p-4 sm:p-6 border-b border-white/10">
               <div className="flex items-center justify-between">
-                <h3 className="text-xl font-semibold text-white">
+                <h3 className="text-lg sm:text-xl font-semibold text-white">
                   {editingEvent ? 'Edit Event' : 'Create Event'}
                 </h3>
                 <button
-                  onClick={() => setShowEventModal(false)}
+                  onClick={() => {
+                    setEventFormError('');
+                    setShowEventModal(false);
+                  }}
                   className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                 >
                   <X className="w-5 h-5" />
@@ -1143,14 +1718,14 @@ const Chronicle = () => {
               </div>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Title</label>
                 <input
                   type="text"
                   value={eventForm.title}
                   onChange={(e) => setEventForm({ ...eventForm, title: e.target.value })}
-                  className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                  className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-yellow-500"
                   placeholder="Enter event title"
                 />
               </div>
@@ -1160,20 +1735,25 @@ const Chronicle = () => {
                 <textarea
                   value={eventForm.description}
                   onChange={(e) => setEventForm({ ...eventForm, description: e.target.value })}
-                  className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 h-20 resize-none"
+                  className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-yellow-500 h-20 resize-none"
                   placeholder="Enter event description (optional)"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Date</label>
                   <input
-                    type="date"
+                    type="text"
                     value={eventForm.date}
-                    onChange={(e) => setEventForm({ ...eventForm, date: e.target.value })}
-                    className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                    onChange={(e) => handleEventDateChange(e.target.value)}
+                    onBlur={handleEventDateBlur}
+                    placeholder="dd/mm/yyyy"
+                    className={`w-full bg-white/5 border rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none ${eventFormError ? 'border-red-400 focus:border-red-400' : 'border-white/20 focus:border-yellow-500'}`}
                   />
+                  {eventFormError ? (
+                    <p className="mt-2 text-xs text-red-300">{eventFormError}</p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">Time</label>
@@ -1181,7 +1761,7 @@ const Chronicle = () => {
                     type="time"
                     value={eventForm.time}
                     onChange={(e) => setEventForm({ ...eventForm, time: e.target.value })}
-                    className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                    className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-500"
                   />
                 </div>
               </div>
@@ -1199,32 +1779,19 @@ const Chronicle = () => {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Difficulty</label>
-                <ShadcnSelect
-                  value={eventForm.difficulty}
-                  onChange={(value) => setEventForm({ ...eventForm, difficulty: Number(value) })}
-                  options={[
-                    { value: 1, label: '1 (Easy)' },
-                    { value: 2, label: '2' },
-                    { value: 3, label: '3 (Medium)' },
-                    { value: 4, label: '4' },
-                    { value: 5, label: '5 (Hard)' }
-                  ]}
-                  className="w-full"
-                />
-              </div>
-
-              <div className="flex items-center justify-end space-x-3 pt-4">
+              <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 sm:gap-3 pt-2 sm:pt-4">
                 <button
-                  onClick={() => setShowEventModal(false)}
-                  className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+                  onClick={() => {
+                    setEventFormError('');
+                    setShowEventModal(false);
+                  }}
+                  className="w-full sm:w-auto px-4 py-2 text-gray-400 hover:text-white transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={saveEvent}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+                  className="w-full sm:w-auto bg-yellow-500 hover:bg-yellow-600 text-black px-4 py-2 rounded-lg transition-colors"
                 >
                   {editingEvent ? 'Update' : 'Create'} Event
                 </button>
@@ -1234,96 +1801,269 @@ const Chronicle = () => {
         </div>
       )}
 
-      {/* Religion Preference Modal */}
-      {showReligionModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-black rounded-lg border border-white/20 w-full max-w-2xl max-h-[80vh] flex flex-col">
-            <div className="p-6 border-b border-white/10 flex-shrink-0">
+      {/* Filters Modal */}
+      {showFilterModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3 sm:p-4">
+          <div className="bg-[#080808] rounded-2xl border border-yellow-400/20 w-full max-w-3xl max-h-[88vh] sm:max-h-[82vh] flex flex-col shadow-[0_24px_70px_rgba(0,0,0,0.45)]">
+            <div className="p-4 sm:p-6 border-b border-white/10 flex-shrink-0">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-xl font-semibold text-white">Festival Preferences</h3>
-                  <p className="text-sm text-gray-400 mt-1">
-                    Choose which festivals and holidays to display in your calendar
+                  <h3 className="text-lg sm:text-xl font-semibold text-white tracking-tight">Filters</h3>
+                  <p className="text-xs sm:text-sm text-gray-400 mt-1">
+                    Control what appears in the Chronicle month view
                   </p>
                 </div>
                 <button
-                  onClick={() => setShowReligionModal(false)}
-                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  onClick={() => setShowFilterModal(false)}
+                  className="p-2 hover:bg-white/10 rounded-lg transition-colors text-gray-300 hover:text-white"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
-              <div className="space-y-4">
-                {religionOptions.map((religion) => (
-                  <div
-                    key={religion.id}
-                    className={`p-4 rounded-lg border transition-colors cursor-pointer ${
-                      selectedReligions.includes(religion.id)
-                        ? 'border-blue-500 bg-blue-500/10'
-                        : 'border-white/20 hover:border-white/40'
-                    }`}
-                    onClick={() => toggleReligion(religion.id)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3">
-                          <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
-                            selectedReligions.includes(religion.id)
-                              ? 'border-blue-500 bg-blue-500'
-                              : 'border-gray-400'
-                          }`}>
-                            {selectedReligions.includes(religion.id) && (
-                              <CheckCircle className="w-3 h-3 text-white" />
-                            )}
-                          </div>
-                          <div>
-                            <h4 className="font-medium text-white">{religion.label}</h4>
-                            <p className="text-sm text-gray-400 mt-1">{religion.description}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-themed">
+              <div className="space-y-4 sm:space-y-5">
+                <div className="rounded-2xl border border-white/10 bg-black/35 p-4 sm:p-5">
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Which Cards To Show</p>
+                  <div className="flex flex-wrap gap-2.5 sm:gap-3">
+                    {FILTER_CATEGORY_OPTIONS.map(([key, label]) => {
+                      const isSelected = eventFilters.categories[key];
 
-              <div className="mt-6 p-4 bg-white/5 rounded-lg">
-                <h4 className="font-medium text-white mb-2">Note:</h4>
-                <p className="text-sm text-gray-400">
-                  • Festival dates are approximate for lunar calendar-based festivals
-                  • Telugu festivals include major Andhra Pradesh and Telangana celebrations
-                  • You can select multiple categories to see all relevant festivals
-                  • Changes will be applied immediately to your calendar
-                </p>
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => toggleFilterCategory(key)}
+                          className={`inline-flex max-w-full px-3.5 py-2.5 rounded-full border text-sm transition-all duration-200 items-center gap-2.5 ${
+                            isSelected
+                              ? 'border-yellow-300/60 bg-yellow-500/12 text-yellow-100'
+                              : 'border-white/15 bg-black/30 text-gray-300 hover:border-yellow-300/30 hover:text-white'
+                          }`}
+                        >
+                          <span className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
+                            isSelected
+                              ? 'bg-yellow-300 text-black'
+                              : 'bg-black/40 border border-white/20 text-gray-500'
+                          }`}>
+                            {isSelected ? <CheckCircle className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
+                          </span>
+                          <span className="whitespace-nowrap">{label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-black/35 p-4 sm:p-5">
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Revision Types</p>
+                  <div className="flex flex-wrap gap-2.5 sm:gap-3">
+                    {REVISION_TYPE_OPTIONS.map(([key, label]) => {
+                      const isSelected = eventFilters.revisionTypes[key];
+
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => toggleRevisionTypeFilter(key)}
+                          className={`inline-flex max-w-full px-3.5 py-2.5 rounded-full border text-sm transition-all duration-200 items-center gap-2.5 ${
+                            isSelected
+                              ? 'border-yellow-300/60 bg-yellow-500/12 text-yellow-100'
+                              : 'border-white/15 bg-black/30 text-gray-300 hover:border-yellow-300/30 hover:text-white'
+                          }`}
+                        >
+                          <span className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
+                            isSelected
+                              ? 'bg-yellow-300 text-black'
+                              : 'bg-black/40 border border-white/20 text-gray-500'
+                          }`}>
+                            {isSelected ? <CheckCircle className="w-3.5 h-3.5" /> : <Circle className="w-3.5 h-3.5" />}
+                          </span>
+                          <span className="whitespace-nowrap">{label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-black/35 p-4 sm:p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Difficulty</p>
+                    <button
+                      type="button"
+                      onClick={setAllDifficulties}
+                      className="text-xs text-yellow-300 hover:text-yellow-200 transition-colors"
+                    >
+                      Reset To Any
+                    </button>
+                  </div>
+
+                  <div className="w-full rounded-full border border-white/10 bg-black/45 p-1.5 flex items-center gap-1.5 overflow-x-auto scrollbar-themed">
+                    <button
+                      type="button"
+                      onClick={setAllDifficulties}
+                      className={`px-3 py-1.5 rounded-full text-sm transition-colors whitespace-nowrap ${
+                        eventFilters.difficulties.length === 5
+                          ? 'bg-yellow-300 text-black font-medium shadow-[0_2px_10px_rgba(250,204,21,0.25)]'
+                          : 'text-gray-300 hover:text-white hover:bg-white/6'
+                      }`}
+                    >
+                      Any
+                    </button>
+
+                    {[1, 2, 3, 4, 5].map((difficulty) => {
+                      const isEnabled = eventFilters.difficulties.includes(difficulty);
+
+                      return (
+                        <button
+                          key={difficulty}
+                          type="button"
+                          onClick={() => toggleDifficultyFilter(difficulty)}
+                          className={`w-9 h-9 rounded-full text-sm transition-colors flex items-center justify-center flex-shrink-0 ${
+                            isEnabled
+                              ? 'bg-yellow-300 text-black font-semibold shadow-[0_2px_10px_rgba(250,204,21,0.25)]'
+                              : 'text-gray-300 hover:text-white hover:bg-white/6'
+                          }`}
+                        >
+                          {difficulty}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <p className="text-xs text-gray-500 mt-3">
+                    Select one or more levels, or choose Any.
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="p-6 border-t border-white/10 flex-shrink-0">
+            <div className="p-4 sm:p-6 border-t border-white/10 flex items-center justify-between gap-3 bg-black/30">
+              <button
+                type="button"
+                onClick={resetFiltersToDefaults}
+                className="px-4 py-2 text-sm text-gray-300 hover:text-white border border-white/20 rounded-full hover:border-yellow-300/40 hover:bg-yellow-500/10 transition-colors"
+              >
+                Reset Filters
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFilterModal(false)}
+                className="px-5 py-2 text-sm bg-yellow-300 text-black hover:bg-yellow-200 rounded-full transition-colors font-medium"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3 sm:p-4">
+          <div className="bg-[#080808] rounded-2xl border border-white/15 w-full max-w-2xl max-h-[88vh] sm:max-h-[82vh] flex flex-col shadow-[0_24px_70px_rgba(0,0,0,0.45)]">
+            <div className="p-4 sm:p-6 border-b border-white/10 flex-shrink-0">
               <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
+                <div>
+                  <h3 className="text-lg sm:text-xl font-semibold text-white tracking-tight">Settings</h3>
+                  <p className="text-xs sm:text-sm text-gray-400 mt-1">
+                    Manage Chronicle preferences
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowSettingsModal(false)}
+                  className="p-2 hover:bg-white/10 rounded-lg transition-colors text-gray-300 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-themed">
+              <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-4">
+                <aside className="rounded-xl border border-white/10 bg-white/[0.02] p-4 h-fit space-y-4">
+                  <div>
+                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Festival Preferences</p>
+                    <p className="text-xs text-gray-500 mt-1">Choose which festivals and holidays appear in Chronicle</p>
+                  </div>
+
+                  <div className="rounded-xl border border-white/10 bg-black/50 p-3">
+                    <p className="text-[11px] text-gray-500 uppercase tracking-wider">Selected</p>
+                    <p className="text-2xl font-semibold text-white mt-1">{selectedReligions.length}</p>
+                    <p className="text-xs text-gray-500">categories active</p>
+                    <button
+                      onClick={resetToDefaults}
+                      className="mt-3 text-xs text-gray-300 hover:text-white underline transition-colors"
+                    >
+                      Reset to Defaults
+                    </button>
+                  </div>
+
+                  <div className="rounded-xl border border-white/10 bg-black/45 p-3">
+                    <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">Notes</p>
+                    <ul className="text-xs text-gray-400 space-y-1.5 leading-relaxed">
+                      <li>Festival dates can shift slightly for lunar calendars.</li>
+                      <li>Select multiple categories to broaden coverage.</li>
+                      <li>Changes apply immediately after saving.</li>
+                    </ul>
+                  </div>
+                </aside>
+
+                <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                  <div className="space-y-3">
+                    {religionOptions.map((religion) => {
+                      const isSelected = selectedReligions.includes(religion.id);
+
+                      return (
+                        <button
+                          key={religion.id}
+                          type="button"
+                          className={`w-full p-4 rounded-xl border transition-colors text-left ${
+                            isSelected
+                              ? 'border-white/40 bg-white/10'
+                              : 'border-white/15 hover:border-white/30 hover:bg-white/[0.03]'
+                          }`}
+                          onClick={() => toggleReligion(religion.id)}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={`w-4 h-4 rounded border-2 flex items-center justify-center mt-0.5 ${
+                              isSelected
+                                ? 'border-white bg-white'
+                                : 'border-gray-500'
+                            }`}>
+                              {isSelected && <CheckCircle className="w-3 h-3 text-black" />}
+                            </div>
+
+                            <div className="min-w-0">
+                              <h4 className="font-medium text-white">{religion.label}</h4>
+                              <p className="text-xs sm:text-sm text-gray-400 mt-1 leading-relaxed">{religion.description}</p>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-6 border-t border-white/10 flex-shrink-0">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-center space-x-3 sm:space-x-4">
                   <p className="text-sm text-gray-400">
                     {selectedReligions.length} categories selected
                   </p>
-                  <button
-                    onClick={resetToDefaults}
-                    className="text-xs text-purple-400 hover:text-purple-300 underline transition-colors"
-                  >
-                    Reset to Defaults
-                  </button>
                 </div>
-                <div className="flex items-center space-x-3">
+                <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
                   <button
-                    onClick={() => setShowReligionModal(false)}
-                    className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+                    onClick={() => setShowSettingsModal(false)}
+                    className="w-full sm:w-auto px-4 py-2 text-gray-400 hover:text-white transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={saveReligionPreferences}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+                    className="w-full sm:w-auto bg-white hover:bg-gray-200 text-black px-4 py-2 rounded-lg transition-colors"
                   >
                     Save Preferences
                   </button>
@@ -1352,7 +2092,7 @@ const Chronicle = () => {
         isVisible={toast.show}
         message={toast.message}
         type={toast.type}
-        onClose={() => setToast({ ...toast, show: false })}
+        onClose={() => setToast((prev) => ({ ...prev, show: false }))}
       />
     </div>
   );

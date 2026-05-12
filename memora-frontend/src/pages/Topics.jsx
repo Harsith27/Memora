@@ -8,6 +8,7 @@ import AddTopicModal from '../components/AddTopicModal';
 import EditTopicModal from '../components/EditTopicModal';
 import FileViewer from '../components/FileViewer';
 import ShadcnSelect from '../components/ShadcnSelect';
+import { formatDateDDMMYYYY } from '../utils/dateFormat';
 
 const Topics = () => {
   const navigate = useNavigate();
@@ -43,6 +44,18 @@ const Topics = () => {
     const matchesDifficulty = filterDifficulty === 'all' || topic.difficulty.toString() === filterDifficulty;
     return matchesSearch && matchesDifficulty;
   });
+
+  const getDifficultyColor = (difficulty) => {
+    const colors = {
+      1: 'text-green-400',
+      2: 'text-blue-400',
+      3: 'text-yellow-400',
+      4: 'text-orange-400',
+      5: 'text-red-400'
+    };
+
+    return colors[Number(difficulty)] || 'text-gray-400';
+  };
 
   const handleAddTopic = async (topicData) => {
     try {
@@ -154,7 +167,7 @@ const Topics = () => {
   return (
     <div className="bg-black text-white min-h-screen">
       {/* Header */}
-      <header className="bg-black border-b border-white/10 p-6">
+      <header data-tour="topics-header" className="bg-black border-b border-white/10 p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button
@@ -165,12 +178,12 @@ const Topics = () => {
             </button>
             <div>
               <h1 className="text-2xl font-semibold text-white">Topics</h1>
-              <p className="text-sm text-gray-400">Manage your learning topics</p>
             </div>
           </div>
           
           <button
             onClick={() => setShowAddTopicModal(true)}
+            data-tour="topics-add-button"
             className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors"
           >
             <Plus className="w-4 h-4" />
@@ -249,7 +262,7 @@ const Topics = () => {
                   <h3 className="text-lg font-semibold text-white line-clamp-2">{topic.title}</h3>
                   <div className="flex items-center space-x-1 text-xs">
                     <Target className="w-3 h-3" />
-                    <span className="text-gray-400">{topic.difficulty}/5</span>
+                    <span className={getDifficultyColor(topic.difficulty)}>{topic.difficulty}/5</span>
                   </div>
                 </div>
                 
@@ -258,7 +271,7 @@ const Topics = () => {
                 <div className="flex items-center justify-between text-xs text-gray-500">
                   <div className="flex items-center space-x-1">
                     <Calendar className="w-3 h-3" />
-                    <span>Learned {new Date(topic.learnedDate || topic.createdAt).toLocaleDateString('en-GB')}</span>
+                    <span>Learned {formatDateDDMMYYYY(topic.learnedDate || topic.createdAt)}</span>
                   </div>
                   
                   {((topic.attachments && topic.attachments.length > 0) || (topic.externalLinks && topic.externalLinks.length > 0)) && (

@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
+const PROFILE_ICON_IDS = Array.from({ length: 15 }, (_, index) => `sphere-${index + 1}`);
+
 const userSchema = new mongoose.Schema({
   username: {
     type: String,
@@ -18,6 +20,64 @@ const userSchema = new mongoose.Schema({
     lowercase: true,
     trim: true,
     match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
+  },
+  firstName: {
+    type: String,
+    trim: true,
+    maxlength: [80, 'First name cannot exceed 80 characters'],
+    default: ''
+  },
+  lastName: {
+    type: String,
+    trim: true,
+    maxlength: [80, 'Last name cannot exceed 80 characters'],
+    default: ''
+  },
+  bio: {
+    type: String,
+    trim: true,
+    maxlength: [1000, 'Bio cannot exceed 1000 characters'],
+    default: ''
+  },
+  location: {
+    type: String,
+    trim: true,
+    maxlength: [120, 'Location cannot exceed 120 characters'],
+    default: ''
+  },
+  website: {
+    type: String,
+    trim: true,
+    maxlength: [300, 'Website cannot exceed 300 characters'],
+    default: ''
+  },
+  phoneNumber: {
+    type: String,
+    trim: true,
+    maxlength: [32, 'Phone number cannot exceed 32 characters'],
+    default: ''
+  },
+  dateOfBirth: {
+    type: Date,
+    default: null
+  },
+  occupation: {
+    type: String,
+    trim: true,
+    maxlength: [120, 'Occupation cannot exceed 120 characters'],
+    default: ''
+  },
+  education: {
+    type: String,
+    trim: true,
+    maxlength: [180, 'Education cannot exceed 180 characters'],
+    default: ''
+  },
+  interests: {
+    type: String,
+    trim: true,
+    maxlength: [500, 'Interests cannot exceed 500 characters'],
+    default: ''
   },
   password: {
     type: String,
@@ -48,6 +108,11 @@ const userSchema = new mongoose.Schema({
       enum: ['fast', 'medium', 'slow'],
       default: 'medium'
     },
+    revisionMode: {
+      type: String,
+      enum: ['competitive', 'engineering', 'hybrid'],
+      default: 'competitive'
+    },
     memScoreRecalibrationFreq: {
       type: Number,
       default: 30, // days
@@ -77,7 +142,12 @@ const userSchema = new mongoose.Schema({
   },
   lastMemScoreUpdate: {
     type: Date,
-    default: Date.now
+    default: null
+  },
+  profileIconId: {
+    type: String,
+    enum: PROFILE_ICON_IDS,
+    default: 'sphere-1'
   },
   // Study streak tracking
   currentStreak: {
@@ -150,6 +220,10 @@ userSchema.methods.updateLastLogin = function() {
 
 // Instance method to add refresh token
 userSchema.methods.addRefreshToken = function(token, expiresAt) {
+  if (!Array.isArray(this.refreshTokens)) {
+    this.refreshTokens = [];
+  }
+
   this.refreshTokens.push({
     token,
     expiresAt
@@ -165,6 +239,11 @@ userSchema.methods.addRefreshToken = function(token, expiresAt) {
 
 // Instance method to remove refresh token
 userSchema.methods.removeRefreshToken = function(token) {
+  if (!Array.isArray(this.refreshTokens)) {
+    this.refreshTokens = [];
+    return this.save();
+  }
+
   this.refreshTokens = this.refreshTokens.filter(rt => rt.token !== token);
   return this.save();
 };

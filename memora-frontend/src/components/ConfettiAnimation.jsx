@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 
 const ConfettiAnimation = ({ isVisible, duration = 3000, onComplete }) => {
   const [particles, setParticles] = useState([]);

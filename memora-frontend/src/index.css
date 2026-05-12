@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "react-datepicker/dist/react-datepicker.css";
 @import url("https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap");
 
 @font-face {
@@ -13,17 +14,23 @@
 :root {
   --font-geist-sans: "Geist", "Geist Fallback";
   --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --scrollbar-thumb: rgba(94, 101, 112, 0.9);
+  --scrollbar-thumb-hover: rgba(78, 85, 95, 0.95);
+  --scrollbar-thumb-active: rgba(62, 69, 79, 1);
+  --scrollbar-size: 18px;
 }
 
-/* Hide all scrollbars globally but keep scrolling functionality */
+/* Hide scrollbars globally by default. */
 * {
   font-family: var(--font-sans);
-  -ms-overflow-style: none;  /* Internet Explorer 10+ */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 *::-webkit-scrollbar {
-  display: none;  /* Safari and Chrome */
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 html, body {
@@ -41,13 +48,62 @@ html, body {
   background-color: #000;
 }
 
-/* Specific class for elements that need scrollbar hiding */
+/* Legacy explicit hide class for places that should never show a scrollbar. */
 .scrollbar-hide {
-  -ms-overflow-style: none;  /* Internet Explorer 10+ */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
+
 .scrollbar-hide::-webkit-scrollbar {
-  display: none;  /* Safari and Chrome */
+  display: none !important;
+  width: 0;
+  height: 0;
+}
+
+/* Popup/form scrollbar utility: sleek grey thumb with transparent track. */
+.scrollbar-themed,
+.scrollbar-popup,
+.scrollbar-form {
+  -ms-overflow-style: auto;
+  scrollbar-width: auto;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.scrollbar-themed::-webkit-scrollbar,
+.scrollbar-popup::-webkit-scrollbar,
+.scrollbar-form::-webkit-scrollbar {
+  display: block;
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+.scrollbar-themed::-webkit-scrollbar-track,
+.scrollbar-popup::-webkit-scrollbar-track,
+.scrollbar-form::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-themed::-webkit-scrollbar-thumb,
+.scrollbar-popup::-webkit-scrollbar-thumb,
+.scrollbar-form::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: content-box;
+}
+
+.scrollbar-themed::-webkit-scrollbar-thumb:hover,
+.scrollbar-popup::-webkit-scrollbar-thumb:hover,
+.scrollbar-form::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: content-box;
+}
+
+.scrollbar-themed::-webkit-scrollbar-thumb:active,
+.scrollbar-popup::-webkit-scrollbar-thumb:active,
+.scrollbar-form::-webkit-scrollbar-thumb:active {
+  background: var(--scrollbar-thumb-active);
+  background-clip: content-box;
 }
 
 /* Journal content styling */
@@ -109,4 +165,88 @@ html, body {
 
 .journal-content blockquote {
   @apply border-l-4 border-blue-500 pl-4 italic text-gray-400 my-4;
+}
+
+.memora-datepicker {
+  background-color: #050608 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 12px !important;
+  color: #ffffff !important;
+  font-family: var(--font-sans) !important;
+}
+
+.memora-datepicker .react-datepicker__header {
+  background-color: #0b0e12 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.memora-datepicker .react-datepicker__current-month,
+.memora-datepicker .react-datepicker-time__header,
+.memora-datepicker .react-datepicker-year-header,
+.memora-datepicker .react-datepicker__day-name {
+  color: #d5dde7 !important;
+}
+
+.memora-datepicker .react-datepicker__day,
+.memora-datepicker .react-datepicker__time-name {
+  color: #dce4ee !important;
+  border-radius: 8px !important;
+}
+
+.memora-datepicker .react-datepicker__day:hover {
+  background-color: rgba(56, 189, 248, 0.2) !important;
+}
+
+.memora-datepicker .react-datepicker__day--keyboard-selected {
+  background-color: rgba(56, 189, 248, 0.3) !important;
+}
+
+.memora-datepicker .react-datepicker__day--selected,
+.memora-datepicker .react-datepicker__day--in-selecting-range,
+.memora-datepicker .react-datepicker__day--in-range {
+  background-color: rgba(8, 145, 178, 0.85) !important;
+  color: #ecfeff !important;
+}
+
+.memora-datepicker .react-datepicker__navigation-icon::before {
+  border-color: #d5dde7 !important;
+}
+
+@keyframes rotate-phone-glyph {
+  0%,
+  20% {
+    transform: rotate(0deg);
+  }
+
+  48%,
+  72% {
+    transform: rotate(90deg);
+  }
+
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes rotate-phone-ring {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.92);
+  }
+
+  50% {
+    opacity: 0.85;
+    transform: scale(1.04);
+  }
+}
+
+.rotate-phone-glyph {
+  animation: rotate-phone-glyph 2.2s cubic-bezier(0.6, 0, 0.2, 1) infinite;
+  transform-origin: 50% 50%;
+  filter: drop-shadow(0 0 14px rgba(255, 255, 255, 0.22));
+}
+
+.rotate-phone-ring {
+  animation: rotate-phone-ring 2.2s ease-in-out infinite;
 }

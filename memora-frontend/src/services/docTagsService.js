@@ -1,6 +1,10 @@
+const RAW_API_BASE_URL = import.meta.env.VITE_API_URL;
+const IS_LOCALHOST_API_BASE = typeof RAW_API_BASE_URL === 'string' && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(RAW_API_BASE_URL);
+const API_BASE_URL = !import.meta.env.DEV && IS_LOCALHOST_API_BASE ? '/api' : (RAW_API_BASE_URL || '/api');
+
 class DocTagsService {
   constructor() {
-    this.baseURL = '/api/doctags';
+    this.baseURL = `${API_BASE_URL}/doctags`;
   }
 
   getAccessToken() {
@@ -39,7 +43,7 @@ class DocTagsService {
           if (errorData?.message) {
             message = errorData.message;
           }
-        } catch (parseError) {
+        } catch {
           // Ignore JSON parsing errors and keep fallback message.
         }
         throw new Error(message);
@@ -76,7 +80,7 @@ class DocTagsService {
               message = `${message}: ${detail}`;
             }
           }
-        } catch (parseError) {
+        } catch {
           // Ignore parsing errors and keep fallback message.
         }
         throw new Error(message);
@@ -98,7 +102,6 @@ class DocTagsService {
         params.append('parentId', options.parentId);
       }
       if (options.type) params.append('type', options.type);
-      if (options.category) params.append('category', options.category);
       if (options.search) params.append('search', options.search);
       if (options.limit) params.append('limit', options.limit);
       if (options.page) params.append('page', options.page);
@@ -128,7 +131,23 @@ class DocTagsService {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update DocTag');
+        let message = 'Failed to update DocTag';
+        try {
+          const errorData = await response.json();
+          if (errorData?.message) {
+            message = errorData.message;
+          }
+          if (Array.isArray(errorData?.errors) && errorData.errors.length > 0) {
+            const firstError = errorData.errors[0];
+            const detail = typeof firstError === 'string' ? firstError : firstError?.msg;
+            if (detail) {
+              message = `${message}: ${detail}`;
+            }
+          }
+        } catch {
+          // Ignore parse failures and use fallback message.
+        }
+        throw new Error(message);
       }
 
       return await response.json();
@@ -182,7 +201,6 @@ class DocTagsService {
       params.append('search', query);
       
       if (options.type) params.append('type', options.type);
-      if (options.category) params.append('category', options.category);
       if (options.limit) params.append('limit', options.limit);
 
       const response = await fetch(`${this.baseURL}?${params}`, {
@@ -226,7 +244,6 @@ class DocTagsService {
       name: topicData.title,
       description: topicData.content ? topicData.content.substring(0, 500) : '',
       type: 'document',
-      category: topicData.category || 'Other',
       tags: topicData.tags || [],
       attachments: topicData.attachments || [],
       externalLinks: topicData.externalLinks || []

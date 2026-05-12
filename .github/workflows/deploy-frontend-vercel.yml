@@ -2,12 +2,12 @@ name: Deploy Frontend to Vercel
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - memora-frontend/**
-      - .github/workflows/deploy-frontend-vercel.yml
+    inputs:
+      alias_domain:
+        description: 'Target alias for this deployment (use memoraapp-next.vercel.app)'
+        required: true
+        default: 'memoraapp-next.vercel.app'
+        type: string
 
 jobs:
   deploy:
@@ -31,6 +31,15 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
 
+      - name: Guard protected legacy URL
+        run: |
+          TARGET_ALIAS="${{ inputs.alias_domain }}"
+          if [ "$TARGET_ALIAS" = "memoraapp.vercel.app" ]; then
+            echo "Refusing deployment: memoraapp.vercel.app is deprecated."
+            echo "Use memoraapp-next.vercel.app instead"
+            exit 1
+          fi
+
       - name: Build Frontend
         working-directory: memora-frontend
         env:
@@ -39,10 +48,29 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: vercel build --prod --token "$VERCEL_TOKEN"
 
-      - name: Deploy Frontend
+      - name: Deploy Frontend (preview deployment)
+        id: deploy_frontend
         working-directory: memora-frontend
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN"
+        run: |
+          DEPLOYMENT_OUTPUT=$(vercel deploy --prebuilt --token "$VERCEL_TOKEN" --yes)
+          DEPLOYMENT_URL=$(echo "$DEPLOYMENT_OUTPUT" | grep -Eo 'https://[^ ]+\.vercel\.app' | tail -n 1)
+
+          if [ -z "$DEPLOYMENT_URL" ]; then
+            echo "Failed to parse Vercel deployment URL"
+            echo "$DEPLOYMENT_OUTPUT"
+            exit 1
+          fi
+
+          echo "deployment_url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Alias Frontend Domain
+        working-directory: memora-frontend
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel alias set "${{ steps.deploy_frontend.outputs.deployment_url }}" "${{ inputs.alias_domain }}" --token "$VERCEL_TOKEN"

@@ -117,7 +117,6 @@ const syncTopicsToDocTags = async (userId) => {
         name: 'Topics',
         description: 'Auto-synced from your learning topics',
         type: 'folder',
-        category: 'Other',
         color: 'purple',
         icon: 'book',
         parentId: null
@@ -146,7 +145,6 @@ const syncTopicsToDocTags = async (userId) => {
             name: topic.title,
             description: topic.content ? topic.content.substring(0, 500) : '',
             type: 'document',
-            category: topic.category || 'Other',
             tags: topic.tags || [],
             parentId: topicsFolder._id,
             attachments: topic.attachments || [],
@@ -245,7 +243,7 @@ router.post('/upload', authenticateToken, upload.array('files', 5), async (req, 
  */
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { parentId, type, category, search, limit = 50, page = 1 } = req.query;
+    const { parentId, type, search, limit = 50, page = 1 } = req.query;
     const userId = req.user.id;
 
     // Auto-sync topics to DocTags before fetching (DISABLED to prevent duplicates)
@@ -258,7 +256,6 @@ router.get('/', authenticateToken, async (req, res) => {
       query.parentId = parentId === 'null' ? null : parentId;
     }
     if (type) query.type = type;
-    if (category) query.category = category;
 
     let docTagsQuery;
 
@@ -266,7 +263,6 @@ router.get('/', authenticateToken, async (req, res) => {
     if (search) {
       docTagsQuery = DocTag.searchDocTags(userId, search, {
         type,
-        category,
         limit: parseInt(limit)
       }).populate('linkedTopicId', 'title');
     } else {
@@ -415,10 +411,13 @@ router.post('/',
         return /^[0-9a-fA-F]{24}$/.test(value);
       })
       .withMessage('Linked topic ID must be a valid MongoDB ObjectId'),
-    body('category')
-      .optional()
-      .isIn(['Science', 'Mathematics', 'History', 'Language', 'Technology', 'Arts', 'Business', 'Personal', 'Research', 'Other'])
-      .withMessage('Invalid category'),
+    body('parentId')
+      .optional({ nullable: true, values: 'falsy' })
+      .custom((value) => {
+        if (value === null || value === '' || value === undefined) return true;
+        return /^[0-9a-fA-F]{24}$/.test(String(value));
+      })
+      .withMessage('Parent ID must be a valid MongoDB ObjectId'),
     body('tags')
       .optional()
       .isArray()
@@ -513,10 +512,6 @@ router.put('/:id',
       .optional()
       .isLength({ max: 1000 })
       .withMessage('Description cannot exceed 1000 characters'),
-    body('category')
-      .optional()
-      .isIn(['Science', 'Mathematics', 'History', 'Language', 'Technology', 'Arts', 'Business', 'Personal', 'Research', 'Other'])
-      .withMessage('Invalid category'),
     body('linkedTopicId')
       .optional({ nullable: true })
       .custom((value) => {
@@ -554,6 +549,7 @@ router.put('/:id',
 
       // Update fields
       Object.keys(req.body).forEach(key => {
+        if (key === 'linkedTopicId' || key === 'parentId') return;
         if (req.body[key] !== undefined) {
           docTag[key] = req.body[key];
         }
@@ -576,6 +572,62 @@ router.put('/:id',
           }
         }
         docTag.linkedTopicId = linkedTopicId;
+      }
+
+      if (req.body.parentId !== undefined) {
+        const requestedParentId = req.body.parentId || null;
+
+        if (!requestedParentId) {
+          docTag.parentId = null;
+        } else {
+          if (String(requestedParentId) === String(docTag._id)) {
+            return res.status(400).json({
+              success: false,
+              message: 'A folder cannot be moved into itself'
+            });
+          }
+
+          const targetParent = await DocTag.findOne({
+            _id: requestedParentId,
+            userId,
+            isActive: true
+          }).select('_id type parentId');
+
+          if (!targetParent) {
+            return res.status(400).json({
+              success: false,
+              message: 'Target parent folder not found'
+            });
+          }
+
+          if (targetParent.type !== 'folder') {
+            return res.status(400).json({
+              success: false,
+              message: 'Target parent must be a folder'
+            });
+          }
+
+          // Guard against creating cycles when moving folders.
+          if (docTag.type === 'folder') {
+            let cursor = targetParent;
+            while (cursor && cursor.parentId) {
+              if (String(cursor.parentId) === String(docTag._id)) {
+                return res.status(400).json({
+                  success: false,
+                  message: 'Cannot move a folder into one of its descendants'
+                });
+              }
+
+              cursor = await DocTag.findOne({
+                _id: cursor.parentId,
+                userId,
+                isActive: true
+              }).select('_id parentId');
+            }
+          }
+
+          docTag.parentId = targetParent._id;
+        }
       }
 
       await docTag.save();

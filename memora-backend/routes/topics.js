@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const mongoose = require('mongoose');
 const Topic = require('../models/Topic');
+const User = require('../models/User');
 const DocTag = require('../models/DocTag');
 const RevisionHistory = require('../models/RevisionHistory');
 const { authenticateToken } = require('../middleware/auth');
@@ -59,6 +60,31 @@ const FESTIVAL_MM_DD = new Set([
 ]);
 
 const WEEKDAY_LABELS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+const resolveModeForTopicSnapshot = (userMode, difficulty) => {
+  const safeUserMode = ['competitive', 'engineering', 'hybrid'].includes(String(userMode || '').trim())
+    ? String(userMode || '').trim()
+    : 'competitive';
+  const safeDifficulty = Math.max(1, Math.min(5, Number(difficulty) || 3));
+
+  if (safeUserMode === 'hybrid') {
+    return safeDifficulty >= 4 ? 'competitive' : 'engineering';
+  }
+
+  return safeUserMode;
+};
+
+const getTopicRevisionModeForPersist = async ({ requestedMode, userId, difficulty }) => {
+  const safeRequested = String(requestedMode || 'inherit').trim();
+  if (safeRequested === 'competitive' || safeRequested === 'engineering') {
+    return safeRequested;
+  }
+
+  const user = await User.findById(userId).select('preferences.revisionMode').lean();
+  const userMode = user?.preferences?.revisionMode || 'competitive';
+  return resolveModeForTopicSnapshot(userMode, difficulty);
+};
 
 const startOfDay = (value = new Date()) => {
   const date = new Date(value);
@@ -72,6 +98,16 @@ const dateKey = (value) => {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+const formatDateDDMMYYYY = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
 };
 
 const setPreferredReviewTime = (value) => {
@@ -279,6 +315,61 @@ const buildDayStatsMap = (topics = []) => {
   });
 
   return statsMap;
+};
+
+const getDaysDifferenceFromReference = (value, referenceDay = startOfDay()) => {
+  if (!value) return Number.POSITIVE_INFINITY;
+  const date = startOfDay(value);
+  if (Number.isNaN(date.getTime())) return Number.POSITIVE_INFINITY;
+  return Math.round((date.getTime() - referenceDay.getTime()) / DAY_IN_MS);
+};
+
+const getDueTopicPriorityScore = (topic, referenceDay = startOfDay()) => {
+  const safeDifficulty = clamp(Number(topic?.difficulty) || 3, 1, 5);
+  const overdueDays = Math.max(0, -getDaysDifferenceFromReference(topic?.nextReviewDate, referenceDay));
+  const daysUntilDeadline = getDaysDifferenceFromReference(topic?.deadlineDate, referenceDay);
+  const hasHardDeadline = topic?.deadlineType === 'hard' && Number.isFinite(daysUntilDeadline);
+  const hasSoftDeadline = topic?.deadlineType === 'soft' && Number.isFinite(daysUntilDeadline);
+  const reviewCount = Number(topic?.reviewCount) || 0;
+  const rescheduleCount = Number(topic?.rescheduleCount) || 0;
+
+  let score = 0;
+  score += safeDifficulty * 12;
+  score += Math.min(160, overdueDays * 11);
+
+  if (hasHardDeadline) {
+    if (daysUntilDeadline < 0) {
+      score += 220 + Math.min(60, Math.abs(daysUntilDeadline) * 8);
+    } else {
+      score += Math.max(0, 140 - daysUntilDeadline * 12);
+    }
+  } else if (hasSoftDeadline) {
+    score += Math.max(0, 56 - Math.max(0, daysUntilDeadline) * 3);
+  }
+
+  if (reviewCount === 0) {
+    score += 10;
+  }
+
+  score -= Math.min(36, rescheduleCount * 3);
+  return score;
+};
+
+const rankDueTopicsByPriority = (topics = [], referenceDay = startOfDay()) => {
+  return [...topics].sort((a, b) => {
+    const scoreDiff = getDueTopicPriorityScore(b, referenceDay) - getDueTopicPriorityScore(a, referenceDay);
+    if (scoreDiff !== 0) return scoreDiff;
+
+    const aNextReview = new Date(a?.nextReviewDate || 0).getTime();
+    const bNextReview = new Date(b?.nextReviewDate || 0).getTime();
+    if (aNextReview !== bNextReview) return aNextReview - bNextReview;
+
+    const aDeadline = new Date(a?.deadlineDate || '9999-12-31').getTime();
+    const bDeadline = new Date(b?.deadlineDate || '9999-12-31').getTime();
+    if (aDeadline !== bDeadline) return aDeadline - bDeadline;
+
+    return (Number(b?.difficulty) || 0) - (Number(a?.difficulty) || 0);
+  });
 };
 
 const chooseNextBestDate = (
@@ -540,8 +631,11 @@ router.get('/due', authenticateToken, async (req, res) => {
     const schedulingProfile = await getUserSchedulingProfile(userId);
     const adaptiveLimits = getAdaptiveDailyLimits(schedulingProfile);
 
-    // Combine with overdue topics first (higher priority), then enforce hard daily limits.
-    const orderedDueTopics = [...overdueTopics, ...todaysTopics];
+    // Combine and prioritize by urgency (hard deadlines, overdue depth, difficulty), then enforce hard daily limits.
+    const dedupedDueTopics = [...new Map([...overdueTopics, ...todaysTopics]
+      .map((topic) => [String(topic._id), topic]))
+      .values()];
+    const orderedDueTopics = rankDueTopicsByPriority(dedupedDueTopics, todayStart);
     const selectedDue = selectDueTopicsWithinDailyLimits(orderedDueTopics, safeLimit, {
       limits: adaptiveLimits,
       forceIncludeTodayCreated: true,
@@ -616,6 +710,94 @@ router.get('/upcoming', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to get upcoming topics'
+    });
+  }
+});
+
+/**
+ * @route   GET /api/topics/revision-stats
+ * @desc    Get daily revision event counts for the authenticated user
+ * @access  Private
+ */
+router.get('/revision-stats', authenticateToken, async (req, res) => {
+  try {
+    const parsedDays = Number.parseInt(req.query.days, 10);
+    const days = Number.isFinite(parsedDays) && parsedDays > 0
+      ? Math.min(parsedDays, 3650)
+      : 120;
+
+    const stats = await RevisionHistory.getDailyStats(req.user.id, days);
+
+    res.json({
+      success: true,
+      stats,
+      days
+    });
+  } catch (error) {
+    console.error('Get revision stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get revision stats'
+    });
+  }
+});
+
+/**
+ * @route   GET /api/topics/revision-history
+ * @desc    Get completed revision history entries for the authenticated user
+ * @access  Private
+ */
+router.get('/revision-history', authenticateToken, async (req, res) => {
+  try {
+    const parsedDays = Number.parseInt(req.query.days, 10);
+    const days = Number.isFinite(parsedDays) && parsedDays > 0
+      ? Math.min(parsedDays, 3650)
+      : 120;
+
+    const now = new Date();
+    const startDate = new Date(now);
+    startDate.setDate(startDate.getDate() - days);
+
+    const rows = await RevisionHistory.find({
+      userId: req.user.id,
+      createdAt: { $gte: startDate, $lte: now }
+    })
+      .sort({ createdAt: -1 })
+      .limit(5000)
+      .select('topicId createdAt difficulty quality wasCorrect repetitionsAfter')
+      .populate({ path: 'topicId', select: 'title', options: { lean: true } })
+      .lean();
+
+    const entries = rows.map((row) => {
+      const topicRef = row?.topicId;
+      const topicId = typeof topicRef === 'object' && topicRef !== null
+        ? String(topicRef._id || '')
+        : String(topicRef || '');
+
+      return {
+        id: String(row?._id || ''),
+        topicId,
+        topicTitle: typeof topicRef === 'object' && topicRef !== null
+          ? String(topicRef.title || 'Untitled topic')
+          : 'Untitled topic',
+        completedAt: row?.createdAt,
+        difficulty: Number(row?.difficulty || 3),
+        quality: Number(row?.quality || 0),
+        wasCorrect: Boolean(row?.wasCorrect),
+        revisionNumber: Math.max(1, Number(row?.repetitionsAfter || 1))
+      };
+    });
+
+    res.json({
+      success: true,
+      days,
+      entries
+    });
+  } catch (error) {
+    console.error('Get revision history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get revision history'
     });
   }
 });
@@ -768,6 +950,10 @@ router.post('/', [
     .optional()
     .isInt({ min: 5, max: 480 })
     .withMessage('Estimated minutes must be between 5 and 480'),
+  body('revisionMode')
+    .optional()
+    .isIn(['inherit', 'competitive', 'engineering'])
+    .withMessage('Revision mode must be inherit, competitive, or engineering'),
   body('externalLinks')
     .optional()
     .isArray()
@@ -789,12 +975,19 @@ router.post('/', [
       deadlineDate,
       deadlineType = 'soft',
       estimatedMinutes = 30,
+      revisionMode = 'inherit',
       externalLinks = [],
       attachments = []
     } = req.body;
     const userId = req.user.id;
 
     console.log('📝 Extracted externalLinks:', JSON.stringify(externalLinks, null, 2));
+
+    const persistedRevisionMode = await getTopicRevisionModeForPersist({
+      requestedMode: revisionMode,
+      userId,
+      difficulty
+    });
 
     const topic = new Topic({
       title,
@@ -807,6 +1000,7 @@ router.post('/', [
       deadlineDate: deadlineDate ? new Date(deadlineDate) : null,
       deadlineType,
       estimatedMinutes: Number(estimatedMinutes) || 30,
+      revisionMode: persistedRevisionMode,
       externalLinks: externalLinks || [],
       attachments: attachments || []
     });
@@ -910,13 +1104,17 @@ router.put('/:id', [
     .optional()
     .isIn(['hard', 'soft'])
     .withMessage('Deadline type must be hard or soft'),
+  body('revisionMode')
+    .optional()
+    .isIn(['inherit', 'competitive', 'engineering'])
+    .withMessage('Revision mode must be inherit, competitive, or engineering'),
   body('estimatedMinutes')
     .optional()
     .isInt({ min: 5, max: 480 })
     .withMessage('Estimated minutes must be between 5 and 480')
 ], handleValidationErrors, async (req, res) => {
   try {
-    const { title, content, difficulty, category, tags, deadlineDate, deadlineType, estimatedMinutes } = req.body;
+    const { title, content, difficulty, category, tags, deadlineDate, deadlineType, estimatedMinutes, revisionMode } = req.body;
 
     const topic = await Topic.findOne({
       _id: req.params.id,
@@ -943,6 +1141,13 @@ router.put('/:id', [
       topic.deadlineDate = deadlineDate ? new Date(deadlineDate) : null;
     }
     if (deadlineType !== undefined) topic.deadlineType = deadlineType;
+    if (revisionMode !== undefined) {
+      topic.revisionMode = await getTopicRevisionModeForPersist({
+        requestedMode: revisionMode,
+        userId: req.user.id,
+        difficulty: difficulty !== undefined ? difficulty : topic.difficulty
+      });
+    }
     if (estimatedMinutes !== undefined) topic.estimatedMinutes = Number(estimatedMinutes);
 
     await topic.save();
@@ -1273,7 +1478,7 @@ router.post('/:id/skip', authenticateToken, async (req, res) => {
 
     console.log(`⏭️ Topic skipped: ${topic.title} -> ${topic.nextReviewDate.toDateString()}`);
 
-    const formattedDate = topic.nextReviewDate.toLocaleDateString('en-GB');
+    const formattedDate = formatDateDDMMYYYY(topic.nextReviewDate);
 
     res.json({
       success: true,

@@ -1,5 +1,16 @@
 const mongoose = require('mongoose');
 
+const formatDateDDMMYYYY = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+
+  return `${day}/${month}/${year}`;
+};
+
 const memScoreHistorySchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -53,10 +64,7 @@ memScoreHistorySchema.statics.getChartData = function(userId, days = 30) {
     return records.map(record => ({
       date: record.createdAt.toISOString().split('T')[0],
       score: record.score,
-      label: record.createdAt.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric' 
-      })
+      label: formatDateDDMMYYYY(record.createdAt)
     }));
   });
 };

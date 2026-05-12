@@ -1,26 +1,98 @@
-import { useState } from 'react';
-import { X, Download, ExternalLink, FileText, Image, Video, Music, File } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { X, Download, ExternalLink, FileText, Image, Video, Music, File, Maximize2, Minimize2 } from 'lucide-react';
 
-const FileViewer = ({ isOpen, onClose, file, files = [] }) => {
+const FileViewer = ({ isOpen, onClose, file, files = [], startInFullscreen = false }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const viewerContainerRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (!Array.isArray(files) || files.length === 0 || !file) {
+      setCurrentIndex(0);
+      return;
+    }
+
+    const nextIndex = files.findIndex((candidate) => (
+      (file.filename && candidate.filename === file.filename)
+      || (file.url && candidate.url === file.url)
+      || (file.title && (candidate.title || candidate.originalName) === file.title)
+    ));
+
+    setCurrentIndex(nextIndex >= 0 ? nextIndex : 0);
+  }, [isOpen, file, files]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleEscape = (event) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      onClose();
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsFullscreen(false);
+      return;
+    }
+
+    const handleFullscreenChange = () => {
+      if (document.fullscreenElement) return;
+      setIsFullscreen(false);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !startInFullscreen) return;
+
+    setIsFullscreen(true);
+
+    const target = viewerContainerRef.current;
+    if (!target?.requestFullscreen || document.fullscreenElement) return;
+
+    target.requestFullscreen().catch((error) => {
+      console.warn('Failed to auto-enter fullscreen:', error);
+    });
+  }, [isOpen, startInFullscreen]);
 
   if (!isOpen || !file) return null;
 
-  const currentFile = files.length > 0 ? files[currentIndex] : file;
+  const currentFile = files.length > 0
+    ? files[Math.min(Math.max(currentIndex, 0), files.length - 1)]
+    : file;
 
   // Ensure URL is absolute
   const getAbsoluteUrl = (url) => {
     if (!url) return '';
 
+    const normalizeUploadPath = (pathname = '') => {
+      if (pathname.startsWith('/api/uploads/')) {
+        return pathname.replace('/api/uploads/', '/uploads/');
+      }
+      return pathname;
+    };
+
     if (url.startsWith('http://') || url.startsWith('https://')) {
       try {
         const parsed = new URL(url);
-        const isLocalBackend = ['localhost', '127.0.0.1'].includes(parsed.hostname);
+        const normalizedPath = normalizeUploadPath(parsed.pathname);
 
-        // Route local backend upload URLs through frontend origin so Vite /uploads proxy
-        // handles them consistently (prevents mixed-origin iframe preview issues).
-        if (isLocalBackend && parsed.pathname.startsWith('/uploads/')) {
-          return `${window.location.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+        // Always route backend upload paths through frontend origin so /uploads rewrites/proxy
+        // can resolve the file even when backend URLs were stored with different hosts.
+        if (normalizedPath.startsWith('/uploads/')) {
+          return `${window.location.origin}${normalizedPath}${parsed.search}${parsed.hash}`;
         }
       } catch {
         // Fall through to raw URL when parsing fails.
@@ -30,10 +102,11 @@ const FileViewer = ({ isOpen, onClose, file, files = [] }) => {
     }
 
     // If it's a relative URL, make it absolute
-    if (url.startsWith('/')) {
-      return `${window.location.origin}${url}`;
+    const normalizedRelative = normalizeUploadPath(url);
+    if (normalizedRelative.startsWith('/')) {
+      return `${window.location.origin}${normalizedRelative}`;
     }
-    return `${window.location.origin}/${url}`;
+    return `${window.location.origin}/${normalizedRelative}`;
   };
 
   const absoluteUrl = getAbsoluteUrl(currentFile.url);
@@ -163,9 +236,30 @@ const FileViewer = ({ isOpen, onClose, file, files = [] }) => {
     </div>
   );
 
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        setIsFullscreen(false);
+        return;
+      }
+
+      const element = viewerContainerRef.current;
+      if (element?.requestFullscreen) {
+        await element.requestFullscreen();
+        setIsFullscreen(true);
+      }
+    } catch (error) {
+      console.warn('Failed to toggle fullscreen:', error);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-      <div className="bg-black border border-white/20 rounded-xl w-full h-full max-w-6xl max-h-[90vh] flex flex-col">
+      <div
+        ref={viewerContainerRef}
+        className={`bg-black border border-white/20 w-full h-full flex flex-col ${isFullscreen ? 'max-w-none max-h-none rounded-none' : 'max-w-6xl max-h-[90vh] rounded-xl'}`}
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10">
           <div className="flex items-center space-x-4">
@@ -197,15 +291,25 @@ const FileViewer = ({ isOpen, onClose, file, files = [] }) => {
           
           <div className="flex items-center space-x-2">
             <button
+              onClick={toggleFullscreen}
+              className="p-2 text-gray-400 hover:text-white transition-colors"
+              title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            >
+              {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+            </button>
+            <button
               onClick={() => window.open(absoluteUrl, '_blank')}
               className="p-2 text-gray-400 hover:text-white transition-colors"
               title="Open in new tab"
+              aria-label="Open in new tab"
             >
               <ExternalLink className="w-5 h-5" />
             </button>
             <button
               onClick={onClose}
               className="p-2 text-gray-400 hover:text-white transition-colors"
+              aria-label="Close viewer"
             >
               <X className="w-5 h-5" />
             </button>

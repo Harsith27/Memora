@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { X, User, Mail, Calendar, Trophy, Flame, Target } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { formatDateDDMMYYYY } from '../utils/dateFormat';
 
 const ProfileModal = ({ isOpen, onClose }) => {
   const { user, updateUser } = useAuth();
@@ -40,12 +41,22 @@ const ProfileModal = ({ isOpen, onClose }) => {
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-GB', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
+    return formatDateDDMMYYYY(dateString);
   };
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleEscape = (event) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      onClose();
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen, onClose]);
 
   if (!user) return null;
 

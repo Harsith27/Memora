@@ -1,25 +1,242 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  Brain, Calendar, BarChart3, Settings, FileText, BookOpen,
+  Calendar, BarChart3, Settings, FileText, BookOpen,
   Plus, Flame, Zap, ArrowLeft, CheckCircle, Target, Clock, Edit3, Trash2, SkipForward, Loader, GitBranch,
-  Twitter, Github, Mail, Globe, Heart, Linkedin, Instagram, Menu, PanelLeftClose, PanelLeft,
-  Save, X, ChevronLeft, ChevronRight
+  Twitter, Github, Mail, Globe, Heart, Linkedin, Instagram, Menu, PanelLeftClose, PanelLeft, CheckSquare,
+  Save, X, ChevronLeft, ChevronRight, Maximize2, Minimize2, Play, Square, Award, Mic
 } from 'lucide-react';
 import Logo from '../components/Logo';
 import AddTopicModal from '../components/AddTopicModal';
+import AddTaskModal from '../components/AddTaskModal';
+import EditTaskModal from '../components/EditTaskModal';
 import EditTopicModal from '../components/EditTopicModal';
 import Toast from '../components/Toast';
 import ProgressRing from '../components/ProgressRing';
 import Dialog from '../components/Dialog';
 import MinimalistTimer from '../components/MinimalistTimer';
-import UserProfileDropdown from '../components/UserProfileDropdown';
 import GraphModeView from '../components/GraphModeView';
+import GlobalSearchBar from '../components/GlobalSearchBar';
+import DashboardGlyph from '../components/DashboardGlyph';
 import logoImg from '../assets/logo.jpg';
 import { useAuth } from '../contexts/AuthContext';
 import { useTopics } from '../hooks/useTopics';
 import apiService from '../services/api';
 import journalService from '../services/journalService';
+import taskService from '../services/taskService';
+import { formatDateDDMMYYYY, formatDateWithWeekday } from '../utils/dateFormat';
+
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const STREAK_CONTRIBUTION_TOTAL_DAYS = 365;
+const HABIT_EXTENSION_WEEKS = 12;
+
+const toIsoDateKey = (value) => {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const addDaysToDateKey = (dateKey, daysToAdd = 0) => {
+  const date = new Date(`${dateKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setDate(date.getDate() + Number(daysToAdd || 0));
+  return toIsoDateKey(date);
+};
+
+const formatTimelineTimestamp = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown time';
+  return date.toLocaleString();
+};
+
+const sanitizeTaskListForDisplay = (taskList = []) => {
+  const source = Array.isArray(taskList) ? taskList : [];
+  const mergedById = new Map();
+
+  source.forEach((task) => {
+    if (!task || task.deleted === true || task.isDeleted === true) return;
+    const id = String(task.id || '').trim();
+    const title = String(task.title || '').trim();
+    const date = String(task.date || '').trim();
+    if (!id || !title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+
+    const existing = mergedById.get(id);
+    const nextUpdatedAt = Number(task.updatedAt || 0);
+    const prevUpdatedAt = Number(existing?.updatedAt || 0);
+    if (!existing || nextUpdatedAt >= prevUpdatedAt) {
+      mergedById.set(id, task);
+    }
+  });
+
+  return Array.from(mergedById.values()).sort((left, right) => {
+    if (left.date !== right.date) return String(left.date).localeCompare(String(right.date));
+
+    const leftType = String(left.taskType || '').toLowerCase();
+    const rightType = String(right.taskType || '').toLowerCase();
+    const leftTypeOrder = leftType === 'one-time' ? 0 : 1;
+    const rightTypeOrder = rightType === 'one-time' ? 0 : 1;
+    if (leftTypeOrder !== rightTypeOrder) return leftTypeOrder - rightTypeOrder;
+
+    if (Boolean(left.completed) !== Boolean(right.completed)) {
+      return left.completed ? 1 : -1;
+    }
+
+    return Number(left.createdAt || 0) - Number(right.createdAt || 0);
+  });
+};
+
+const buildRecurringDatesFromWeekdays = (startDateKey, selectedWeekdays, weeks = HABIT_EXTENSION_WEEKS) => {
+  const base = new Date(`${startDateKey}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return [];
+
+  const selectedSet = new Set(
+    (Array.isArray(selectedWeekdays) ? selectedWeekdays : [])
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6)
+  );
+
+  if (selectedSet.size === 0) return [];
+
+  const totalDays = Math.max(1, Number(weeks) || HABIT_EXTENSION_WEEKS) * 7;
+  const dateSet = new Set();
+
+  for (let offset = 0; offset < totalDays; offset += 1) {
+    const candidate = new Date(base);
+    candidate.setDate(base.getDate() + offset);
+
+    if (!selectedSet.has(candidate.getDay())) continue;
+    dateSet.add(toIsoDateKey(candidate));
+  }
+
+  return Array.from(dateSet).sort((left, right) => left.localeCompare(right));
+};
+
+const getOrdinalSuffix = (dayNumber) => {
+  if (dayNumber % 100 >= 11 && dayNumber % 100 <= 13) return 'th';
+  if (dayNumber % 10 === 1) return 'st';
+  if (dayNumber % 10 === 2) return 'nd';
+  if (dayNumber % 10 === 3) return 'rd';
+  return 'th';
+};
+
+const formatLongDateWithOrdinal = (dayKey) => {
+  const parts = String(dayKey || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!parts) return String(dayKey || '');
+
+  const year = Number(parts[1]);
+  const month = Number(parts[2]);
+  const day = Number(parts[3]);
+  const parsed = new Date(year, month - 1, day);
+  if (Number.isNaN(parsed.getTime())) return String(dayKey || '');
+
+  const monthLabel = parsed.toLocaleString('en-US', { month: 'long' });
+  return `${monthLabel} ${day}${getOrdinalSuffix(day)}`;
+};
+
+const buildStreakContributionGrid = (rows = []) => {
+  const countsByDay = new Map();
+
+  if (Array.isArray(rows)) {
+    rows.forEach((row) => {
+      const dayKey = toIsoDateKey(row?.date || row?.day || row?.dateKey);
+      if (!dayKey) return;
+      const count = Number(row?.count) || 0;
+      countsByDay.set(dayKey, count);
+    });
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const start = new Date(today);
+  start.setDate(today.getDate() - (STREAK_CONTRIBUTION_TOTAL_DAYS - 1));
+
+  const mondayOffset = (start.getDay() + 6) % 7;
+  const gridStart = new Date(start);
+  gridStart.setDate(start.getDate() - mondayOffset);
+
+  const totalCalendarDays = Math.floor((today - gridStart) / (24 * 60 * 60 * 1000)) + 1;
+  const totalCells = Math.ceil(totalCalendarDays / 7) * 7;
+
+  const rawCells = [];
+  for (let index = 0; index < totalCells; index += 1) {
+    const date = new Date(gridStart);
+    date.setDate(gridStart.getDate() + index);
+
+    const dayKey = toIsoDateKey(date);
+    const inRange = dayKey >= toIsoDateKey(start) && dayKey <= toIsoDateKey(today);
+    const count = inRange ? (countsByDay.get(dayKey) || 0) : 0;
+
+    rawCells.push({
+      dayKey,
+      count,
+      inRange,
+      label: formatDateDDMMYYYY(dayKey),
+      dayIndex: (date.getDay() + 6) % 7,
+      month: date.getMonth(),
+      year: date.getFullYear()
+    });
+  }
+
+  const maxCount = rawCells.reduce((max, cell) => Math.max(max, cell.count || 0), 0);
+
+  const cells = rawCells.map((cell) => {
+    let level = 0;
+    if (cell.inRange && cell.count > 0) {
+      if (maxCount <= 1) {
+        level = 4;
+      } else {
+        const ratio = cell.count / maxCount;
+        if (ratio <= 0.25) level = 1;
+        else if (ratio <= 0.5) level = 2;
+        else if (ratio <= 0.75) level = 3;
+        else level = 4;
+      }
+    }
+
+    return {
+      ...cell,
+      level
+    };
+  });
+
+  const weeks = [];
+  for (let index = 0; index < cells.length; index += 7) {
+    weeks.push(cells.slice(index, index + 7));
+  }
+
+  const monthLabels = [];
+  let previousMonthKey = null;
+  weeks.forEach((week, weekIndex) => {
+    const firstInRangeCell = week.find((cell) => cell.inRange);
+    if (!firstInRangeCell) return;
+
+    const monthKey = `${firstInRangeCell.year}-${firstInRangeCell.month}`;
+    if (monthKey === previousMonthKey) return;
+    previousMonthKey = monthKey;
+    monthLabels.push({
+      weekIndex,
+      label: MONTH_SHORT[firstInRangeCell.month]
+    });
+  });
+
+  const activeDays = cells.filter((cell) => cell.inRange && cell.count > 0).length;
+  const totalRevisions = cells.reduce((sum, cell) => sum + (cell.inRange ? cell.count : 0), 0);
+
+  return {
+    weeks,
+    monthLabels,
+    activeDays,
+    totalRevisions,
+    maxCount,
+    totalDays: STREAK_CONTRIBUTION_TOTAL_DAYS
+  };
+};
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -49,6 +266,49 @@ const Dashboard = () => {
     };
 
     return labels[Number(difficulty)] || 'Medium';
+  };
+
+  const subtleTagStyles = {
+    slate: 'border-slate-400/35 bg-slate-500/10 text-slate-200',
+    emerald: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300',
+    blue: 'border-blue-500/35 bg-blue-500/10 text-blue-300',
+    amber: 'border-amber-500/35 bg-amber-500/10 text-amber-300',
+    orange: 'border-orange-500/35 bg-orange-500/10 text-orange-300',
+    rose: 'border-rose-500/35 bg-rose-500/10 text-rose-300',
+    violet: 'border-violet-500/35 bg-violet-500/10 text-violet-300',
+    indigo: 'border-indigo-500/35 bg-indigo-500/10 text-indigo-300',
+    cyan: 'border-cyan-500/35 bg-cyan-500/10 text-cyan-300'
+  };
+
+  const getSubtleTagClass = (variant = 'slate') => {
+    const tone = subtleTagStyles[variant] || subtleTagStyles.slate;
+    return `inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium ${tone}`;
+  };
+
+  const getDifficultyTagVariant = (difficulty) => {
+    const map = {
+      1: 'emerald',
+      2: 'blue',
+      3: 'amber',
+      4: 'violet',
+      5: 'rose'
+    };
+    return map[Number(difficulty)] || 'slate';
+  };
+
+  const pastelActionStyles = {
+    done: 'border-emerald-500/40 bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30',
+    skip: 'border-cyan-500/40 bg-cyan-500/20 text-cyan-100 hover:bg-cyan-500/30',
+    edit: 'border-indigo-500/40 bg-indigo-500/20 text-indigo-100 hover:bg-indigo-500/30',
+    delete: 'border-rose-500/40 bg-rose-500/20 text-rose-100 hover:bg-rose-500/30',
+    review: 'border-violet-500/40 bg-violet-500/20 text-violet-100 hover:bg-violet-500/30'
+  };
+
+  const getPastelActionClass = (variant, disabled = false) => {
+    const base = 'rounded-lg border px-2.5 sm:px-3 py-1.5 text-xs font-semibold transition-colors duration-200 flex items-center justify-center gap-1.5 w-full sm:w-auto min-w-[4.6rem]';
+    const tone = pastelActionStyles[variant] || pastelActionStyles.edit;
+    const disabledState = disabled ? 'opacity-55 cursor-not-allowed saturate-75' : '';
+    return `${base} ${tone} ${disabledState}`.trim();
   };
 
   // Motivational quotes collection
@@ -87,9 +347,11 @@ const Dashboard = () => {
       title: options.title || 'Information',
       message: options.message || '',
       onConfirm: options.onConfirm || null,
+      onCancel: options.onCancel || null,
       confirmText: options.confirmText || 'OK',
       cancelText: options.cancelText || 'Cancel',
-      showCancel: options.showCancel || false
+      showCancel: options.showCancel || false,
+      size: options.size || 'md'
     });
   };
 
@@ -97,21 +359,47 @@ const Dashboard = () => {
     setDialog(prev => ({ ...prev, isOpen: false }));
   };
   const [showAddTopicModal, setShowAddTopicModal] = useState(false);
+  const [showAddTaskModal, setShowAddTaskModal] = useState(false);
+  const [showEditTaskModal, setShowEditTaskModal] = useState(false);
+  const [editingTaskEntry, setEditingTaskEntry] = useState(null);
   const [showEditTopicModal, setShowEditTopicModal] = useState(false);
   const [editingTopic, setEditingTopic] = useState(null);
+  const [taskModalDefaultDate, setTaskModalDefaultDate] = useState(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
+  const [tasks, setTasks] = useState([]);
+  const [processingTasks, setProcessingTasks] = useState(new Set());
+  const [isForwardingDayTasks, setIsForwardingDayTasks] = useState(false);
+  const [taskSpotlightId, setTaskSpotlightId] = useState(null);
+  const [isTaskSpotlightActive, setIsTaskSpotlightActive] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const saved = localStorage.getItem('sidebarCollapsed');
     return saved ? JSON.parse(saved) : false;
+  });
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isDesktopViewport, setIsDesktopViewport] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth >= 1024;
+  });
+  const [isPhoneViewport, setIsPhoneViewport] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 640;
   });
 
   // Spaced repetition state
   const [dueTopics, setDueTopics] = useState([]);
   const [upcomingTopics, setUpcomingTopics] = useState([]);
   const [loadingDue, setLoadingDue] = useState(false);
+  const [hasLoadedDueTopics, setHasLoadedDueTopics] = useState(false);
   const [loadingUpcoming, setLoadingUpcoming] = useState(false);
   const [nextSevenDaysData, setNextSevenDaysData] = useState([]);
   const [processingTopics, setProcessingTopics] = useState(new Set());
+  const [processingDoneTopics, setProcessingDoneTopics] = useState(new Set());
   const [workloadData, setWorkloadData] = useState([]);
   const [showAllUpcoming, setShowAllUpcoming] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -122,6 +410,19 @@ const Dashboard = () => {
     const day = String(now.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   });
+  const previousWeekOffsetRef = useRef(0);
+  const [spotlightTopicId, setSpotlightTopicId] = useState(null);
+  const [isTopicSpotlightActive, setIsTopicSpotlightActive] = useState(false);
+  const [graphSearchRequest, setGraphSearchRequest] = useState(null);
+  const [graphUiCommand, setGraphUiCommand] = useState(null);
+  const [graphUiState, setGraphUiState] = useState({
+    isMaximizedView: false,
+    isTimeLapsePlaying: false
+  });
+
+  const topicCardRefs = useRef(new Map());
+  const topicSpotlightTimerRef = useRef(null);
+  const taskSpotlightTimerRef = useRef(null);
 
   // Dialog state
   const [dialog, setDialog] = useState({
@@ -130,9 +431,11 @@ const Dashboard = () => {
     title: '',
     message: '',
     onConfirm: null,
+    onCancel: null,
     confirmText: 'OK',
     cancelText: 'Cancel',
-    showCancel: false
+    showCancel: false,
+    size: 'md'
   });
 
   // Function to refresh user data from backend
@@ -153,9 +456,84 @@ const Dashboard = () => {
   // Initialize journal service with current user
   useEffect(() => {
     if (user) {
-      journalService.setCurrentUser(user.id);
+      const userStorageId = user.id || user._id || user.email;
+      if (userStorageId) {
+        journalService.setCurrentUser(userStorageId);
+      }
     }
   }, [user]);
+
+  const userTaskStorageKey = useMemo(() => {
+    return taskService.resolveUserStorageKey(user);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const syncTasks = () => {
+      setTasks(sanitizeTaskListForDisplay(taskService.getTasks(userTaskStorageKey)));
+    };
+
+    const syncTasksFromServer = () => {
+      taskService
+        .syncFromServer(userTaskStorageKey)
+        .then((serverTasks) => {
+          if (Array.isArray(serverTasks)) {
+            setTasks(sanitizeTaskListForDisplay(serverTasks));
+          }
+        })
+        .catch((error) => {
+          console.warn('Task refresh from server failed:', error?.message || error);
+        });
+    };
+
+    syncTasks();
+    syncTasksFromServer();
+
+    const handleTaskEvent = (event) => {
+      const eventKey = event?.detail?.key;
+      if (eventKey && eventKey !== userTaskStorageKey) return;
+      syncTasks();
+    };
+
+    const handleStorage = (event) => {
+      if (!event?.key || event.key === taskService.getStorageKey(userTaskStorageKey)) {
+        syncTasks();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      syncTasksFromServer();
+    };
+
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        syncTasksFromServer();
+      }
+    };
+
+    const pollingTimer = window.setInterval(() => {
+      syncTasksFromServer();
+    }, 20000);
+
+    window.addEventListener(taskService.TASK_EVENT_NAME, handleTaskEvent);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener(taskService.TASK_EVENT_NAME, handleTaskEvent);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.clearInterval(pollingTimer);
+    };
+  }, [user, userTaskStorageKey]);
+
+  const filterLearningTopics = (items = []) => {
+    if (!Array.isArray(items)) return [];
+    return items.filter((topic) => topic && topic.isLearning !== false);
+  };
 
   // Fetch due topics for today's revision
   const fetchDueTopics = async () => {
@@ -163,14 +541,16 @@ const Dashboard = () => {
     try {
       const response = await apiService.getDueTopics(10);
       if (response.success) {
-        setDueTopics(response.topics);
+        const filteredTopics = filterLearningTopics(response.topics);
+        setDueTopics(filteredTopics);
         // Store the due topics for later calculation
-        return response.topics;
+        return filteredTopics;
       }
     } catch (error) {
       console.error('Failed to fetch due topics:', error);
       return [];
     } finally {
+      setHasLoadedDueTopics(true);
       setLoadingDue(false);
     }
   };
@@ -181,8 +561,9 @@ const Dashboard = () => {
     try {
       const response = await apiService.getUpcomingTopics(365, 100); // Get all topics for next year
       if (response.success) {
-        setUpcomingTopics(response.topics);
-        return response.topics;
+        const filteredTopics = filterLearningTopics(response.topics);
+        setUpcomingTopics(filteredTopics);
+        return filteredTopics;
       }
     } catch (error) {
       console.error('Failed to fetch upcoming topics:', error);
@@ -225,6 +606,45 @@ const Dashboard = () => {
     }
   };
 
+  const scrollToTopicCard = (topicId) => {
+    if (!topicId) return;
+    const card = topicCardRefs.current.get(topicId);
+    if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+  };
+
+  const startTopicSpotlight = (topicId) => {
+    if (!topicId) return;
+
+    setSpotlightTopicId(topicId);
+    setIsTopicSpotlightActive(true);
+
+    if (topicSpotlightTimerRef.current) {
+      clearTimeout(topicSpotlightTimerRef.current);
+      topicSpotlightTimerRef.current = null;
+    }
+
+    topicSpotlightTimerRef.current = setTimeout(() => {
+      setIsTopicSpotlightActive(false);
+      setSpotlightTopicId(null);
+      topicSpotlightTimerRef.current = null;
+    }, 1000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (topicSpotlightTimerRef.current) {
+        clearTimeout(topicSpotlightTimerRef.current);
+        topicSpotlightTimerRef.current = null;
+      }
+
+      if (taskSpotlightTimerRef.current) {
+        clearTimeout(taskSpotlightTimerRef.current);
+        taskSpotlightTimerRef.current = null;
+      }
+    };
+  }, []);
+
   // Calculate next 7 days schedule from upcoming topics (including today)
   const calculateNextSevenDays = (topics, workloadData = []) => {
     const today = new Date();
@@ -234,15 +654,15 @@ const Dashboard = () => {
       const date = new Date(today);
       date.setDate(date.getDate() + i);
 
-      const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
-      const dateStr = date.toISOString().split('T')[0];
+      const dayName = WEEKDAY_SHORT[date.getDay()];
+      const dateStr = toLocalDateKey(date);
 
       // Count topics due on this day - be more flexible with date matching
       const topicsOnDay = topics.filter(topic => {
         if (!topic.nextReviewDate) return false;
 
         const topicDate = new Date(topic.nextReviewDate);
-        const topicDateStr = topicDate.toISOString().split('T')[0];
+        const topicDateStr = toLocalDateKey(topicDate);
 
         // For today (i=0), also include topics that are overdue
         if (i === 0) {
@@ -254,7 +674,7 @@ const Dashboard = () => {
 
       // Check workload data for more accurate count and difficulty analysis
       const workloadDay = workloadData.find(day =>
-        new Date(day.date).toISOString().split('T')[0] === dateStr
+        toLocalDateKey(day.date) === dateStr
       );
 
       const actualCount = workloadDay ? workloadDay.count : topicsOnDay.length;
@@ -383,6 +803,7 @@ const Dashboard = () => {
     if (processingTopics.has(topicId)) return; // Prevent double-clicks
 
     setProcessingTopics(prev => new Set(prev).add(topicId));
+    setProcessingDoneTopics(prev => new Set(prev).add(topicId));
 
     try {
       const response = await apiService.reviewTopic(topicId, quality);
@@ -407,7 +828,7 @@ const Dashboard = () => {
 
         setToast({
           show: true,
-          message: `✅ Topic completed! Next review: ${new Date(response.topic.nextReviewDate).toLocaleDateString('en-GB')}`,
+          message: `✅ Topic completed! Next review: ${formatDateDDMMYYYY(response.topic.nextReviewDate)}`,
           type: 'success'
         });
       } else {
@@ -427,6 +848,11 @@ const Dashboard = () => {
       });
     } finally {
       setProcessingTopics(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(topicId);
+        return newSet;
+      });
+      setProcessingDoneTopics(prev => {
         const newSet = new Set(prev);
         newSet.delete(topicId);
         return newSet;
@@ -456,6 +882,12 @@ const Dashboard = () => {
 
         await fetchAllTopicsAndCalculate();
 
+        const skippedToDateKey = taskService.normalizeDate(response?.topic?.nextReviewDate);
+        if (skippedToDateKey) {
+          setWeekOffset(getWeekOffsetForDate(skippedToDateKey));
+          setSelectedDateKey(skippedToDateKey);
+        }
+
         setToast({
           show: true,
           message: response.message || `⏭️ Topic skipped successfully`,
@@ -478,6 +910,11 @@ const Dashboard = () => {
       });
     } finally {
       setProcessingTopics(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(topicId);
+        return newSet;
+      });
+      setProcessingDoneTopics(prev => {
         const newSet = new Set(prev);
         newSet.delete(topicId);
         return newSet;
@@ -582,7 +1019,7 @@ const Dashboard = () => {
         };
       });
 
-      showToast(`Revision moved to ${new Date(response.topic.nextReviewDate).toLocaleDateString('en-GB')}`, 'success');
+      showToast(`Revision moved to ${formatDateDDMMYYYY(response.topic.nextReviewDate)}`, 'success');
       return response;
     } catch (error) {
       console.error('Failed to update revision timeline from edit:', error);
@@ -599,7 +1036,7 @@ const Dashboard = () => {
         await fetchAllTopicsAndCalculate();
         setToast({
           show: true,
-          message: `⚡ Fast review completed! Next review: ${new Date(response.topic.nextReviewDate).toLocaleDateString('en-GB')}`,
+          message: `⚡ Fast review completed! Next review: ${formatDateDDMMYYYY(response.topic.nextReviewDate)}`,
           type: 'success'
         });
       }
@@ -623,24 +1060,40 @@ const Dashboard = () => {
     return Math.ceil(diff / (24 * 60 * 60 * 1000));
   };
 
-  const getV2TimelinePreview = (topic, memScore) => {
+  const getV2TimelinePreview = (topic, memScore, userPreferences) => {
     const difficulty = clampValue(Number(topic?.difficulty) || 3, 1, 5);
 
-    const baseRevisionCountByDifficulty = {
-      1: 3,
-      2: 4,
-      3: 5,
-      4: 6,
-      5: 7
+    // Define revision strategy by mode
+    const revisionStrategies = {
+      competitive: {
+        baseRevisionCountByDifficulty: { 1: 3, 2: 4, 3: 5, 4: 6, 5: 7 },
+        basePeriodDaysByDifficulty: { 1: 15, 2: 30, 3: 45, 4: 60, 5: 75 }
+      },
+      engineering: {
+        baseRevisionCountByDifficulty: { 1: 2, 2: 3, 3: 3, 4: 4, 5: 4 },
+        basePeriodDaysByDifficulty: { 1: 20, 2: 35, 3: 50, 4: 70, 5: 90 }
+      }
     };
 
-    const basePeriodDaysByDifficulty = {
-      1: 15,
-      2: 30,
-      3: 45,
-      4: 60,
-      5: 75
-    };
+    // Resolve effective revision mode
+    let effectiveMode = 'competitive'; // default
+    const topicMode = topic?.revisionMode;
+    const userMode = userPreferences?.revisionMode || 'competitive';
+
+    if (topicMode && topicMode !== 'inherit') {
+      effectiveMode = topicMode; // use topic override
+    } else if (userMode === 'hybrid') {
+      // In hybrid mode, harder topics use competitive; lighter use engineering
+      effectiveMode = difficulty >= 4 ? 'competitive' : 'engineering';
+    } else if (userMode === 'engineering') {
+      effectiveMode = 'engineering';
+    } else {
+      effectiveMode = 'competitive';
+    }
+
+    const strategy = revisionStrategies[effectiveMode] || revisionStrategies.competitive;
+    const baseRevisionCountByDifficulty = strategy.baseRevisionCountByDifficulty;
+    const basePeriodDaysByDifficulty = strategy.basePeriodDaysByDifficulty;
 
     const safeMemScore = clampValue(Number(memScore) || 0, 0, 10);
     let memScoreBoost = 0;
@@ -673,12 +1126,12 @@ const Dashboard = () => {
 
     plannedRevisionCount = clampValue(plannedRevisionCount, minimumRevisionCount, targetRevisionCount);
 
-    const baseGapDays = Math.max(1, Math.round(effectivePeriodDays / Math.max(1, plannedRevisionCount)));
     const previewSteps = Math.max(1, Math.min(5, plannedRevisionCount));
 
     const previewDates = [];
     let cursor = topic?.nextReviewDate ? new Date(topic.nextReviewDate) : new Date();
     cursor.setHours(8, 0, 0, 0);
+    let intervalDays = 1;
 
     const hardDeadline = topic?.deadlineType === 'hard' && topic?.deadlineDate
       ? new Date(topic.deadlineDate)
@@ -688,40 +1141,179 @@ const Dashboard = () => {
       hardDeadline.setHours(8, 0, 0, 0);
     }
 
-    for (let i = 0; i < previewSteps; i += 1) {
-      const normalized = new Date(cursor);
+    const seenDayKeys = new Set();
 
-      if (hardDeadline && normalized > hardDeadline) {
-        previewDates.push(new Date(hardDeadline));
-      } else {
-        previewDates.push(normalized);
+    const pushPreviewDate = (date) => {
+      const dayKey = toLocalDateKey(date);
+      if (!dayKey || seenDayKeys.has(dayKey)) {
+        return;
       }
 
-      cursor = new Date(cursor.getTime() + baseGapDays * 24 * 60 * 60 * 1000);
+      seenDayKeys.add(dayKey);
+      previewDates.push(new Date(date));
+    };
+
+    for (let i = 0; i < previewSteps; i += 1) {
+      const normalized = new Date(cursor);
+      const previewDate = hardDeadline && normalized > hardDeadline
+        ? new Date(hardDeadline)
+        : normalized;
+
+      pushPreviewDate(previewDate);
+
+      intervalDays = Math.max(intervalDays + 1, Math.round(intervalDays * 1.8));
+      cursor = new Date(cursor.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+      if (hardDeadline && cursor > hardDeadline) {
+        cursor = new Date(hardDeadline);
+      }
     }
 
     return {
       previewDates,
       targetRevisionCount,
       plannedRevisionCount,
-      effectivePeriodDays
+      effectivePeriodDays,
+      revisionMode: effectiveMode
     };
   };
 
   // Handle topic click to show future revision dates
-  const handleTopicClick = (topic) => {
+  const handleTopicClick = async (topic) => {
     const currentDate = new Date();
-    const preview = getV2TimelinePreview(topic, user?.memScore);
+    const preview = getV2TimelinePreview(topic, user?.memScore, user?.preferences);
 
-    const reviewDatesText = preview.previewDates
-      .map((date, index) => `${index + 1}. ${date.toLocaleDateString('en-GB')} (${Math.ceil((date - currentDate) / (1000 * 60 * 60 * 24))} days)`)
-      .join('\n');
+    let historyEntries = [];
+    try {
+      const historyResponse = await apiService.getRevisionHistory(365);
+      historyEntries = Array.isArray(historyResponse?.entries)
+        ? historyResponse.entries.filter((entry) => String(entry?.topicId || '') === String(topic?._id || ''))
+        : [];
+    } catch (error) {
+      console.warn('Failed to load revision history for topic timeline:', error);
+    }
+
+    const completedEntries = historyEntries
+      .slice()
+      .sort((left, right) => new Date(left.completedAt) - new Date(right.completedAt));
+
+    const timelineRows = preview.previewDates.map((date, index) => {
+      const historyEntry = completedEntries[index] || null;
+      const daysAway = Math.ceil((date - currentDate) / (1000 * 60 * 60 * 24));
+      const isCompleted = Boolean(historyEntry?.completedAt);
+
+      return {
+        id: `${date.toISOString()}_${index}`,
+        step: index + 1,
+        isCompleted,
+        scheduledDateLabel: formatDateDDMMYYYY(date),
+        completedLabel: isCompleted ? formatTimelineTimestamp(historyEntry.completedAt) : '',
+        statusLabel: isCompleted
+          ? 'Completed'
+          : daysAway < 0
+            ? `Overdue by ${Math.abs(daysAway)} day${Math.abs(daysAway) === 1 ? '' : 's'}`
+            : daysAway === 0
+              ? 'Due today'
+              : `In ${daysAway} day${daysAway === 1 ? '' : 's'}`
+      };
+    });
 
     showDialog({
       type: 'info',
-      title: `📅 V2 Review Timeline`,
-      message: `Topic: "${topic.title}"\n\n${reviewDatesText}\n\nPlanned revisions: ${preview.plannedRevisionCount}/${preview.targetRevisionCount}\nWindow: ${preview.effectivePeriodDays} days\n\nUse Edit Topic and then Reschedule to change the timeline.`,
-      confirmText: 'Got it'
+      title: 'Revision Timeline',
+      message: (
+        <div className="space-y-3">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5">
+            <p className="text-sm font-semibold text-white leading-snug">{topic.title}</p>
+            <p className="mt-1 text-xs text-gray-300">
+              {getDifficultyLabel(topic.difficulty)} ({topic.difficulty}/5) • {preview.plannedRevisionCount}/{preview.targetRevisionCount} planned • {preview.effectivePeriodDays} day window
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2.5">
+            <p className="text-xs uppercase tracking-wide text-gray-400 mb-2">Timeline</p>
+            <div className="space-y-1.5">
+              {timelineRows.map((item) => (
+                <p key={item.id} className="text-sm text-gray-100">
+                  <span className="text-cyan-300 font-medium">Step {item.step}:</span>{' '}
+                  {item.isCompleted ? (
+                    <>
+                      Completed on {item.completedLabel}
+                      <span className="text-gray-400"> (scheduled for {item.scheduledDateLabel})</span>
+                    </>
+                  ) : (
+                    <>
+                      {item.scheduledDateLabel} <span className="text-gray-400">({item.statusLabel})</span>
+                    </>
+                  )}
+                </p>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-xs text-gray-400">Tip: Use Edit Topic and Reschedule to adjust these dates.</p>
+        </div>
+      ),
+      confirmText: 'Close',
+      showCancel: true,
+      cancelText: 'Start Focus',
+      onCancel: () => {
+        navigate('/focus', {
+          state: {
+            topicId: topic._id,
+            topicTitle: topic.title,
+            fromTopic: true,
+            openSettings: true
+          }
+        });
+        closeDialog();
+      },
+      size: 'sm'
+    });
+  };
+
+  const handleTopicSearchFocus = (topic) => {
+    const topicId = topic?._id;
+    if (!topicId) return;
+
+    const inDue = dueTopics.some((item) => item._id === topicId);
+    const inUpcoming = upcomingTopics.some((item) => item._id === topicId);
+
+    if (!inDue && !inUpcoming) {
+      handleTopicClick(topic);
+      return;
+    }
+
+    if (inUpcoming && !showAllUpcoming) {
+      setShowAllUpcoming(true);
+      setTimeout(() => {
+        scrollToTopicCard(topicId);
+      }, 100);
+    } else {
+      setTimeout(() => {
+        scrollToTopicCard(topicId);
+      }, 20);
+    }
+
+    startTopicSpotlight(topicId);
+  };
+
+  const handleStartFocusFromEdit = (topic) => {
+    if (!topic?._id) return;
+
+    navigate('/focus', {
+      state: {
+        topicId: topic._id,
+        topicTitle: topic.title,
+        fromTopic: true,
+        openSettings: true
+      }
+    });
+  };
+
+  const dispatchGraphUiCommand = (type) => {
+    setGraphUiCommand({
+      type,
+      token: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     });
   };
 
@@ -731,15 +1323,20 @@ const Dashboard = () => {
       const response = await apiService.recordStudySession();
 
       if (response.success) {
-        // Log streak to journal
-        journalService.logStudyStreak(response.currentStreak, response.isNewRecord);
-
         // Update user streak data
         updateUser({
           currentStreak: response.currentStreak,
           longestStreak: response.longestStreak,
           totalStudyDays: response.totalStudyDays
         });
+
+        const isFirstSessionToday = !String(response.message || '').toLowerCase().includes('already recorded for today');
+        if (!isFirstSessionToday) {
+          return;
+        }
+
+        // Log streak to journal only for the first study action of the day.
+        journalService.logStudyStreak(response.currentStreak, response.isNewRecord);
 
         // Show celebration if new record or milestone
         if (response.isNewRecord) {
@@ -767,6 +1364,124 @@ const Dashboard = () => {
     }
   };
 
+  const openStreakContributionDialog = async () => {
+    let statsRows = [];
+
+    try {
+      const response = await apiService.getRevisionDailyStats(400);
+      statsRows = Array.isArray(response?.stats) ? response.stats : [];
+    } catch (error) {
+      console.warn('Failed to load streak contribution stats:', error?.message || error);
+    }
+
+    const contribution = buildStreakContributionGrid(statsRows);
+    const levelClassMap = {
+      0: 'bg-white/[0.04] border border-white/[0.06]',
+      1: 'bg-cyan-900/70',
+      2: 'bg-cyan-700/80',
+      3: 'bg-cyan-500/85',
+      4: 'bg-cyan-300/95'
+    };
+    const dayLabels = ['Mon', '', 'Wed', '', 'Fri', '', ''];
+
+    showDialog({
+      type: 'info',
+      title: 'Streak Activity',
+      size: 'lg',
+      message: (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-300">
+            Your contribution-style study activity for the last year.
+          </p>
+
+          <div className="rounded-xl border border-white/15 bg-black p-3 overflow-hidden">
+            <div className="min-w-0 flex-1 space-y-2">
+              <div
+                className="ml-8 grid gap-0.5"
+                style={{ gridTemplateColumns: `repeat(${contribution.weeks.length}, minmax(0, 1fr))` }}
+              >
+                {contribution.monthLabels.map((monthLabel) => (
+                  <span
+                    key={`${monthLabel.label}-${monthLabel.weekIndex}`}
+                    className="text-[10px] text-cyan-100/80"
+                    style={{ gridColumnStart: monthLabel.weekIndex + 1 }}
+                  >
+                    {monthLabel.label}
+                  </span>
+                ))}
+              </div>
+
+              <div className="flex items-start gap-2">
+                <div className="pt-0.5 grid grid-rows-7 gap-0.5 text-[10px] text-cyan-100/60">
+                  {dayLabels.map((dayLabel, index) => (
+                    <span key={`${dayLabel}-${index}`} className="h-2.5 leading-[10px]">
+                      {dayLabel}
+                    </span>
+                  ))}
+                </div>
+
+                <div
+                  className="min-w-0 flex-1 grid gap-0.5"
+                  style={{ gridTemplateColumns: `repeat(${contribution.weeks.length}, minmax(0, 1fr))` }}
+                >
+                  {contribution.weeks.map((week, weekIndex) => (
+                    <div key={`week-${weekIndex}`} className="grid grid-rows-7 gap-0.5 min-w-0">
+                      {week.map((cell) => {
+                        const tooltipText = `${cell.count} topic${cell.count === 1 ? '' : 's'} revised on ${formatLongDateWithOrdinal(cell.dayKey)}`;
+                        const isNearRightEdge = weekIndex >= contribution.weeks.length - 6;
+                        const isNearLeftEdge = weekIndex <= 2;
+                        const tooltipPositionClass = isNearRightEdge
+                          ? 'right-0 translate-x-0'
+                          : isNearLeftEdge
+                            ? 'left-0 translate-x-0'
+                            : 'left-1/2 -translate-x-1/2';
+
+                        return (
+                          <button
+                            key={cell.dayKey}
+                            type="button"
+                            className={`group relative h-2.5 w-full rounded-[2px] ${
+                              cell.inRange ? (levelClassMap[cell.level] || levelClassMap[0]) : 'bg-transparent'
+                            }`}
+                            title={cell.inRange ? tooltipText : ''}
+                            disabled={!cell.inRange}
+                          >
+                            {cell.inRange ? (
+                              <span className={`pointer-events-none absolute top-[-1.8rem] z-20 rounded border border-white/20 bg-black/95 px-1.5 py-0.5 text-[10px] text-gray-100 opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 whitespace-nowrap ${tooltipPositionClass}`}>
+                                {tooltipText}
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-300">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>Active days: {contribution.activeDays}/{contribution.totalDays}</span>
+                <span>Topics revised: {contribution.totalRevisions}</span>
+                <span>Current streak: {user?.currentStreak || 0}</span>
+              </div>
+
+              <div className="ml-auto flex items-center justify-end gap-2 whitespace-nowrap">
+                <span className="inline-flex items-center gap-1"><span>None</span><span className="h-2.5 w-2.5 rounded-[2px] bg-white/[0.08] border border-white/[0.1]" /></span>
+                <span className="inline-flex items-center gap-1"><span>Low</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-900/70" /></span>
+                <span className="inline-flex items-center gap-1"><span>Medium</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-700/80" /></span>
+                <span className="inline-flex items-center gap-1"><span>High</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-500/85" /></span>
+                <span className="inline-flex items-center gap-1"><span>Peak</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-300/95" /></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      ),
+      confirmText: 'Close'
+    });
+  };
+
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!isLoading && !user) {
@@ -786,10 +1501,38 @@ const Dashboard = () => {
     window.scrollTo(0, 0);
   }, []);
 
-  // Save sidebar state to localStorage
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', JSON.stringify(sidebarCollapsed));
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsDesktopViewport(window.innerWidth >= 1024);
+      setIsPhoneViewport(window.innerWidth < 640);
+    };
+
+    window.addEventListener('resize', handleResize);
+    handleResize();
+
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (isDesktopViewport) {
+      setIsMobileSidebarOpen(false);
+    }
+  }, [isDesktopViewport]);
+
+  useEffect(() => {
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setIsMobileSidebarOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, []);
 
   // Fetch topics when user is available
   useEffect(() => {
@@ -800,16 +1543,9 @@ const Dashboard = () => {
       // Log daily session start (only once per day)
       journalService.logDailySessionStart();
 
-      // First, automatically move any overdue topics to today (silently)
-      handleMoveOverdueTopics(true).then(() => {
-        // Then fetch all data
-        fetchTopics();
-        fetchAllTopicsAndCalculate();
-      }).catch(() => {
-        // If moving overdue fails, still fetch data
-        fetchTopics();
-        fetchAllTopicsAndCalculate();
-      });
+      // Keep overdue balancing in scheduling endpoints instead of force-moving everything to today.
+      fetchTopics();
+      fetchAllTopicsAndCalculate();
     }
   }, [user, fetchTopics]);
 
@@ -828,6 +1564,36 @@ const Dashboard = () => {
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [navigate]);
+
+  useEffect(() => {
+    const globalSearch = location.state?.globalSearch;
+    if (!globalSearch || globalSearch.source !== 'dashboard-global-search') return;
+    if (globalSearch.action !== 'focus-node') return;
+
+    const queryText = String(globalSearch.query || '').trim();
+    if (!queryText) return;
+
+    if (location.pathname !== '/graph') {
+      navigate('/graph', {
+        state: {
+          ...(location.state || {}),
+          globalSearch
+        }
+      });
+      return;
+    }
+
+    setGraphSearchRequest({
+      query: queryText,
+      token: `${Date.now()}_${queryText.toLowerCase()}`
+    });
+
+    const { globalSearch: _globalSearch, ...restState } = location.state || {};
+    navigate('/graph', {
+      replace: true,
+      state: Object.keys(restState).length > 0 ? restState : null
+    });
+  }, [location, navigate]);
 
   // Show loading while checking authentication
   if (isLoading) {
@@ -848,24 +1614,22 @@ const Dashboard = () => {
 
   // Sidebar navigation items
   const sidebarItems = [
-    { icon: Brain, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
+    { icon: DashboardGlyph, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
     { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
     { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
     { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
     { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
+    { icon: Mic, label: "Listener", active: location.pathname === "/listener", path: "/listener" },
     { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
-    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" }
+    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
+    { icon: Award, label: "Achievements", active: location.pathname === "/achievements", path: "/achievements" }
   ];
+  const isGraphMode = location.pathname === '/graph';
 
   const quickActions = [
-    { icon: Plus, label: "Add Topic", action: () => setShowAddTopicModal(true), primary: true },
-    { icon: SkipForward, label: "Hard Skip Today", action: handleHardSkipToday, primary: false },
-    { icon: Zap, label: "Quick Review", action: () => showDialog({
-      type: 'info',
-      title: 'Quick Review',
-      message: 'This feature is coming soon!\n\nQuick Review will allow you to rapidly review multiple topics in succession.',
-      confirmText: 'Got it'
-    }), primary: false }
+    ...(!isGraphMode ? [{ icon: Plus, label: "Add Topic", action: () => setShowAddTopicModal(true), primary: true }] : []),
+    { icon: CheckSquare, label: "Add Task", action: () => openTaskCreateModal(selectedDateKey), primary: false },
+    ...(!isGraphMode ? [{ icon: SkipForward, label: "Hard Skip Today", action: handleHardSkipToday, primary: false }] : [])
   ];
 
   // Real data for Next 7 Days is now calculated from upcoming topics
@@ -873,36 +1637,55 @@ const Dashboard = () => {
   const handleSidebarClick = (item) => {
     if (item.label === "Dashboard") {
       navigate('/dashboard');
+      setIsMobileSidebarOpen(false);
       return;
     }
 
     if (item.label === "DocTags") {
       navigate('/doctags');
+      setIsMobileSidebarOpen(false);
       return;
     }
 
     if (item.label === "Journal") {
       navigate('/journal');
+      setIsMobileSidebarOpen(false);
       return;
     }
 
     if (item.label === "Chronicle") {
       navigate('/chronicle');
+      setIsMobileSidebarOpen(false);
       return;
     }
 
     if (item.label === "Analytics") {
       navigate('/analytics');
+      setIsMobileSidebarOpen(false);
       return;
     }
 
     if (item.label === "Mindmaps") {
       navigate('/mindmaps');
+      setIsMobileSidebarOpen(false);
+      return;
+    }
+
+    if (item.label === "Listener") {
+      navigate('/listener');
+      setIsMobileSidebarOpen(false);
       return;
     }
 
     if (item.label === "Graph Mode") {
       navigate('/graph');
+      setIsMobileSidebarOpen(false);
+      return;
+    }
+
+    if (item.label === "Achievements") {
+      navigate('/achievements');
+      setIsMobileSidebarOpen(false);
       return;
     }
 
@@ -942,24 +1725,593 @@ const Dashboard = () => {
     }
   };
 
-  const formatDate = (date) => {
-    return date.toLocaleDateString('en-GB', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
+  function openTaskCreateModal(dateValue) {
+    const fallbackDate = selectedDateKey || toLocalDateKey(new Date());
+    const normalizedDate = taskService.normalizeDate(dateValue) || fallbackDate;
+    setTaskModalDefaultDate(normalizedDate);
+    setShowAddTaskModal(true);
+  }
+
+  const requestTaskSyncRefresh = () => {
+    taskService.syncFromServer(userTaskStorageKey).catch((error) => {
+      console.warn('Task sync refresh failed after mutation:', error?.message || error);
     });
   };
 
+  const getSeriesTasksForTask = (task, pool = tasks) => {
+    if (!task?.seriesId) return [];
+
+    return (Array.isArray(pool) ? pool : [])
+      .filter((item) => item?.seriesId === task.seriesId)
+      .sort((left, right) => String(left.date || '').localeCompare(String(right.date || '')));
+  };
+
+  const isLastHabitOccurrence = (task, pool = tasks) => {
+    const seriesTasks = getSeriesTasksForTask(task, pool);
+    if (seriesTasks.length === 0) return false;
+
+    const lastTask = seriesTasks[seriesTasks.length - 1];
+    return lastTask?.id === task?.id;
+  };
+
+  const extendHabitByThreeMonths = (task) => {
+    const seriesTasks = getSeriesTasksForTask(task);
+    if (!task || seriesTasks.length === 0) {
+      return { createdCount: 0 };
+    }
+
+    const lastDate = seriesTasks[seriesTasks.length - 1]?.date;
+    const extensionStartDate = addDaysToDateKey(lastDate, 1);
+    if (!extensionStartDate) {
+      return { createdCount: 0 };
+    }
+
+    const weekdaySelection = Array.from(
+      new Set(
+        seriesTasks
+          .map((entry) => {
+            const normalizedDate = taskService.normalizeDate(entry?.date);
+            if (!normalizedDate) return null;
+            const parsed = new Date(`${normalizedDate}T00:00:00`);
+            if (Number.isNaN(parsed.getTime())) return null;
+            return parsed.getDay();
+          })
+          .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6)
+      )
+    );
+
+    if (weekdaySelection.length === 0) {
+      return { createdCount: 0 };
+    }
+
+    const generatedDates = buildRecurringDatesFromWeekdays(
+      extensionStartDate,
+      weekdaySelection,
+      HABIT_EXTENSION_WEEKS
+    );
+
+    if (generatedDates.length === 0) {
+      return { createdCount: 0 };
+    }
+
+    const result = taskService.addTask(userTaskStorageKey, {
+      title: task.title,
+      description: task.description,
+      date: generatedDates[0],
+      taskType: 'custom-recurring',
+      customDates: generatedDates.slice(1)
+    });
+
+    const createdCount = Number(result?.createdCount) || 0;
+    if (createdCount > 0) {
+      requestTaskSyncRefresh();
+    }
+
+    return {
+      createdCount,
+      firstDate: generatedDates[0],
+      lastDate: generatedDates[generatedDates.length - 1]
+    };
+  };
+
+  const handleAddTask = async (taskData) => {
+    try {
+      const result = taskService.addTask(userTaskStorageKey, taskData);
+      const primaryTask = result?.primaryTask || result;
+      const createdCount = Number(result?.createdCount) || 1;
+
+      if (primaryTask?.date) {
+        setSelectedDateKey(primaryTask.date);
+      }
+
+      requestTaskSyncRefresh();
+
+      setToast({
+        show: true,
+        message: createdCount > 1
+          ? `✅ ${createdCount} tasks added successfully!`
+          : '✅ Task added successfully!',
+        type: 'success'
+      });
+    } catch (error) {
+      console.error('Failed to add task:', error);
+      setToast({
+        show: true,
+        message: error.message || '❌ Failed to add task',
+        type: 'error'
+      });
+      throw error;
+    }
+  };
+
+  const handleToggleTaskCompletion = (task) => {
+    const taskId = task?.id;
+    if (!taskId) return;
+
+    const target = tasks.find((item) => item.id === taskId);
+    if (!target) return;
+
+    const isHabitTask = ['recurring', 'custom-recurring'].includes(String(target.taskType || '').toLowerCase())
+      && Boolean(target.seriesId);
+    const shouldAskForExtension = isHabitTask && !target.completed && isLastHabitOccurrence(target);
+
+    const commitToggle = (shouldExtend = false) => {
+      setProcessingTasks((prev) => new Set(prev).add(taskId));
+      try {
+        taskService.toggleTaskCompletion(userTaskStorageKey, taskId);
+
+        const nextCompleted = !target.completed;
+        if (nextCompleted) {
+          journalService.logTaskCompletion(target, true);
+        }
+        requestTaskSyncRefresh();
+
+        if (shouldExtend) {
+          const extension = extendHabitByThreeMonths(target);
+          if (extension.createdCount > 0) {
+            setToast({
+              show: true,
+              message: `✅ Habit completed and extended for 3 months (${extension.createdCount} entries)` ,
+              type: 'success'
+            });
+            return;
+          }
+        }
+
+        if (target) {
+          setToast({
+            show: true,
+            message: target.completed ? '↩️ Task marked as pending' : '✅ Task marked as done',
+            type: 'success'
+          });
+        }
+      } finally {
+        setProcessingTasks((prev) => {
+          const next = new Set(prev);
+          next.delete(taskId);
+          return next;
+        });
+      }
+    };
+
+    if (shouldAskForExtension) {
+      showDialog({
+        type: 'confirm',
+        title: '3-Month Habit Completed',
+        message: 'You completed 3 months of this habit. Do you want to extend it for another 3 months?',
+        confirmText: 'Yes, extend',
+        cancelText: 'No, just complete',
+        showCancel: true,
+        onConfirm: () => commitToggle(true),
+        onCancel: () => {
+          closeDialog();
+          commitToggle(false);
+        }
+      });
+      return;
+    }
+
+    commitToggle(false);
+  };
+
+  const handleForwardTaskToNextDay = (task) => {
+    const taskId = task?.id;
+    if (!taskId) return;
+
+    const target = tasks.find((item) => item.id === taskId);
+    if (!target) return;
+
+    const normalizedType = String(target.taskType || '').toLowerCase();
+    const isHabitTask = ['recurring', 'custom-recurring'].includes(normalizedType);
+    if (isHabitTask) {
+      setToast({
+        show: true,
+        message: 'Habits cannot be moved to today. Mark it done directly if completed.',
+        type: 'info'
+      });
+      return;
+    }
+
+    const taskDateKey = taskService.normalizeDate(target.date);
+    const todayKey = toLocalDateKey(new Date());
+    if (!taskDateKey || taskDateKey >= todayKey) return;
+    const targetDateKey = todayKey;
+
+    setProcessingTasks((prev) => new Set(prev).add(taskId));
+    try {
+      taskService.updateTask(userTaskStorageKey, taskId, {
+        date: targetDateKey,
+        completed: false
+      });
+
+      requestTaskSyncRefresh();
+
+      setWeekOffset(getWeekOffsetForDate(targetDateKey));
+      setSelectedDateKey(targetDateKey);
+
+      setToast({
+        show: true,
+        message: `Task moved to today (${formatDateDDMMYYYY(targetDateKey)})`,
+        type: 'success'
+      });
+    } finally {
+      setProcessingTasks((prev) => {
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+    }
+  };
+
+  const handleForwardSelectedDayToToday = () => {
+    if (!selectedDayData || isForwardingDayTasks) return;
+
+    const targetDateKey = toLocalDateKey(new Date());
+    if (selectedDayData.date === targetDateKey) {
+      setToast({
+        show: true,
+        message: 'Selected day is already today',
+        type: 'info'
+      });
+      return;
+    }
+
+    const taskIdsToMove = selectedDayTasks
+      .filter((task) => {
+        const normalizedType = String(task?.taskType || '').toLowerCase();
+        const isHabitTask = ['recurring', 'custom-recurring'].includes(normalizedType);
+        return !isHabitTask;
+      })
+      .map((task) => task.id)
+      .filter(Boolean);
+
+    if (taskIdsToMove.length === 0) {
+      setToast({
+        show: true,
+        message: 'No non-habit tasks to move for this day',
+        type: 'info'
+      });
+      return;
+    }
+
+    const idSet = new Set(taskIdsToMove);
+    const now = Date.now();
+
+    setIsForwardingDayTasks(true);
+    try {
+      const nextTasks = tasks.map((task) => {
+        if (!idSet.has(task.id)) return task;
+        return {
+          ...task,
+          date: targetDateKey,
+          completed: false,
+          updatedAt: now
+        };
+      });
+
+      taskService.saveTasks(userTaskStorageKey, nextTasks);
+      requestTaskSyncRefresh();
+
+      setWeekOffset(getWeekOffsetForDate(targetDateKey));
+      setSelectedDateKey(targetDateKey);
+
+      setToast({
+        show: true,
+        message: `${taskIdsToMove.length} task${taskIdsToMove.length === 1 ? '' : 's'} moved to today`,
+        type: 'success'
+      });
+    } finally {
+      setIsForwardingDayTasks(false);
+    }
+  };
+
+  const handleDeleteTask = (taskId) => {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) return;
+
+    const isHabitTask = ['recurring', 'custom-recurring'].includes(String(task.taskType || '').toLowerCase())
+      && Boolean(task.seriesId);
+
+    const deleteSingleOccurrence = (shouldExtend = false) => {
+      taskService.deleteTask(userTaskStorageKey, taskId);
+      requestTaskSyncRefresh();
+
+      if (shouldExtend) {
+        const extension = extendHabitByThreeMonths(task);
+        if (extension.createdCount > 0) {
+          setToast({
+            show: true,
+            message: `🗑️ Last occurrence deleted and habit extended (${extension.createdCount} new entries)`,
+            type: 'success'
+          });
+          return;
+        }
+      }
+
+      setToast({
+        show: true,
+        message: isHabitTask ? '🗑️ Habit occurrence deleted' : '🗑️ Task deleted',
+        type: 'success'
+      });
+    };
+
+    if (isHabitTask && isLastHabitOccurrence(task)) {
+      showDialog({
+        type: 'confirm',
+        title: '3-Month Habit Completed',
+        message: 'This is the last occurrence in your 3-month habit cycle. Extend another 3 months?',
+        confirmText: 'Extend + Delete',
+        cancelText: 'Delete only',
+        showCancel: true,
+        onConfirm: () => deleteSingleOccurrence(true),
+        onCancel: () => {
+          closeDialog();
+          deleteSingleOccurrence(false);
+        }
+      });
+      return;
+    }
+
+    if (!isHabitTask) {
+      deleteSingleOccurrence(false);
+      return;
+    }
+
+    showDialog({
+      type: 'confirm',
+      title: 'Delete Habit',
+      message: 'Do you want to delete only this occurrence or all occurrences?',
+      confirmText: 'This occurrence',
+      cancelText: 'All occurrences',
+      showCancel: true,
+      onConfirm: () => {
+        deleteSingleOccurrence(false);
+      },
+      onCancel: () => {
+        const seriesTasks = tasks.filter((item) => item.seriesId === task.seriesId);
+        const idsToDelete = seriesTasks.length > 0
+          ? seriesTasks.map((seriesTask) => seriesTask.id)
+          : [taskId];
+
+        taskService.deleteTasks(userTaskStorageKey, idsToDelete);
+        requestTaskSyncRefresh();
+
+        closeDialog();
+        setToast({
+          show: true,
+          message: '🗑️ All habit occurrences deleted',
+          type: 'success'
+        });
+      }
+    });
+  };
+
+  const handleOpenTaskEdit = (task) => {
+    if (!task?.id) return;
+    setEditingTaskEntry(task);
+    setShowEditTaskModal(true);
+  };
+
+  const openTaskDetailsDialog = (task) => {
+    if (!task) return;
+
+    showDialog({
+      type: 'info',
+      title: 'Task Details',
+      message: (
+        <div className="space-y-2">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5">
+            <p className="text-sm font-semibold text-white leading-snug">{task.title || 'Untitled task'}</p>
+            <p className="mt-1 text-xs text-gray-400">{formatDateDDMMYYYY(task.date)}</p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2.5">
+            <p className="text-xs uppercase tracking-wide text-gray-400 mb-1.5">Description</p>
+            <p className="text-sm text-gray-200 whitespace-pre-wrap break-words">{task.description || 'No description'}</p>
+          </div>
+        </div>
+      ),
+      confirmText: 'Close'
+    });
+  };
+
+  const handleEditTask = async (taskData) => {
+    if (!editingTaskEntry?.id) return;
+
+    const nextTaskType = String(taskData?.taskType || '').toLowerCase() === 'one-time'
+      ? 'one-time'
+      : ['recurring', 'custom-recurring'].includes(String(editingTaskEntry.taskType || '').toLowerCase())
+        ? String(editingTaskEntry.taskType).toLowerCase()
+        : 'custom-recurring';
+
+    if (nextTaskType === 'one-time') {
+      taskService.updateTask(userTaskStorageKey, editingTaskEntry.id, {
+        title: taskData.title,
+        description: taskData.description,
+        date: taskData.date,
+        taskType: nextTaskType,
+        seriesId: null
+      });
+    } else {
+      const existingSeriesId = editingTaskEntry.seriesId;
+      const hasSeries = Boolean(existingSeriesId);
+      const providedCustomDates = Array.isArray(taskData?.customDates) ? taskData.customDates : [];
+
+      if (hasSeries && providedCustomDates.length > 0) {
+        const seriesTasks = tasks
+          .filter((item) => item.seriesId === existingSeriesId)
+          .sort((left, right) => String(left.date || '').localeCompare(String(right.date || '')));
+
+        const pivotDate = taskService.normalizeDate(editingTaskEntry.date) || taskData.date;
+        const idsToReplace = seriesTasks
+          .filter((entry) => String(entry.date || '') >= String(pivotDate || ''))
+          .map((entry) => entry.id);
+
+        if (idsToReplace.length > 0) {
+          taskService.deleteTasks(userTaskStorageKey, idsToReplace);
+        }
+
+        taskService.addTask(userTaskStorageKey, {
+          title: taskData.title,
+          description: taskData.description,
+          date: taskData.date,
+          taskType: 'custom-recurring',
+          customDates: providedCustomDates
+        });
+      } else {
+        taskService.updateTask(userTaskStorageKey, editingTaskEntry.id, {
+          title: taskData.title,
+          description: taskData.description,
+          date: taskData.date,
+          taskType: nextTaskType,
+          seriesId: nextTaskType === 'one-time' ? null : editingTaskEntry.seriesId
+        });
+      }
+    }
+
+    requestTaskSyncRefresh();
+
+    setToast({
+      show: true,
+      message: '✏️ Task updated',
+      type: 'success'
+    });
+
+    setShowEditTaskModal(false);
+    setEditingTaskEntry(null);
+  };
+
+  const getWeekOffsetForDate = (targetDate) => {
+    const today = new Date();
+    const thisWeekStart = new Date(today);
+    thisWeekStart.setDate(thisWeekStart.getDate() - thisWeekStart.getDay());
+    thisWeekStart.setHours(0, 0, 0, 0);
+
+    const target = new Date(`${targetDate}T00:00:00`);
+    if (Number.isNaN(target.getTime())) return 0;
+
+    const targetWeekStart = new Date(target);
+    targetWeekStart.setDate(targetWeekStart.getDate() - targetWeekStart.getDay());
+    targetWeekStart.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.round((targetWeekStart.getTime() - thisWeekStart.getTime()) / (24 * 60 * 60 * 1000));
+    return Math.floor(diffDays / 7);
+  };
+
+  const focusTaskSpotlight = (taskId) => {
+    setTaskSpotlightId(taskId);
+    setIsTaskSpotlightActive(true);
+
+    if (taskSpotlightTimerRef.current) {
+      clearTimeout(taskSpotlightTimerRef.current);
+      taskSpotlightTimerRef.current = null;
+    }
+
+    taskSpotlightTimerRef.current = setTimeout(() => {
+      setIsTaskSpotlightActive(false);
+      setTaskSpotlightId(null);
+      taskSpotlightTimerRef.current = null;
+    }, 1200);
+  };
+
+  const handleTaskSearchFocus = (taskQuery, taskMeta = null) => {
+    const queryText = String(taskQuery || '').trim();
+    const matchingTasks = queryText
+      ? taskService.searchTasks(userTaskStorageKey, queryText, 50)
+      : [];
+
+    const targetTask = taskMeta?.id
+      ? tasks.find((task) => task.id === taskMeta.id)
+      : (matchingTasks[0] || null);
+
+    if (!targetTask) {
+      setToast({
+        show: true,
+        message: 'No matching tasks found',
+        type: 'info'
+      });
+      return;
+    }
+
+    setWeekOffset(getWeekOffsetForDate(targetTask.date));
+    setSelectedDateKey(targetTask.date);
+    focusTaskSpotlight(targetTask.id);
+  };
+
+  const formatDate = (date) => {
+    return formatDateWithWeekday(date, 'long');
+  };
+
   const toLocalDateKey = (value) => {
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+        return normalized;
+      }
+    }
+
     const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
 
-  const allReviewTopics = useMemo(() => [...dueTopics, ...upcomingTopics], [dueTopics, upcomingTopics]);
+  const getTaskTypeSortOrder = (task) => {
+    const normalizedType = String(task?.taskType || '').toLowerCase();
+    return normalizedType === 'one-time' ? 0 : 1;
+  };
+
+  const taskBucketsByDate = useMemo(() => {
+    const map = {};
+    (Array.isArray(tasks) ? tasks : []).forEach((task) => {
+      const dayKey = toLocalDateKey(task?.date);
+      if (!dayKey) return;
+
+      if (!map[dayKey]) {
+        map[dayKey] = [];
+      }
+
+      map[dayKey].push(task);
+    });
+
+    Object.keys(map).forEach((dayKey) => {
+      map[dayKey] = [...map[dayKey]].sort((left, right) => {
+        const leftTypeOrder = getTaskTypeSortOrder(left);
+        const rightTypeOrder = getTaskTypeSortOrder(right);
+        if (leftTypeOrder !== rightTypeOrder) {
+          return leftTypeOrder - rightTypeOrder;
+        }
+
+        if (left.completed !== right.completed) {
+          return left.completed ? 1 : -1;
+        }
+        return (left.createdAt || 0) - (right.createdAt || 0);
+      });
+    });
+
+    return map;
+  }, [tasks]);
 
   const nextSevenCalendar = useMemo(() => {
     const today = new Date();
@@ -974,41 +2326,34 @@ const Dashboard = () => {
       date.setDate(start.getDate() + index);
       const dayKey = toLocalDateKey(date);
 
-      const topicsForDay = allReviewTopics.filter((topic) => {
-        if (!topic?.nextReviewDate) return false;
-        const topicDateKey = toLocalDateKey(topic.nextReviewDate);
-
-        // Include overdue in today's bucket only for the current week view.
-        if (weekOffset === 0 && dayKey === todayKey) {
-          return topicDateKey <= todayKey;
-        }
-
-        return topicDateKey === dayKey;
-      });
-
-      const topicCount = topicsForDay.length;
-      const color = topicCount === 0
-        ? 'bg-gray-500'
-        : topicCount <= 2
-          ? 'bg-green-500'
-          : topicCount <= 4
-            ? 'bg-blue-500'
-            : topicCount <= 6
-              ? 'bg-yellow-500'
-              : 'bg-red-500';
+      const tasksForDay = taskBucketsByDate[dayKey] || [];
+      const taskCount = tasksForDay.length;
+      const hasMissedTasks = dayKey < todayKey && tasksForDay.some((task) => !task.completed);
+      const color = hasMissedTasks
+        ? 'bg-red-500'
+        : taskCount === 0
+          ? 'bg-gray-500'
+          : taskCount <= 2
+            ? 'bg-green-500'
+            : taskCount <= 4
+              ? 'bg-blue-500'
+              : taskCount <= 6
+                ? 'bg-yellow-500'
+                : 'bg-red-500';
 
       return {
         date: dayKey,
-        dayLabel: date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
-        dateLabel: date.toLocaleDateString('en-US', { day: '2-digit' }),
-        monthLabel: date.toLocaleDateString('en-US', { month: 'short' }),
+        dayLabel: WEEKDAY_SHORT[date.getDay()].toUpperCase(),
+        dateLabel: String(date.getDate()).padStart(2, '0'),
+        monthLabel: MONTH_SHORT[date.getMonth()],
         isToday: dayKey === todayKey,
-        topics: topicsForDay,
-        topicCount,
-        color
+        tasks: tasksForDay,
+        taskCount,
+        color,
+        hasMissedTasks
       };
     });
-  }, [allReviewTopics, weekOffset]);
+  }, [taskBucketsByDate, weekOffset]);
 
   const weekRangeLabel = useMemo(() => {
     if (nextSevenCalendar.length === 0) return 'Next 7 Days';
@@ -1017,10 +2362,10 @@ const Dashboard = () => {
     const last = new Date(`${nextSevenCalendar[nextSevenCalendar.length - 1].date}T00:00:00`);
 
     const sameMonth = first.getMonth() === last.getMonth() && first.getFullYear() === last.getFullYear();
-    const startDay = first.toLocaleDateString('en-US', { day: '2-digit' });
-    const endDay = last.toLocaleDateString('en-US', { day: '2-digit' });
-    const startMonth = first.toLocaleDateString('en-US', { month: 'short' });
-    const endMonth = last.toLocaleDateString('en-US', { month: 'short' });
+    const startDay = String(first.getDate()).padStart(2, '0');
+    const endDay = String(last.getDate()).padStart(2, '0');
+    const startMonth = MONTH_SHORT[first.getMonth()];
+    const endMonth = MONTH_SHORT[last.getMonth()];
 
     if (sameMonth) {
       return `${startMonth} ${startDay} - ${endDay}`;
@@ -1034,17 +2379,37 @@ const Dashboard = () => {
     return nextSevenCalendar.find(day => day.date === selectedDateKey) || nextSevenCalendar[0];
   }, [nextSevenCalendar, selectedDateKey]);
 
-  const selectedDayTopics = selectedDayData?.topics || [];
-  const selectedDayTopicsPreview = selectedDayTopics.slice(0, 3);
+  const todayKey = toLocalDateKey(new Date());
+  const selectedDayTasks = selectedDayData?.tasks || [];
+  const selectedDayTaskCount = selectedDayData?.taskCount ?? selectedDayTasks.length;
+  const selectedDayForwardableTaskCount = selectedDayTasks.filter((task) => {
+    const normalizedType = String(task?.taskType || '').toLowerCase();
+    return !['recurring', 'custom-recurring'].includes(normalizedType);
+  }).length;
+  const upcomingVisibleLimit = isPhoneViewport ? 2 : 4;
+  const upcomingTopicsForDisplay = useMemo(() => {
+    return showAllUpcoming
+      ? upcomingTopics
+      : upcomingTopics.slice(0, upcomingVisibleLimit);
+  }, [showAllUpcoming, upcomingTopics, upcomingVisibleLimit]);
 
   useEffect(() => {
     if (nextSevenCalendar.length === 0) return;
+
+    const todayDateKey = toLocalDateKey(new Date());
+    const isReturningToCurrentWeek = previousWeekOffsetRef.current !== 0 && weekOffset === 0;
+    previousWeekOffsetRef.current = weekOffset;
+
+    if (isReturningToCurrentWeek && selectedDateKey !== todayDateKey) {
+      setSelectedDateKey(todayDateKey);
+      return;
+    }
 
     const existsInWeek = nextSevenCalendar.some(day => day.date === selectedDateKey);
     if (!existsInWeek) {
       setSelectedDateKey(nextSevenCalendar[0].date);
     }
-  }, [nextSevenCalendar, selectedDateKey]);
+  }, [nextSevenCalendar, selectedDateKey, weekOffset]);
 
   const todayTopicMix = useMemo(() => {
     const buckets = {
@@ -1080,25 +2445,34 @@ const Dashboard = () => {
     };
   }, [dueTopics]);
 
-  const isGraphMode = location.pathname === '/graph';
-
   return (
-    <div className="bg-black text-white min-h-screen flex">
-      {/* Sidebar */}
-      <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} bg-black border-r border-white/10 flex flex-col fixed left-0 top-0 h-screen z-10 transition-all duration-300`}>
+    <div className="bg-black text-white min-h-screen flex relative overflow-x-hidden">
+      {/* Desktop Sidebar */}
+      <aside className={`${sidebarCollapsed ? 'lg:w-16' : 'lg:w-64'} hidden lg:flex bg-black border-r border-white/10 flex-col fixed left-0 top-0 h-screen z-20 transition-all duration-300`}>
         {/* Logo */}
-        <div className={`h-16 sm:h-20 border-b border-white/10 flex items-center ${sidebarCollapsed ? 'justify-center px-2' : 'px-4'}`}>
+        <div className={`h-16 sm:h-20 border-b border-white/10 flex items-center ${sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'}`}>
           <button
             onClick={() => navigate('/')}
-            className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+            className={`flex items-center hover:opacity-80 transition-opacity ${sidebarCollapsed ? 'justify-center w-full' : 'gap-2 min-w-0'}`}
           >
-            <Logo size={sidebarCollapsed ? "md" : "sm"} className="text-white" />
+            <Logo size="sm" className="text-white scale-90" />
             {!sidebarCollapsed && <span className="text-lg font-semibold text-white">Memora</span>}
           </button>
+
+          {!sidebarCollapsed && (
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(true)}
+              aria-label="Collapse sidebar"
+              className="inline-flex items-center justify-center rounded-md border border-white/10 bg-white/[0.03] p-1.5 text-gray-300 hover:bg-white/10 hover:text-white transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-4">
+        <nav className="flex-1 p-4 overflow-y-auto">
           <div className="space-y-1">
             {sidebarItems.map((item) => (
               <button
@@ -1111,8 +2485,12 @@ const Dashboard = () => {
                 }`}
                 title={sidebarCollapsed ? item.label : ''}
               >
-                <item.icon className={`${sidebarCollapsed ? "w-5 h-5" : "w-4 h-4"} ${
-                  location.pathname === item.path ? 'text-blue-400' : ''
+                <item.icon className={`${sidebarCollapsed ? 'w-5 h-5' : 'w-4 h-4'} ${
+                  location.pathname === item.path
+                    ? item.label === 'Graph Mode'
+                      ? 'text-blue-400'
+                      : 'text-cyan-300'
+                    : ''
                 }`} />
                 {!sidebarCollapsed && <span>{item.label}</span>}
               </button>
@@ -1130,7 +2508,7 @@ const Dashboard = () => {
                     onClick={action.action}
                     className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                       action.primary
-                        ? 'bg-white text-black hover:bg-gray-100'
+                        ? 'border border-cyan-400/35 bg-cyan-500/12 text-cyan-100 hover:bg-cyan-500/18'
                         : 'text-gray-400 hover:text-white hover:bg-white/5'
                     }`}
                   >
@@ -1142,39 +2520,154 @@ const Dashboard = () => {
             </div>
           )}
         </nav>
-      </div>
+      </aside>
+
+      {/* Mobile Sidebar Backdrop */}
+      {isMobileSidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close sidebar overlay"
+          onClick={() => setIsMobileSidebarOpen(false)}
+          className="fixed inset-0 z-20 bg-black/55 backdrop-blur-[1px] lg:hidden"
+        />
+      )}
+
+      {/* Mobile Sidebar Overlay */}
+      <aside className={`w-64 bg-black border-r border-white/10 flex flex-col fixed left-0 top-0 h-screen z-30 transform transition-transform duration-300 lg:hidden ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        {/* Logo */}
+        <div className="h-16 sm:h-20 border-b border-white/10 flex items-center px-4">
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+          >
+            <Logo size="sm" className="text-white" />
+            <span className="text-lg font-semibold text-white">Memora</span>
+          </button>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 p-4 overflow-y-auto">
+          <div className="space-y-1">
+            {sidebarItems.map((item) => (
+              <button
+                key={item.label}
+                onClick={() => handleSidebarClick(item)}
+                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                  item.active
+                    ? 'bg-white/10 text-white font-medium'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <item.icon className={`w-4 h-4 ${
+                  location.pathname === item.path
+                    ? item.label === 'Graph Mode'
+                      ? 'text-blue-400'
+                      : 'text-cyan-300'
+                    : ''
+                }`} />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Quick Actions */}
+          <div className="mt-8">
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Quick Actions</p>
+            <div className="space-y-1">
+              {quickActions.map((action) => (
+                <button
+                  key={action.label}
+                  onClick={() => {
+                    action.action();
+                    setIsMobileSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                    action.primary
+                      ? 'border border-cyan-400/35 bg-cyan-500/12 text-cyan-100 hover:bg-cyan-500/18'
+                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <action.icon className="w-4 h-4" />
+                  <span>{action.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </nav>
+      </aside>
 
       {/* Main Content */}
-      <div className={`flex-1 flex flex-col transition-all duration-300 ${
-        sidebarCollapsed
-          ? 'ml-16'
-          : 'ml-64'
-      }`}>
+      <div className={`flex-1 flex flex-col min-w-0 overflow-x-hidden transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'}`}>
         {/* Header */}
-        <header className="bg-black border-b border-white/10 h-16 sm:h-20 px-3 sm:px-4 flex items-center">
-          <div className="flex items-center justify-between w-full">
+        <header data-tour="dashboard-header" className="bg-black border-b border-white/10 h-16 sm:h-20 px-3 sm:px-4 flex items-center">
+          <div className="flex items-center justify-between w-full gap-2 sm:gap-4">
             {/* Left: Sidebar toggle and title */}
-            <div className="flex items-center space-x-2 sm:space-x-4">
-              <button
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="p-1.5 sm:p-2 hover:bg-white/5 rounded-lg transition-colors"
-              >
-                {sidebarCollapsed ? (
-                  <PanelLeft className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-                ) : (
-                  <PanelLeftClose className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-                )}
-              </button>
+            <div className="flex items-center space-x-2 sm:space-x-4 shrink-0">
+              {sidebarCollapsed && (
+                <button
+                  type="button"
+                  onClick={() => setSidebarCollapsed(false)}
+                  aria-label="Expand sidebar"
+                  className="hidden lg:inline-flex p-0 text-cyan-200 hover:text-cyan-100 transition-colors"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              )}
               <div>
-                <h1 className="text-xl sm:text-2xl font-semibold text-white">{isGraphMode ? 'Graph Mode' : 'Dashboard'}</h1>
-                <p className="text-xs sm:text-sm text-gray-400">
-                  {isGraphMode ? 'Explore your topic network and connected knowledge clusters' : formatDate(new Date())}
+                <h1 className={`text-xl sm:text-2xl font-medium inline-flex items-center gap-2 ${isGraphMode ? 'text-white' : 'text-cyan-100'}`}>
+                  {isGraphMode ? <Globe className="w-5 h-5 text-cyan-200" /> : <DashboardGlyph className="w-5 h-5 text-cyan-200" />}
+                  {isGraphMode ? 'Graph Mode' : 'Dashboard'}
+                </h1>
+                <p className="hidden sm:block text-xs text-gray-400 mt-0.5">
+                  {isGraphMode ? 'Explore your learning graph connections.' : 'Track today\'s revisions, tasks, and momentum.'}
                 </p>
               </div>
             </div>
 
             {/* Right: Stats, Timer, and Focus Mode */}
-            <div className="flex items-center space-x-2 sm:space-x-4 lg:space-x-6">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsMobileSidebarOpen((prev) => !prev)}
+                className="lg:hidden p-1.5 sm:p-2 hover:bg-white/5 rounded-lg transition-colors"
+                aria-label="Toggle sidebar"
+              >
+                {isMobileSidebarOpen
+                  ? <PanelLeftClose className="w-4 h-4 sm:w-5 sm:h-5 text-cyan-200" />
+                  : <PanelLeft className="w-4 h-4 sm:w-5 sm:h-5 text-cyan-200" />}
+              </button>
+
+            {isGraphMode ? (
+            <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0 min-w-0">
+              <button
+                onClick={() => dispatchGraphUiCommand('toggle-time-lapse')}
+                className={`inline-flex items-center gap-1.5 h-8 sm:h-9 px-2.5 sm:px-3 rounded-full border text-xs font-semibold transition-all duration-200 ${
+                  graphUiState.isTimeLapsePlaying
+                    ? 'border-red-400/40 bg-red-500/10 text-red-200 hover:bg-red-500/15'
+                    : 'border-blue-400/40 bg-blue-500/10 text-blue-200 hover:bg-blue-500/15'
+                }`}
+                title="Toggle Graph Time Lapse"
+              >
+                {graphUiState.isTimeLapsePlaying
+                  ? <Square className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  : <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                <span className="hidden sm:inline">Graph Time Lapse</span>
+                <span className="sm:hidden">Time Lapse</span>
+              </button>
+
+              <button
+                onClick={() => dispatchGraphUiCommand('toggle-maximize')}
+                className="inline-flex items-center gap-1.5 h-8 sm:h-9 px-2.5 sm:px-3 rounded-full border border-cyan-400/35 bg-cyan-500/10 text-cyan-100 text-xs font-semibold hover:bg-cyan-500/16 hover:border-cyan-300/50 transition-all duration-200"
+                title={graphUiState.isMaximizedView ? 'Exit Maximize View' : 'Maximize View'}
+              >
+                {graphUiState.isMaximizedView
+                  ? <Minimize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-200" />
+                  : <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-200" />}
+                <span className="hidden sm:inline">{graphUiState.isMaximizedView ? 'Exit Maximize' : 'Maximize View'}</span>
+                <span className="sm:hidden">{graphUiState.isMaximizedView ? 'Exit' : 'Max'}</span>
+              </button>
+            </div>
+            ) : (
+            <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
               {/* Stats - Hidden on very small screens */}
               <div className="hidden sm:flex items-center space-x-3 lg:space-x-6">
                 {/* MemScore */}
@@ -1189,23 +2682,35 @@ const Dashboard = () => {
                 </div>
               </div>
 
+              <div data-tour="dashboard-global-search" className="flex items-center">
+                <GlobalSearchBar
+                  user={user}
+                  onOpenTopicTimeline={handleTopicClick}
+                  onOpenTopicEdit={(topic) => handleTopicEdit(topic?._id)}
+                  onOpenTopicFocus={handleTopicSearchFocus}
+                  onOpenTaskCreate={(dateValue) => openTaskCreateModal(dateValue || selectedDateKey)}
+                  onOpenTaskSearch={(taskQuery, taskMeta) => handleTaskSearchFocus(taskQuery, taskMeta)}
+                />
+              </div>
+
               {/* Minimalist Timer */}
-              <MinimalistTimer />
+              <div className="hidden sm:block">
+                <MinimalistTimer />
+              </div>
 
               {/* Focus Mode Button */}
               <button
                 onClick={() => navigate('/focus')}
-                className="group relative inline-flex items-center gap-1.5 sm:gap-2 h-8 sm:h-9 px-2.5 sm:px-4 rounded-full border border-cyan-300/30 bg-gradient-to-r from-cyan-500/12 via-sky-500/8 to-blue-500/12 text-cyan-100 text-xs font-semibold tracking-wide shadow-[0_8px_24px_rgba(56,189,248,0.18)] hover:border-cyan-200/45 hover:from-cyan-500/20 hover:to-blue-500/20 transition-all duration-300 active:scale-[0.98]"
+                data-tour="dashboard-focus-mode"
+                className="inline-flex items-center justify-center h-8 w-8 sm:h-9 sm:w-auto sm:gap-1.5 px-0 sm:px-3 rounded-full border border-cyan-400/35 bg-cyan-500/10 text-cyan-100 text-xs font-semibold hover:bg-cyan-500/16 hover:border-cyan-300/50 transition-all duration-200"
                 title="Open Focus Mode (Press F)"
               >
-                <span className="absolute inset-0 rounded-full bg-gradient-to-r from-white/8 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                <Target className="relative w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-200" />
-                <span className="relative hidden sm:inline">Focus Mode</span>
-                <span className="relative sm:hidden">Focus</span>
+                <Target className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-200" />
+                <span className="hidden sm:inline">Focus Mode</span>
               </button>
 
-              {/* User Profile Dropdown */}
-              <UserProfileDropdown />
+            </div>
+            )}
             </div>
           </div>
         </header>
@@ -1217,58 +2722,41 @@ const Dashboard = () => {
               topics={topics}
               loading={topicsLoading}
               onAddTopic={() => setShowAddTopicModal(true)}
+              externalSearchRequest={graphSearchRequest}
+              graphUiCommand={graphUiCommand}
+              onGraphUiStateChange={setGraphUiState}
             />
           ) : (
-          <div className={`grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-4 ${sidebarCollapsed ? 'mx-24' : ''}`}>
+          <div className="grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-4 min-w-0">
           {/* Split into 2 panels: Today's Revision and Upcoming Revision */}
-          <div className="xl:col-span-3">
+          <div className="xl:col-span-3 min-w-0">
             <div className="flex flex-col gap-4 h-full">
 
               {/* Today's Revision Tasks */}
-              <div className="bg-black border border-white/20 rounded-xl p-4 sm:p-6 transition-all duration-300 flex flex-col" style={{ height: '520px' }}>
-                <div className="flex items-center justify-between mb-4 sm:mb-6">
+              <div
+                data-tour="dashboard-today-revision"
+                className="bg-black border border-white/20 rounded-xl p-3 sm:p-6 transition-all duration-300 flex flex-col"
+                style={{ height: isPhoneViewport ? 'auto' : '490px' }}
+              >
+                <div className="flex items-center justify-between mb-3 sm:mb-4">
                   <div className="flex items-center space-x-2 sm:space-x-3">
-                    <h2 className="text-lg sm:text-xl font-semibold text-white">Today's Revision</h2>
+                    <h2 className="text-lg sm:text-xl font-medium text-white">Today's Revision</h2>
                   </div>
-                  <div className="text-xs sm:text-sm text-gray-400">
+                  <div className="inline-flex items-center rounded-full border border-cyan-200/40 bg-cyan-200/15 px-3 py-1 text-xs font-medium text-cyan-100">
                     {dueTopics.length} due today
                   </div>
                 </div>
 
                 {/* Due Topics List */}
                 <div
-                  className="overflow-y-auto scrollbar-hide flex-1 flex flex-col"
+                  className={`overflow-y-auto scrollbar-hide flex flex-col ${isPhoneViewport ? 'max-h-[320px] overscroll-y-contain' : 'flex-1'}`}
                   style={{
                     scrollbarWidth: 'none',
-                    msOverflowStyle: 'none'
-                  }}
-                  onWheel={(e) => {
-                    // Check if page is at or near bottom
-                    const pageScrollTop = window.pageYOffset || document.documentElement.scrollTop;
-                    const pageHeight = document.documentElement.scrollHeight;
-                    const windowHeight = window.innerHeight;
-                    const isPageNearBottom = pageScrollTop + windowHeight >= pageHeight - 50; // 50px threshold
-
-                    if (!isPageNearBottom) {
-                      // If page is not near bottom, always allow page scroll
-                      return;
-                    }
-
-                    // Only allow internal scrolling when page is at bottom
-                    const container = e.currentTarget;
-                    const isAtTop = container.scrollTop === 0;
-                    const isAtBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 1;
-
-                    if ((e.deltaY < 0 && isAtTop) || (e.deltaY > 0 && isAtBottom)) {
-                      // Allow page scroll when at container boundaries
-                      return;
-                    }
-
-                    // Prevent page scroll when scrolling within container
-                    e.stopPropagation();
+                    msOverflowStyle: 'none',
+                    WebkitOverflowScrolling: 'touch'
                   }}
                 >
-                  {loadingDue ? (
+                  {loadingDue || !hasLoadedDueTopics ? (
                     <div className="flex items-center justify-center h-32">
                       <p className="text-gray-400">Loading due topics...</p>
                     </div>
@@ -1281,86 +2769,87 @@ const Dashboard = () => {
                   ) : (
                     <>
                       {/* Topics Container */}
-                      <div className="space-y-4">
+                      <div className="space-y-2">
                         {dueTopics.map((topic) => (
-                        <div key={topic._id} className="bg-white/5 border border-white/10 rounded-lg p-4 hover:bg-white/10 transition-colors">
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex-1 pr-4">
+                        <div
+                          key={topic._id}
+                          ref={(element) => {
+                            if (element) {
+                              topicCardRefs.current.set(topic._id, element);
+                            } else {
+                              topicCardRefs.current.delete(topic._id);
+                            }
+                          }}
+                          className={`bg-white/5 border rounded-lg p-2.5 transition-all duration-300 min-w-0 ${
+                            isTopicSpotlightActive
+                              ? spotlightTopicId === topic._id
+                                ? 'border-cyan-300/75 bg-cyan-500/12 ring-1 ring-cyan-300/30'
+                                : 'border-white/10 opacity-30'
+                              : 'border-white/10 hover:bg-white/10'
+                          }`}
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-1 min-w-0">
+                            <div className="min-w-0 flex-1 sm:pr-4">
                               <h3
-                                className="text-lg font-semibold text-white mb-1 cursor-pointer hover:text-blue-400 transition-colors"
+                                className="text-sm sm:text-[1.05rem] font-semibold text-white mb-1 cursor-pointer hover:text-blue-300 transition-colors line-clamp-2 sm:line-clamp-1"
                                 onClick={() => handleTopicClick(topic)}
-                                title="Click to see future review dates"
+                                title={topic.title}
                               >
                                 {topic.title}
                               </h3>
 
-                              <div className="flex items-center space-x-4 text-xs text-gray-500">
-                                <div className="flex items-center space-x-1">
-                                  <Target className={`w-3 h-3 ${getDifficultyColor(topic.difficulty)}`} />
-                                  <span className={getDifficultyColor(topic.difficulty)}>{getDifficultyLabel(topic.difficulty)} ({topic.difficulty}/5)</span>
-                                </div>
-                                <div className="flex items-center space-x-1">
-                                  <Clock className="w-3 h-3" />
-                                  <span>Due: {new Date(topic.nextReviewDate).toLocaleDateString('en-GB')}</span>
-                                </div>
+                              <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                <p className={`text-xs font-medium ${getDifficultyColor(topic.difficulty)}`}>
+                                  Difficulty: {getDifficultyLabel(topic.difficulty)} ({topic.difficulty}/5)
+                                </p>
+                                <span className="text-[11px] text-gray-500">•</span>
+                                <p className="text-[11px] text-gray-400 line-clamp-1">
+                                  In today&apos;s revision list
+                                </p>
                               </div>
                             </div>
 
                             {/* Action Buttons - Compact Row */}
-                            <div className="flex space-x-1.5 self-start">
+                            <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-1.5 w-full sm:w-auto">
                               <button
                                 onClick={() => handleTopicReview(topic._id, 3)}
                                 disabled={processingTopics.has(topic._id)}
-                                className={`text-white text-xs px-2.5 py-1 rounded transition-colors flex items-center justify-center min-w-[70px] ${
-                                  processingTopics.has(topic._id)
-                                    ? 'bg-green-400 cursor-not-allowed'
-                                    : 'bg-green-600 hover:bg-green-700'
-                                }`}
+                                className={getPastelActionClass('done', processingTopics.has(topic._id))}
                                 title="Mark as completed"
                               >
-                                {processingTopics.has(topic._id) ? (
+                                {processingDoneTopics.has(topic._id) ? (
                                   <Loader className="w-3 h-3 animate-spin" />
                                 ) : (
-                                  <>
-                                    <CheckCircle className="w-3 h-3 mr-1" />
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <CheckCircle className="w-3 h-3" />
                                     Done
-                                  </>
+                                  </span>
                                 )}
                               </button>
                               <button
                                 onClick={() => handleTopicSkip(topic._id)}
                                 disabled={processingTopics.has(topic._id)}
-                                className={`border text-xs px-2.5 py-1 rounded transition-colors flex items-center justify-center min-w-[60px] ${
-                                  processingTopics.has(topic._id)
-                                    ? 'border-yellow-300 text-yellow-300 cursor-not-allowed'
-                                    : 'border-white/20 hover:border-yellow-400 text-yellow-400 hover:text-yellow-300'
-                                }`}
+                                className={getPastelActionClass('skip', processingTopics.has(topic._id))}
                                 title="Skip for today"
                               >
-                                {processingTopics.has(topic._id) ? (
-                                  <Loader className="w-3 h-3 animate-spin" />
-                                ) : (
-                                  <>
-                                    <SkipForward className="w-3 h-3 mr-1" />
-                                    Skip
-                                  </>
-                                )}
+                                <SkipForward className="w-3 h-3" />
+                                Skip
                               </button>
                               <button
                                 onClick={() => handleTopicEdit(topic._id)}
-                                className="border border-white/20 hover:border-blue-400 text-blue-400 hover:text-blue-300 text-xs px-2.5 py-1 rounded transition-colors flex items-center"
+                                className={getPastelActionClass('edit')}
                                 title="Edit topic"
                               >
-                                <Edit3 className="w-3 h-3 mr-1" />
+                                <Edit3 className="w-3 h-3" />
                                 Edit
                               </button>
                               <button
                                 onClick={() => handleTopicDelete(topic._id)}
-                                className="border border-white/20 hover:border-red-400 text-red-400 hover:text-red-300 text-xs px-2.5 py-1 rounded transition-colors flex items-center"
+                                  className={`${getPastelActionClass('delete')} min-w-0 sm:min-w-0 px-2 sm:px-2.5`}
                                 title="Delete topic"
+                                  aria-label="Delete topic"
                               >
-                                <Trash2 className="w-3 h-3 mr-1" />
-                                Delete
+                                <Trash2 className="w-3 h-3" />
                               </button>
                             </div>
                           </div>
@@ -1368,8 +2857,8 @@ const Dashboard = () => {
                         ))}
                       </div>
 
-                      {/* Motivational Quote - Show when less than 4 topics, centered in remaining space */}
-                      {dueTopics.length < 4 && (
+                      {/* Motivational Quote - Show when there is visible remaining vertical space */}
+                      {dueTopics.length <= 4 && (
                         <div className="flex-1 flex items-center justify-center">
                           <div className="text-center">
                             <svg className={`text-white mx-auto mb-2 opacity-60 ${
@@ -1402,14 +2891,17 @@ const Dashboard = () => {
               </div>
 
               {/* Upcoming Revision */}
-              <div className="bg-black border border-white/20 rounded-xl p-4 sm:p-6 transition-all duration-300 flex flex-col" style={{ height: '520px' }}>
+              <div
+                className="bg-black border border-white/20 rounded-xl p-4 sm:p-6 transition-all duration-300 flex flex-col"
+                style={{ height: isPhoneViewport ? '420px' : '460px' }}
+              >
                 <div className="flex items-center justify-between mb-4 sm:mb-6">
-                  <h2 className="text-lg sm:text-xl font-semibold text-white">Upcoming Revision</h2>
-                  <div className="text-xs sm:text-sm text-gray-400">
+                  <h2 className="text-lg sm:text-xl font-medium text-white">Upcoming Revision</h2>
+                  <div className="inline-flex items-center rounded-full border border-violet-200/40 bg-violet-200/15 px-3 py-1 text-xs font-medium text-violet-100">
                     {showAllUpcoming
                       ? `${upcomingTopics.length} total (all shown)`
-                      : upcomingTopics.length > 4
-                        ? `${upcomingTopics.length} total (showing 4)`
+                      : upcomingTopics.length > upcomingVisibleLimit
+                        ? `${upcomingTopics.length} total (showing ${upcomingVisibleLimit})`
                         : `${upcomingTopics.length} upcoming`
                     }
                   </div>
@@ -1417,7 +2909,7 @@ const Dashboard = () => {
 
                 {/* Upcoming Topics List */}
                 <div
-                  className="overflow-y-auto scrollbar-hide flex-1 flex flex-col"
+                  className={`overflow-y-auto scrollbar-hide flex-1 ${isPhoneViewport ? 'overscroll-y-contain' : 'min-h-0'}`}
                   style={{
                     scrollbarWidth: 'none',
                     msOverflowStyle: 'none'
@@ -1465,64 +2957,79 @@ const Dashboard = () => {
                       <p className="text-gray-400">Add topics and study to see your schedule.</p>
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      {(showAllUpcoming ? upcomingTopics : upcomingTopics.slice(0, 4)).map((topic) => (
-                      <div key={topic._id} className="bg-white/5 border border-white/10 rounded-lg p-3 hover:bg-white/10 transition-colors">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 pr-3">
+                    <div className="space-y-3">
+                      {upcomingTopicsForDisplay.map((topic) => (
+                      <div
+                        key={topic._id}
+                        ref={(element) => {
+                          if (element) {
+                            topicCardRefs.current.set(topic._id, element);
+                          } else {
+                            topicCardRefs.current.delete(topic._id);
+                          }
+                        }}
+                        className={`bg-white/5 border rounded-lg p-2.5 transition-all duration-300 min-w-0 ${
+                          isTopicSpotlightActive
+                            ? spotlightTopicId === topic._id
+                              ? 'border-cyan-300/75 bg-cyan-500/12 ring-1 ring-cyan-300/30'
+                              : 'border-white/10 opacity-30'
+                            : 'border-white/10 hover:bg-white/10'
+                        }`}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 min-w-0">
+                          <div className="min-w-0 flex-1 sm:pr-3">
                             <h3
-                              className="text-base font-semibold text-white cursor-pointer hover:text-blue-400 transition-colors line-clamp-1"
+                              className="text-sm sm:text-base font-semibold text-white cursor-pointer hover:text-blue-300 transition-colors line-clamp-2 sm:line-clamp-1"
                               onClick={() => handleTopicClick(topic)}
-                              title="Click to see future review dates"
+                              title={topic.title}
                             >
                               {topic.title}
                             </h3>
 
-                            <div className="flex items-center space-x-3 text-xs text-gray-500 mt-1">
-                              <div className="flex items-center space-x-1">
-                                <Target className={`w-3 h-3 ${getDifficultyColor(topic.difficulty)}`} />
-                                <span className={getDifficultyColor(topic.difficulty)}>{getDifficultyLabel(topic.difficulty)} ({topic.difficulty}/5)</span>
-                              </div>
-                              <div className="flex items-center space-x-1">
-                                <Clock className="w-3 h-3" />
-                                <span>Due: {new Date(topic.nextReviewDate).toLocaleDateString('en-GB')}</span>
-                              </div>
+                            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                              <p className={`text-xs font-medium ${getDifficultyColor(topic.difficulty)}`}>
+                                Difficulty: {getDifficultyLabel(topic.difficulty)} ({topic.difficulty}/5)
+                              </p>
+                              <span className="text-[11px] text-gray-500">•</span>
+                              <p className="text-[11px] text-gray-400 line-clamp-1">
+                                Scheduled in upcoming revisions
+                              </p>
                             </div>
                           </div>
 
                           {/* Action Buttons - Compact Side Row */}
-                          <div className="flex space-x-1.5 self-start">
+                          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-1.5 w-full sm:w-auto">
                             <button
                               onClick={() => handleFastReview(topic._id)}
-                              className="border border-white/20 hover:border-purple-400 text-purple-400 hover:text-purple-300 text-xs px-2.5 py-1 rounded transition-colors flex items-center"
+                              className={getPastelActionClass('review')}
                               title="Review early"
                             >
-                              <Zap className="w-3 h-3 mr-1" />
+                              <Zap className="w-3 h-3" />
                               Review
                             </button>
                             <button
                               onClick={() => handleTopicSkip(topic._id)}
-                              className="border border-white/20 hover:border-orange-400 text-orange-400 hover:text-orange-300 text-xs px-2.5 py-1 rounded transition-colors flex items-center"
+                              className={getPastelActionClass('skip')}
                               title="Skip for today"
                             >
-                              <SkipForward className="w-3 h-3 mr-1" />
+                              <SkipForward className="w-3 h-3" />
                               Skip
                             </button>
                             <button
                               onClick={() => handleTopicEdit(topic._id)}
-                              className="border border-white/20 hover:border-blue-400 text-blue-400 hover:text-blue-300 text-xs px-2.5 py-1 rounded transition-colors flex items-center"
+                              className={getPastelActionClass('edit')}
                               title="Edit topic"
                             >
-                              <Edit3 className="w-3 h-3 mr-1" />
+                              <Edit3 className="w-3 h-3" />
                               Edit
                             </button>
                             <button
                               onClick={() => handleTopicDelete(topic._id)}
-                              className="border border-white/20 hover:border-red-400 text-red-400 hover:text-red-300 text-xs px-2.5 py-1 rounded transition-colors flex items-center"
+                                className={`${getPastelActionClass('delete')} min-w-0 sm:min-w-0 px-2 sm:px-2.5`}
                               title="Delete topic"
+                                aria-label="Delete topic"
                             >
-                              <Trash2 className="w-3 h-3 mr-1" />
-                              Delete
+                              <Trash2 className="w-3 h-3" />
                             </button>
                           </div>
                         </div>
@@ -1532,27 +3039,36 @@ const Dashboard = () => {
                     </div>
                   )}
 
-                  {/* View All Button - Inside scrollable area */}
-                  {upcomingTopics.length > 4 && (
-                    <div className="mt-4 pt-4 border-t border-white/10 flex-shrink-0">
-                      <button
-                        onClick={() => setShowAllUpcoming(!showAllUpcoming)}
-                        className="w-full px-4 py-2 border border-white/20 hover:border-blue-400 text-blue-400 hover:text-blue-300 rounded-lg transition-colors text-sm"
-                      >
-                        {showAllUpcoming ? 'Show Less' : `View All ${upcomingTopics.length} Upcoming Topics`}
-                      </button>
-                    </div>
-                  )}
                 </div>
+
+                {upcomingTopics.length > upcomingVisibleLimit && (
+                  <div className="pt-2">
+                    <button
+                      onClick={() => setShowAllUpcoming(!showAllUpcoming)}
+                      className="w-full rounded-full border border-cyan-300/45 bg-cyan-500/14 px-4 py-2 text-sm font-medium text-cyan-100 transition-all duration-200 hover:bg-cyan-500/22 hover:border-cyan-300/60"
+                    >
+                      {showAllUpcoming ? 'Show Less' : `View All ${upcomingTopics.length} Upcoming Topics`}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
           {/* Right Sidebar */}
-          <div className="space-y-6">
+          <div className="space-y-6 min-w-0">
             {/* Streak Stats */}
             <div className="bg-black border border-white/20 rounded-xl p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Study Streak</h3>
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <h3 className="text-lg font-semibold text-white">Study Streak</h3>
+                <button
+                  type="button"
+                  onClick={openStreakContributionDialog}
+                  className="px-0 py-1.5 text-xs font-semibold text-cyan-200 hover:text-cyan-100 transition-colors"
+                >
+                  View Streak
+                </button>
+              </div>
               <div className="space-y-4">
                 {/* Current Streak with Progress Ring */}
                 <div className="text-center">
@@ -1600,18 +3116,28 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {/* Next 7 Days */}
+            {/* Task Manager */}
             <div className="bg-black border border-white/20 rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm sm:text-base font-semibold text-white whitespace-nowrap tracking-tight">Task Manager</h3>
                 <button
-                  onClick={() => setWeekOffset(prev => Math.max(prev - 1, 0))}
-                  disabled={weekOffset === 0}
-                  className="p-1 text-gray-400 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  onClick={() => openTaskCreateModal(selectedDateKey)}
+                  className="inline-flex items-center gap-1 rounded-md border border-cyan-300/35 bg-cyan-500/10 px-2.5 py-1 text-xs font-medium text-cyan-100 transition-colors hover:bg-cyan-500/20"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Task
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between mb-3">
+                <button
+                  onClick={() => setWeekOffset(prev => prev - 1)}
+                  className="p-1 text-gray-400 hover:text-white transition-colors"
                   aria-label="Previous week"
                 >
                   <ChevronLeft className="w-5 h-5" />
                 </button>
-                <h3 className="text-sm sm:text-base font-semibold text-white whitespace-nowrap tracking-tight">{weekRangeLabel}</h3>
+                <h4 className="text-xs sm:text-sm font-medium text-gray-200 whitespace-nowrap tracking-tight">{weekRangeLabel}</h4>
                 <button
                   onClick={() => setWeekOffset(prev => prev + 1)}
                   className="p-1 text-gray-400 hover:text-white transition-colors"
@@ -1622,51 +3148,153 @@ const Dashboard = () => {
               </div>
 
               <div className="grid grid-cols-7 gap-1 mb-3">
-                {nextSevenCalendar.map((day) => (
-                  <button
-                    key={day.date}
-                    onClick={() => setSelectedDateKey(day.date)}
-                    className={`min-w-0 rounded-md px-1 py-1 text-center border transition-colors ${
-                      selectedDayData?.date === day.date
-                        ? 'border-white/20 bg-white/5'
-                        : 'border-transparent hover:border-white/20 hover:bg-white/5'
-                    }`}
-                  >
-                    <p className="text-[8px] tracking-wide text-gray-400 mb-0.5">{day.dayLabel}</p>
-                    <div className="h-1.5 mb-0.5 flex items-center justify-center">
-                      {day.topicCount > 0 ? <span className={`w-1.5 h-1.5 rounded-full ${day.color}`} /> : null}
-                    </div>
-                    <p className={`text-sm leading-none tabular-nums ${day.isToday ? 'text-white font-semibold' : 'text-gray-500 font-medium'}`}>
-                      {day.dateLabel}
-                    </p>
-                  </button>
-                ))}
+                {nextSevenCalendar.map((day) => {
+                  const isSelectedDay = selectedDayData?.date === day.date;
+                  return (
+                    <button
+                      key={day.date}
+                      onClick={() => setSelectedDateKey(day.date)}
+                      className={`min-w-0 rounded-md px-1 py-1 text-center transition-colors ${
+                        isSelectedDay
+                          ? 'bg-white/5'
+                          : 'hover:bg-white/5'
+                      }`}
+                    >
+                      <p className="text-[8px] tracking-wide text-gray-400 mb-0.5">{day.dayLabel}</p>
+                      <div className="h-1.5 mb-0.5 flex items-center justify-center">
+                        {day.taskCount > 0 ? (
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${day.color} ${day.hasMissedTasks ? 'ring-1 ring-red-400/60' : ''}`}
+                            title={day.hasMissedTasks ? 'Missed tasks pending from this day' : ''}
+                          />
+                        ) : null}
+                      </div>
+                      <p className={`text-sm leading-none tabular-nums ${
+                        isSelectedDay
+                          ? 'text-white font-bold'
+                          : day.isToday
+                            ? 'text-cyan-300 font-medium'
+                            : 'text-gray-500 font-medium'
+                      }`}>
+                        {day.dateLabel}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
 
               <div className="border-t border-white/10 pt-3">
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="ml-1 text-[11px] sm:text-xs font-medium text-gray-100">
-                    {selectedDayData ? `${selectedDayData.dayLabel} ${selectedDayData.dateLabel} ${selectedDayData.monthLabel}` : 'Selected day'} topics
-                  </h4>
+                  <div className="ml-1 inline-flex items-center gap-1.5">
+                    <h4 className="text-[11px] sm:text-xs font-medium text-gray-100">
+                      {selectedDayData ? `${selectedDayData.dayLabel} ${selectedDayData.dateLabel} ${selectedDayData.monthLabel}` : 'Selected day'} tasks
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={handleForwardSelectedDayToToday}
+                      disabled={isForwardingDayTasks || selectedDayForwardableTaskCount === 0 || selectedDayData?.date === todayKey}
+                      className="inline-flex h-5 w-5 items-center justify-center rounded text-gray-400 transition-colors hover:bg-cyan-500/10 hover:text-cyan-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Move all non-habit tasks from this day to today"
+                      aria-label="Move all non-habit tasks from this day to today"
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                   <span className="text-xs text-gray-400">
-                    {selectedDayTopics.length} {selectedDayTopics.length === 1 ? 'topic' : 'topics'}
+                    {selectedDayTaskCount} {selectedDayTaskCount === 1 ? 'task' : 'tasks'}
                   </span>
                 </div>
 
                 <div className="h-44 overflow-y-auto pr-1 space-y-2">
-                  {selectedDayTopicsPreview.length > 0 ? (
-                    selectedDayTopicsPreview.map((topic, index) => (
+                  {selectedDayTasks.length > 0 ? (
+                    selectedDayTasks.map((task, index) => {
+                      const isPastDayTask = task.date < todayKey;
+                      const isTaskBusy = processingTasks.has(task.id);
+                      const isHabitTask = ['recurring', 'custom-recurring'].includes(String(task.taskType || '').toLowerCase());
+
+                      return (
                       <div
-                        key={topic._id || topic.id || `${selectedDayData?.date || 'day'}-${index}`}
-                        className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"
+                        key={task.id || `${selectedDayData?.date || 'day'}-${index}`}
+                        className={`rounded-lg border px-3 py-2 transition-colors ${
+                          isTaskSpotlightActive
+                            ? taskSpotlightId === task.id
+                              ? 'border-cyan-300/75 bg-cyan-500/12 ring-1 ring-cyan-300/30'
+                              : 'border-white/10 bg-white/[0.03] opacity-35'
+                            : 'border-white/10 bg-white/[0.03]'
+                        }`}
                       >
-                        <p className="text-sm text-gray-300 truncate">{topic.title || 'Untitled topic'}</p>
-                        <p className="text-xs text-gray-400">Difficulty {topic.difficulty || '-'}</p>
+                        <div className="flex items-start gap-2">
+                          <div className="mt-0.5 flex flex-col items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTaskCompletion(task)}
+                              disabled={isTaskBusy}
+                              className={`inline-flex h-4 w-4 items-center justify-center border text-[10px] transition-colors ${isHabitTask ? 'rounded-full' : 'rounded'} ${
+                                task.completed
+                                  ? 'border-emerald-400/70 bg-emerald-500/20 text-emerald-100'
+                                  : 'border-white/30 bg-transparent text-transparent hover:border-emerald-300/60'
+                              } ${isTaskBusy ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              title={task.completed ? 'Mark as pending' : 'Mark as done'}
+                            >
+                              ✓
+                            </button>
+
+                            {isPastDayTask && !task.completed && !isHabitTask ? (
+                              <button
+                                type="button"
+                                onClick={() => handleForwardTaskToNextDay(task)}
+                                disabled={isTaskBusy}
+                                className={`inline-flex h-5 w-5 items-center justify-center text-gray-500 transition-colors hover:text-cyan-300 ${isTaskBusy ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                title="Move task to today"
+                              >
+                                <ChevronRight className="h-3.5 w-3.5" />
+                              </button>
+                            ) : null}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <button
+                              type="button"
+                              onClick={() => openTaskDetailsDialog(task)}
+                              className={`w-full text-left text-sm truncate hover:text-cyan-200 transition-colors ${task.completed ? 'text-gray-500 line-through' : 'text-gray-200'}`}
+                              title="View full task"
+                            >
+                              {task.title || 'Untitled task'}
+                            </button>
+                            {task.description ? (
+                              <p className="mt-0.5 text-xs text-gray-400 line-clamp-1">{task.description}</p>
+                            ) : (
+                              <p className="mt-0.5 text-xs text-gray-500">No description</p>
+                            )}
+                          </div>
+
+                          <div className="shrink-0 flex flex-col items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTask(task.id)}
+                              className="rounded p-1 text-gray-500 transition-colors hover:bg-rose-500/15 hover:text-rose-300"
+                              title="Delete task"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleOpenTaskEdit(task)}
+                              className="rounded p-1 text-gray-500 transition-colors hover:bg-indigo-500/15 hover:text-indigo-300"
+                              title="Edit task"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+
+                          </div>
+                        </div>
                       </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-3 text-center">
-                      <p className="text-xs text-gray-400">No topics scheduled for this day.</p>
+                      <p className="text-xs text-gray-400">No tasks scheduled for this day.</p>
                     </div>
                   )}
                 </div>
@@ -1676,9 +3304,9 @@ const Dashboard = () => {
             {/* Today's Topics Mini Graph */}
             <div className="bg-black border border-white/20 rounded-xl p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-white">Today's Topic Mix</h3>
-                <span className="text-xs text-gray-400">
-                  {todayTopicMix.total} {todayTopicMix.total === 1 ? 'topic' : 'topics'} due
+                <h3 className="text-lg font-medium text-white">Today's Topic Mix</h3>
+                <span className="inline-flex items-center whitespace-nowrap rounded-full border border-emerald-300/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-100">
+                  {todayTopicMix.total} {todayTopicMix.total === 1 ? 'topic' : 'topics'}
                 </span>
               </div>
 
@@ -1699,10 +3327,6 @@ const Dashboard = () => {
                       </div>
                     ))}
                   </div>
-
-                  <p className="text-xs text-gray-500 mt-4 text-center">
-                    Better than MemScore trend here because this card answers what to tackle right now.
-                  </p>
                 </>
               ) : (
                 <div className="h-28 rounded-lg border border-white/10 bg-white/[0.03] flex items-center justify-center">
@@ -1716,10 +3340,9 @@ const Dashboard = () => {
         </div>
 
         {/* Footer */}
-        <footer className="mt-1 border-t border-white/10 py-6">
-          <div className="max-w-6xl mx-auto px-6">
-            <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
-              {/* Left: Memora Branding */}
+        <footer className="mt-1 border-t border-white/10 py-5 sm:py-6">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
+            <div className="flex items-center justify-between gap-4">
               <div className="flex items-center space-x-3">
                 <img
                   src={logoImg}
@@ -1727,12 +3350,11 @@ const Dashboard = () => {
                   className="w-8 h-8 rounded-lg"
                 />
                 <div>
-                  <div className="text-lg font-bold text-white">Memora</div>
-                  <div className="text-xs text-gray-400">Sets your memory in motion</div>
+                  <div className="text-base sm:text-lg font-bold text-white">Memora</div>
+                  <div className="text-[11px] sm:text-xs text-gray-400">Sets your memory in motion</div>
                 </div>
               </div>
 
-              {/* Center: Social Icons */}
               <div className="flex items-center space-x-3">
                 <a
                   href="https://linkedin.com/company/memora"
@@ -1762,34 +3384,8 @@ const Dashboard = () => {
                   <Instagram className="w-4 h-4" />
                 </a>
               </div>
-
-              {/* Right: Navigation Links */}
-              <div className="flex flex-wrap items-center space-x-4 text-sm text-gray-400">
-                <button
-                  onClick={() => navigate('/profile')}
-                  className="hover:text-white transition-colors"
-                >
-                  Support
-                </button>
-                <a
-                  href="mailto:hello@memora.app"
-                  className="hover:text-white transition-colors"
-                >
-                  Contact Us
-                </a>
-                <button className="hover:text-white transition-colors">
-                  Privacy
-                </button>
-                <button className="hover:text-white transition-colors">
-                  Terms
-                </button>
-              </div>
             </div>
 
-            {/* Bottom Copyright */}
-            <div className="mt-4 pt-4 border-t border-white/10 text-center text-sm text-gray-500">
-              © 2025 Memora, Inc. All rights reserved.
-            </div>
           </div>
         </footer>
       </div>
@@ -1802,6 +3398,24 @@ const Dashboard = () => {
         loading={topicsLoading}
       />
 
+      <AddTaskModal
+        isOpen={showAddTaskModal}
+        onClose={() => setShowAddTaskModal(false)}
+        onSubmit={handleAddTask}
+        defaultDate={taskModalDefaultDate}
+      />
+
+      <EditTaskModal
+        isOpen={showEditTaskModal}
+        onClose={() => {
+          setShowEditTaskModal(false);
+          setEditingTaskEntry(null);
+        }}
+        onSubmit={handleEditTask}
+        task={editingTaskEntry}
+        seriesTasks={tasks}
+      />
+
       {/* Edit Topic Modal */}
       <EditTopicModal
         isOpen={showEditTopicModal}
@@ -1811,6 +3425,7 @@ const Dashboard = () => {
         }}
         onSubmit={handleEditTopicSubmit}
         onReschedule={handleRescheduleFromEdit}
+        onStartFocus={handleStartFocusFromEdit}
         topic={editingTopic}
         loading={topicsLoading}
       />
@@ -1820,7 +3435,7 @@ const Dashboard = () => {
         isVisible={toast.show}
         message={toast.message}
         type={toast.type}
-        onClose={() => setToast({ ...toast, show: false })}
+        onClose={() => setToast((prev) => ({ ...prev, show: false }))}
       />
 
       {/* Dialog */}
@@ -1828,12 +3443,14 @@ const Dashboard = () => {
         isOpen={dialog.isOpen}
         onClose={closeDialog}
         onConfirm={dialog.onConfirm}
+        onCancel={dialog.onCancel}
         title={dialog.title}
         message={dialog.message}
         type={dialog.type}
         confirmText={dialog.confirmText}
         cancelText={dialog.cancelText}
         showCancel={dialog.showCancel}
+        size={dialog.size}
       />
     </div>
   );

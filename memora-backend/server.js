@@ -28,13 +28,13 @@ const explicitAllowedOrigins = [
   ...new Set([
     ...parseCsvOrigins(process.env.FRONTEND_URL),
     ...parseCsvOrigins(process.env.FRONTEND_URLS),
-    'https://lwj6kt2m-5173.inc1.devtunnels.ms'
+    ...parseCsvOrigins(process.env.EXTRA_ALLOWED_ORIGINS)
   ])
 ];
 const allowVercelPreviews = toBoolean(process.env.ALLOW_VERCEL_PREVIEWS, true);
 const allowLocalOrigins = !isProduction || toBoolean(process.env.ALLOW_LOCALHOST_CORS, false);
 
-const isVercelPreviewOrigin = (origin) => /^https:\/\/[a-z0-9-]+(?:-[a-z0-9-]+)*\.vercel\.app$/i.test(origin);
+const isVercelPreviewOrigin = (origin) => /^https:\/\/(?:[a-z0-9-]+\.)*[a-z0-9-]+\.vercel\.app$/i.test(origin);
 const isLocalDevOrigin = (origin) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
 
 // Security middleware
@@ -120,9 +120,11 @@ app.get('/', (req, res) => {
       auth: '/api/auth/*',
       user: '/api/user/*',
       topics: '/api/topics/*',
+      tasks: '/api/tasks/*',
       doctags: '/api/doctags/*',
       journal: '/api/journal/*',
-      mindmaps: '/api/mindmaps/*'
+      mindmaps: '/api/mindmaps/*',
+      listener: '/api/listener/*'
     }
   });
 });
@@ -139,9 +141,11 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/user', require('./routes/user'));
 app.use('/api/topics', require('./routes/topics'));
+app.use('/api/tasks', require('./routes/tasks'));
 app.use('/api/doctags', require('./routes/doctags'));
 app.use('/api/journal', require('./routes/journal'));
 app.use('/api/mindmaps', require('./routes/mindmaps'));
+app.use('/api/listener', require('./routes/listener'));
 // app.use('/api/revisions', require('./routes/revisions'));
 // app.use('/api/neuro', require('./routes/neuro'));
 
