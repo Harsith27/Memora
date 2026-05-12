@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -8,6 +8,8 @@ import {
 import Logo from '../components/Logo';
 import { useAuth } from '../contexts/AuthContext';
 import journalService from '../services/journalService';
+
+void motion;
 
 const VALID_PHASES = new Set([
   'intro',
@@ -21,6 +23,58 @@ const VALID_PHASES = new Set([
 ]);
 
 const DIRECT_GAME_PHASES = new Set(['memory-game', 'tile-recall', 'speed-test']);
+
+const generateMemoryCards = (level) => {
+  const gridSize = level === 1 ? 4 : level === 2 ? 5 : 6; // 4x4, 5x5, 6x6
+  const totalCards = gridSize * gridSize;
+  const pairs = totalCards / 2;
+
+  const emojis = ['🎯', '🎮', '🎨', '🎭', '🎪', '🎸', '🎺', '🎻', '🎹', '🎲', '🎳', '🎯', '🚀', '🛸', '🌟', '⭐', '🌙', '☀️'];
+  const cardPairs = [];
+
+  for (let i = 0; i < pairs; i++) {
+    const emoji = emojis[i % emojis.length];
+    cardPairs.push({ id: i * 2, emoji, matched: false });
+    cardPairs.push({ id: i * 2 + 1, emoji, matched: false });
+  }
+
+  return cardPairs.sort(() => Math.random() - 0.5);
+};
+
+const generateMathQuestion = () => {
+  const operations = ['+', '-', '*'];
+  const op = operations[Math.floor(Math.random() * operations.length)];
+  let a;
+  let b;
+  let answer;
+
+  switch (op) {
+    case '+':
+      a = Math.floor(Math.random() * 50) + 1;
+      b = Math.floor(Math.random() * 50) + 1;
+      answer = a + b;
+      break;
+    case '-':
+      a = Math.floor(Math.random() * 50) + 25;
+      b = Math.floor(Math.random() * 25) + 1;
+      answer = a - b;
+      break;
+    case '*':
+      a = Math.floor(Math.random() * 12) + 1;
+      b = Math.floor(Math.random() * 12) + 1;
+      answer = a * b;
+      break;
+    default:
+      a = 1;
+      b = 1;
+      answer = 2;
+  }
+
+  return {
+    question: `${a} ${op} ${b}`,
+    answer
+  };
+};
 
 const PHASE_THEMES = {
   'memory-game-instructions': {
@@ -167,28 +221,8 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
 
   const phaseProgress = phaseIndex < 0 ? 0 : ((phaseIndex + 1) / phaseFlow.length) * 100;
 
-  // Generate cards for memory game
-  const generateMemoryCards = (level) => {
-    const gridSize = level === 1 ? 4 : level === 2 ? 5 : 6; // 4x4, 5x5, 6x6
-    const totalCards = gridSize * gridSize;
-    const pairs = totalCards / 2;
-
-    // Create pairs of cards with emojis
-    const emojis = ['🎯', '🎮', '🎨', '🎭', '🎪', '🎸', '🎺', '🎻', '🎹', '🎲', '🎳', '🎯', '🚀', '🛸', '🌟', '⭐', '🌙', '☀️'];
-    const cardPairs = [];
-
-    for (let i = 0; i < pairs; i++) {
-      const emoji = emojis[i % emojis.length];
-      cardPairs.push({ id: i * 2, emoji, matched: false });
-      cardPairs.push({ id: i * 2 + 1, emoji, matched: false });
-    }
-
-    // Shuffle cards
-    return cardPairs.sort(() => Math.random() - 0.5);
-  };
-
   // Initialize memory game
-  const initMemoryGame = () => {
+  const initMemoryGame = useCallback(() => {
     const cards = generateMemoryCards(memoryGame.level);
     setMemoryGame(prev => ({
       ...prev,
@@ -221,7 +255,7 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
         };
       });
     }, 1000);
-  };
+  }, [memoryGame.level]);
 
   // Handle card flip in memory game
   const handleCardFlip = (cardIndex) => {
@@ -288,35 +322,7 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
   };
 
   // Initialize tile recall test
-  const initTileRecall = (roundOverride = null) => {
-    const round = roundOverride !== null ? roundOverride : tileRecall.currentRound;
-    const gridSize = 5; // Always 5x5 grid
-    const sequenceLength = 3 + round; // Round 1: 3, Round 2: 4, Round 3: 5, Round 4: 6, Round 5: 7 tiles
-    // More reasonable timing progression: starts at 3s, decreases by 300ms each round, but give extra time for last round
-    let showTime = Math.max(1500, 3000 - (round * 300)); // Round 1: 3s, Round 2: 2.7s, Round 3: 2.4s, Round 4: 2.1s, Round 5: 1.8s
-    if (round === 4) { // Round 5 (0-indexed)
-      showTime += 1000; // Add 1 second to the last round: 1.8s + 1s = 2.8s
-    }
-
-    setTileRecall(prev => ({
-      ...prev,
-      gridSize,
-      sequenceLength,
-      showTime,
-      sequence: [],
-      userSequence: [],
-      isShowingSequence: false,
-      isUserTurn: false
-    }));
-
-    // Start the round after a brief delay, passing the calculated values
-    setTimeout(() => {
-      startTileRound(gridSize, sequenceLength, showTime);
-    }, 1000);
-  };
-
-  // Start a tile recall round
-  const startTileRound = (gridSize = tileRecall.gridSize, sequenceLength = tileRecall.sequenceLength, showTime = tileRecall.showTime) => {
+  const startTileRound = useCallback((gridSize = tileRecall.gridSize, sequenceLength = tileRecall.sequenceLength, showTime = tileRecall.showTime) => {
     const totalTiles = gridSize * gridSize;
 
     // Generate random sequence of tile positions
@@ -343,7 +349,32 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
         isUserTurn: true
       }));
     }, showTime);
-  };
+  }, [tileRecall.gridSize, tileRecall.sequenceLength, tileRecall.showTime]);
+
+  const initTileRecall = useCallback((roundOverride = null) => {
+    const round = roundOverride !== null ? roundOverride : tileRecall.currentRound;
+    const gridSize = 5; // Always 5x5 grid
+    const sequenceLength = 3 + round; // Round 1: 3, Round 2: 4, Round 3: 5, Round 4: 6, Round 5: 7 tiles
+    let showTime = Math.max(1500, 3000 - (round * 300));
+    if (round === 4) {
+      showTime += 1000;
+    }
+
+    setTileRecall(prev => ({
+      ...prev,
+      gridSize,
+      sequenceLength,
+      showTime,
+      sequence: [],
+      userSequence: [],
+      isShowingSequence: false,
+      isUserTurn: false
+    }));
+
+    setTimeout(() => {
+      startTileRound(gridSize, sequenceLength, showTime);
+    }, 1000);
+  }, [startTileRound, tileRecall.currentRound]);
 
   // Handle undo last move in tile recall
   const handleUndoMove = () => {
@@ -461,42 +492,8 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
     }
   };
 
-  // Generate math question for speed test
-  const generateMathQuestion = () => {
-    const operations = ['+', '-', '*'];
-    const op = operations[Math.floor(Math.random() * operations.length)];
-    let a, b, answer;
-    
-    switch (op) {
-      case '+':
-        a = Math.floor(Math.random() * 50) + 1;
-        b = Math.floor(Math.random() * 50) + 1;
-        answer = a + b;
-        break;
-      case '-':
-        a = Math.floor(Math.random() * 50) + 25;
-        b = Math.floor(Math.random() * 25) + 1;
-        answer = a - b;
-        break;
-      case '*':
-        a = Math.floor(Math.random() * 12) + 1;
-        b = Math.floor(Math.random() * 12) + 1;
-        answer = a * b;
-        break;
-      default:
-        a = 1; b = 1; answer = 2;
-    }
-    
-    return {
-      question: `${a} ${op} ${b}`,
-      answer
-    };
-  };
-
-
-
   // Initialize speed test
-  const initSpeedTest = () => {
+  const initSpeedTest = useCallback(() => {
     const questionData = generateMathQuestion();
     setSpeedTest(prev => ({
       ...prev,
@@ -507,7 +504,7 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
       isActive: true,
       userAnswer: ''
     }));
-  };
+  }, []);
 
   useEffect(() => {
     setCurrentPhase(sanitizedInitialPhase);
@@ -536,7 +533,7 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
     return () => {
       window.clearTimeout(starter);
     };
-  }, [sanitizedInitialPhase]);
+  }, [sanitizedInitialPhase, initMemoryGame, initTileRecall, initSpeedTest]);
 
   // Handle speed test answer
   const handleSpeedAnswer = () => {
@@ -567,7 +564,7 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
   };
 
   // Finish evaluation and calculate final score
-  const finishEvaluation = () => {
+  const finishEvaluation = useCallback(() => {
     const speedScore = Math.max(1, (speedTest.correctAnswers / speedTest.totalQuestions) * 10);
 
     // Ensure all scores are valid numbers
@@ -586,7 +583,7 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
     }));
 
     setCurrentPhase('results');
-  };
+  }, [speedTest.correctAnswers, speedTest.totalQuestions, testResults.memoryGame, testResults.tileRecall]);
 
   // Speed test timer
   useEffect(() => {

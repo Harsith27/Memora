@@ -8,6 +8,8 @@ import PublicFooter from '../components/PublicFooter';
 import FloatingParticles from '../components/FloatingParticles';
 import { useAuth } from '../contexts/AuthContext';
 
+const Motion = motion;
+
 function SignUp() {
   const navigate = useNavigate();
   const { register, clearError } = useAuth();

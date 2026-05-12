@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { X, Upload, Link as LinkIcon, Trash2, ChevronDown } from 'lucide-react';
 import apiService from '../services/api';
 import docTagsService from '../services/docTagsService';
@@ -193,13 +193,13 @@ const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
     });
   };
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setTagInput('');
     setNewLink({ title: '', url: '', type: 'other', description: '' });
     setError('');
     setShowTagSuggestions(false);
     onClose();
-  };
+  }, [onClose]);
 
   useEffect(() => {
     if (!isOpen) return undefined;

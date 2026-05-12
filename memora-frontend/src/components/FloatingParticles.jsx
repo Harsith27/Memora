@@ -1,6 +1,8 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 
+const Motion = motion;
+
 function FloatingParticles({
   count = 14,
   color = '147, 197, 253',
@@ -19,7 +21,7 @@ function FloatingParticles({
         const opacity = Math.random() * (maxOpacity - minOpacity) + minOpacity;
 
         return (
-          <motion.div
+          <Motion.div
             key={i}
             className="absolute rounded-full"
             style={{

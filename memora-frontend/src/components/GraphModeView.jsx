@@ -535,7 +535,7 @@ const GraphModeView = ({
     return () => {
       el.removeEventListener('wheel', blockBrowserZoom);
     };
-  }, []);
+  }, [stopAutoArrange]);
 
   useEffect(() => {
     const el = graphWrapperRef.current;
@@ -560,7 +560,7 @@ const GraphModeView = ({
       el.removeEventListener('gestureend', blockGesture);
       el.removeEventListener('wheel', blockWheel);
     };
-  }, []);
+  }, [stopAutoArrange]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -573,7 +573,7 @@ const GraphModeView = ({
     return () => {
       window.removeEventListener('resize', handleResize);
     };
-  }, []);
+  }, [stopAutoArrange]);
 
   useEffect(() => {
     if (!graphWrapperRef.current) return undefined;
@@ -586,7 +586,7 @@ const GraphModeView = ({
 
     observer.observe(graphWrapperRef.current);
     return () => observer.disconnect();
-  }, []);
+  }, [stopAutoArrange]);
 
   const graph = useMemo(() => buildGraph(topics, docFiles, mindmaps, linkMode), [topics, docFiles, mindmaps, linkMode]);
 
@@ -597,7 +597,7 @@ const GraphModeView = ({
         searchBlurTimerRef.current = null;
       }
     };
-  }, []);
+  }, [stopAutoArrange]);
 
   useEffect(() => {
     if (!user) {
@@ -891,12 +891,12 @@ const GraphModeView = ({
     }
   }, [filtered.nodes, selectedNodeId]);
 
-  const stopAutoArrange = () => {
+  const stopAutoArrange = useCallback(() => {
     const simulation = simulationRef.current;
     if (simulation) {
       simulation.alphaTarget(0);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (isTimeLapsePlaying || filtered.nodes.length === 0) {
@@ -1017,7 +1017,7 @@ const GraphModeView = ({
         clearInterval(timeLapseIntervalRef.current);
       }
     };
-  }, []);
+  }, [stopAutoArrange]);
 
   useEffect(() => {
     if (!isTimeLapsePlaying) {
@@ -1066,7 +1066,7 @@ const GraphModeView = ({
     };
   }, [isTimeLapsePlaying, timeLapseNodeOrder, timeLapseBatchSize, timeLapseIntervalMs]);
 
-  const startTimeLapse = () => {
+  const startTimeLapse = useCallback(() => {
     if (timeLapseNodeOrder.length === 0) return;
     stopAutoArrange();
 
@@ -1096,13 +1096,13 @@ const GraphModeView = ({
     setIsPanning(false);
     setTimeLapseCount(Math.min(timeLapseNodeOrder.length, Math.max(1, timeLapseBatchSize)));
     setIsTimeLapsePlaying(true);
-  };
+  }, [filtered.nodes, stopAutoArrange, timeLapseBatchSize, timeLapseNodeOrder.length]);
 
-  const stopTimeLapse = () => {
+  const stopTimeLapse = useCallback(() => {
     setIsTimeLapsePlaying(false);
     setTimeLapseCount(timeLapseNodeOrder.length);
     setTimeLapsePositions({});
-  };
+  }, [timeLapseNodeOrder.length]);
 
   useEffect(() => {
     const token = graphUiCommand?.token;

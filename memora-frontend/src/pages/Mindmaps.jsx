@@ -1684,9 +1684,9 @@ const Mindmaps = () => {
     return target instanceof Node ? viewport.contains(target) : false;
   };
 
-  const isCanvasZoomContext = (event) => {
+  const isCanvasZoomContext = useCallback((event) => {
     return isPointerOverCanvasRef.current || isEventInsideViewport(event);
-  };
+  }, []);
 
   const getTouchNodeId = (target) => {
     if (!(target instanceof Element)) return null;
@@ -1744,7 +1744,7 @@ const Mindmaps = () => {
       window.removeEventListener('blur', resetCanvasHover);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [fitView]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -1753,7 +1753,7 @@ const Mindmaps = () => {
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [fitView]);
 
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', JSON.stringify(sidebarCollapsed));
@@ -1792,7 +1792,7 @@ const Mindmaps = () => {
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
-  }, []);
+  }, [fitView]);
 
   useEffect(() => {
     if (!isPhoneViewport) return undefined;
@@ -1816,7 +1816,7 @@ const Mindmaps = () => {
     edgeStylePresetRef.current = normalizeEdgeStyle(edgeStylePreset);
   }, [edgeStylePreset]);
 
-  const setZoomFromViewportCenter = (nextZoomValue) => {
+  const setZoomFromViewportCenter = useCallback((nextZoomValue) => {
     const currentZoom = zoomRef.current;
     const nextZoom = clamp(Number(nextZoomValue) || currentZoom, 0.2, 3);
     if (nextZoom === currentZoom) return;
@@ -1844,9 +1844,9 @@ const Mindmaps = () => {
     panRef.current = nextPan;
     setZoom(nextZoom);
     setPan(nextPan);
-  };
+  }, []);
 
-  const applyCanvasZoomDelta = (deltaY) => {
+  const applyCanvasZoomDelta = useCallback((deltaY) => {
     if (!Number.isFinite(deltaY) || Math.abs(deltaY) < 0.3) return;
 
     const clampedDelta = Math.sign(deltaY) * Math.min(240, Math.abs(deltaY));
@@ -1854,13 +1854,13 @@ const Mindmaps = () => {
     const currentZoom = zoomRef.current;
     const nextZoom = clamp(currentZoom * factor, 0.2, 3);
     setZoomFromViewportCenter(nextZoom);
-  };
+  }, [setZoomFromViewportCenter]);
 
-  const showToast = (message, type = 'success') => {
+  const showToast = useCallback((message, type = 'success') => {
     setToast({ show: true, message, type });
-  };
+  }, []);
 
-  const startMapSpotlight = (mapId) => {
+  const startMapSpotlight = useCallback((mapId) => {
     if (!mapId) return;
 
     setSpotlightMapId(mapId);
@@ -1883,7 +1883,7 @@ const Mindmaps = () => {
       setSpotlightMapId(null);
       mapSpotlightTimerRef.current = null;
     }, 1000);
-  };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -1894,7 +1894,7 @@ const Mindmaps = () => {
     };
   }, []);
 
-  const openMapFromSidebar = (map, options = {}) => {
+  const openMapFromSidebar = useCallback((map, options = {}) => {
     const {
       clearSearch = false,
       spotlight = false,
@@ -1928,7 +1928,7 @@ const Mindmaps = () => {
       // If the user re-opens the already active map, re-center immediately.
       queueCenteredFitView(0, map);
     }
-  };
+  }, [activeMapId, closeLabelDetailsPanel, isPhoneViewport, queueCenteredFitView, startMapSpotlight]);
 
   const openMapLibraryModal = () => {
     const preferred = maps.find((map) => map.id === activeMapId) || maps[0] || null;
@@ -1989,7 +1989,7 @@ const Mindmaps = () => {
     }
   };
 
-  const closeLabelDetailsPanel = () => {
+  const closeLabelDetailsPanel = useCallback(() => {
     setIsLabelPanelEditing(false);
     setLabelDetailsPanel({
       open: false,
@@ -1999,7 +1999,7 @@ const Mindmaps = () => {
       labelTitle: '',
       labelInfo: ''
     });
-  };
+  }, []);
 
   useEffect(() => {
     const handleEscapeForPanels = (event) => {
@@ -2031,15 +2031,15 @@ const Mindmaps = () => {
     return () => {
       document.removeEventListener('keydown', handleEscapeForPanels);
     };
-  }, [mobileToolbarMenu, isMobileNodeEditorOpen, labelDetailsPanel.open]);
+  }, [closeLabelDetailsPanel, mobileToolbarMenu, isMobileNodeEditorOpen, labelDetailsPanel.open]);
 
-  const buildHistorySnapshot = () => ({
+  const buildHistorySnapshot = useCallback(() => ({
     maps: cloneMindmapsState(maps),
     activeMapId,
     selectedNodeId,
     selectedNodeIds: [...selectedNodeIds],
     selectedEdgeId
-  });
+  }), [activeMapId, maps, selectedEdgeId, selectedNodeId, selectedNodeIds]);
 
   const restoreHistorySnapshot = (snapshot) => {
     setMaps(cloneMindmapsState(snapshot.maps || []));
@@ -2057,7 +2057,7 @@ const Mindmaps = () => {
     closeLabelDetailsPanel();
   };
 
-  const pushUndoSnapshot = () => {
+  const pushUndoSnapshot = useCallback(() => {
     if (!Array.isArray(maps) || maps.length === 0) return;
 
     const snapshot = buildHistorySnapshot();
@@ -2067,7 +2067,7 @@ const Mindmaps = () => {
       return next.length > MAX_UNDO_STEPS ? next.slice(next.length - MAX_UNDO_STEPS) : next;
     });
     setRedoStack([]);
-  };
+  }, [buildHistorySnapshot, maps]);
 
   const undoLastChange = () => {
     setUndoStack((prev) => {
@@ -2573,7 +2573,7 @@ const Mindmaps = () => {
     // Close any open mobile font menu after selection
     try {
       setMobileToolbarMenu(null);
-    } catch (e) {
+    } catch {
       // ignore if not in mobile context
     }
   };
@@ -2872,7 +2872,7 @@ const Mindmaps = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [activeMap, activeMapId, connectionDrag, dragNode, isPanning, isPresentationMode, pan.x, pan.y, selectionRect, textSatelliteLayout.hiddenTextNodeIds, zoom]);
+  }, [activeMap, activeMapId, connectionDrag, createEdgeBetweenNodes, dragNode, fitView, isPanning, isPresentationMode, pan.x, pan.y, pushUndoSnapshot, selectionRect, textSatelliteLayout.hiddenTextNodeIds, zoom]);
 
   // Gesture handler for pinch zoom (two-finger trackpad)
   useEffect(() => {
@@ -2929,7 +2929,7 @@ const Mindmaps = () => {
 
       isGestureZoomingRef.current = false;
     };
-  }, []);
+  }, [applyCanvasZoomDelta, isCanvasZoomContext]);
 
   useEffect(() => {
     const handleGlobalWheel = (event) => {
@@ -2966,7 +2966,7 @@ const Mindmaps = () => {
     return () => {
       window.removeEventListener('wheel', handleGlobalWheel, { capture: true });
     };
-  }, [interactionMode]);
+  }, [interactionMode, applyCanvasZoomDelta, isCanvasZoomContext]);
 
   // Mobile gestures: one finger drags nodes, two fingers pan/pinch the canvas.
   const handleTouchStart = (event) => {
@@ -3531,7 +3531,7 @@ const Mindmaps = () => {
     setIsPanning(false);
   };
 
-  const createEdgeBetweenNodes = (sourceId, targetId) => {
+  const createEdgeBetweenNodes = useCallback((sourceId, targetId) => {
     if (isPresentationMode) return;
     if (!sourceId || !targetId || sourceId === targetId) return;
     const edgeStyleForNewEdges = normalizeEdgeStyle(edgeStylePresetRef.current);
@@ -3555,7 +3555,7 @@ const Mindmaps = () => {
         ]
       };
     });
-  };
+  }, [isPresentationMode, updateActiveMap]);
 
   const handleHandleMouseDown = (event, node, side) => {
     if (isPresentationMode) return;
@@ -3680,7 +3680,7 @@ const Mindmaps = () => {
         labelInfo: nextLabelInfo
       };
     });
-  }, [activeMap, isLabelPanelEditing, labelDetailsPanel.open, labelDetailsPanel.nodeId, labelDetailsPanel.labelIndex]);
+  }, [activeMap, closeLabelDetailsPanel, isLabelPanelEditing, labelDetailsPanel.open, labelDetailsPanel.nodeId, labelDetailsPanel.labelIndex]);
 
   useEffect(() => {
     if (activeMap) {
@@ -3752,9 +3752,9 @@ const Mindmaps = () => {
     }
 
     clearGlobalSearchState();
-  }, [location.state, location.pathname, maps, navigate]);
+  }, [location.state, location.pathname, maps, navigate, openMapFromSidebar, showToast]);
 
-  const updateActiveMap = (updater, options = {}) => {
+  const updateActiveMap = useCallback((updater, options = {}) => {
     const { recordHistory = true } = options;
     if (recordHistory) {
       pushUndoSnapshot();
@@ -3767,7 +3767,7 @@ const Mindmaps = () => {
         return { ...updated, updatedAt: Date.now() };
       })
     );
-  };
+  }, [activeMapId, pushUndoSnapshot]);
 
   const linkActiveMapToTopic = () => {
     if (!activeMap) return;
@@ -3857,7 +3857,6 @@ const Mindmaps = () => {
         }
       } catch (e) {
         // Fallback to original arranged if anything fails
-        // eslint-disable-next-line no-console
         console.warn('Radial center override failed, using default center', e);
       }
       updateActiveMap(() => ({
@@ -4357,7 +4356,7 @@ const Mindmaps = () => {
     return `M ${fromX} ${fromY} C ${fromX} ${fromY + curve * direction}, ${toX} ${toY - curve * direction}, ${toX} ${toY}`;
   };
 
-  const fitView = (mapOverride = null) => {
+  const fitView = useCallback((mapOverride = null) => {
     const mapToFit = mapOverride || activeMapRef.current;
     const viewport = viewportRef.current;
     if (!mapToFit || !Array.isArray(mapToFit.nodes) || mapToFit.nodes.length === 0 || !viewport) return false;
@@ -4428,9 +4427,9 @@ const Mindmaps = () => {
     ));
 
     return true;
-  };
+  }, [isPhoneViewport]);
 
-  const queueCenteredFitView = (delay = 0, mapOverride = null) => {
+  const queueCenteredFitView = useCallback((delay = 0, mapOverride = null) => {
     if (centerMapTimerRef.current) {
       clearTimeout(centerMapTimerRef.current);
       centerMapTimerRef.current = null;
@@ -4451,12 +4450,12 @@ const Mindmaps = () => {
       runFit();
       centerMapTimerRef.current = null;
     }, delay);
-  };
+  }, [fitView]);
 
   useLayoutEffect(() => {
     if (!activeMap || isPhoneViewport) return;
     queueCenteredFitView(0, activeMap);
-  }, [activeMapId, isPhoneViewport]);
+  }, [activeMap, activeMapId, isPhoneViewport, queueCenteredFitView]);
 
   const togglePresentationMode = async () => {
     setMobileToolbarMenu(null);
