@@ -479,6 +479,13 @@ const GraphModeView = ({
   const userStorageKey = user?.id || user?._id || user?.email || 'guest';
   const nodePositionStorageKey = `graph_node_positions_${userStorageKey}`;
 
+  const stopAutoArrange = useCallback(() => {
+    const simulation = simulationRef.current;
+    if (simulation) {
+      simulation.alphaTarget(0);
+    }
+  }, []);
+
   useEffect(() => {
     const loadMindmaps = () => {
       try {
@@ -891,13 +898,6 @@ const GraphModeView = ({
     }
   }, [filtered.nodes, selectedNodeId]);
 
-  const stopAutoArrange = useCallback(() => {
-    const simulation = simulationRef.current;
-    if (simulation) {
-      simulation.alphaTarget(0);
-    }
-  }, []);
-
   useEffect(() => {
     if (isTimeLapsePlaying || filtered.nodes.length === 0) {
       return undefined;
@@ -1008,7 +1008,10 @@ const GraphModeView = ({
 
   useEffect(() => {
     return () => {
-      stopAutoArrange();
+      const simulation = simulationRef.current;
+      if (simulation) {
+        simulation.alphaTarget(0);
+      }
       if (simulationRef.current) {
         simulationRef.current.stop();
         simulationRef.current = null;
@@ -1017,7 +1020,7 @@ const GraphModeView = ({
         clearInterval(timeLapseIntervalRef.current);
       }
     };
-  }, [stopAutoArrange]);
+  }, []);
 
   useEffect(() => {
     if (!isTimeLapsePlaying) {

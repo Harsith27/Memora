@@ -1688,6 +1688,101 @@ const Mindmaps = () => {
     return isPointerOverCanvasRef.current || isEventInsideViewport(event);
   }, []);
 
+  const fitView = useCallback((mapOverride = null) => {
+    const mapToFit = mapOverride || activeMapRef.current;
+    const viewport = viewportRef.current;
+    if (!mapToFit || !Array.isArray(mapToFit.nodes) || mapToFit.nodes.length === 0 || !viewport) return false;
+
+    const rect = viewport.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let weightedCenterX = 0;
+    let weightedCenterY = 0;
+    let totalWeight = 0;
+
+    mapToFit.nodes.forEach((node) => {
+      const width = Math.max(42, Number(node.width) || 180);
+      const height = Math.max(28, Number(estimateRenderedNodeHeight(node)) || Number(node.height) || 64);
+      const x = Number(node.x) || 0;
+      const y = Number(node.y) || 0;
+
+      const nodeMaxX = x + width;
+      const nodeMaxY = y + height;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, nodeMaxX);
+      maxY = Math.max(maxY, nodeMaxY);
+
+      const centerX = x + width / 2;
+      const centerY = y + height / 2;
+      const weight = Math.max(1, Math.sqrt(width * height));
+      weightedCenterX += centerX * weight;
+      weightedCenterY += centerY * weight;
+      totalWeight += weight;
+    });
+
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+      return false;
+    }
+
+    const boundsWidth = Math.max(1, maxX - minX);
+    const boundsHeight = Math.max(1, maxY - minY);
+    const paddingX = clamp(rect.width * (isPhoneViewport ? 0.10 : 0.12), 52, 180);
+    const paddingY = clamp(rect.height * (isPhoneViewport ? 0.12 : 0.14), 58, 220);
+    const frameWidth = Math.max(120, rect.width - paddingX * 2);
+    const frameHeight = Math.max(120, rect.height - paddingY * 2);
+
+    const fitZoom = clamp(Math.min(frameWidth / boundsWidth, frameHeight / boundsHeight), 0.2, 1.5);
+
+    const boundsCenterX = (minX + maxX) / 2;
+    const boundsCenterY = (minY + maxY) / 2;
+    const centroidX = totalWeight > 0 ? weightedCenterX / totalWeight : boundsCenterX;
+    const centroidY = totalWeight > 0 ? weightedCenterY / totalWeight : boundsCenterY;
+
+    const targetCenterX = boundsCenterX * 0.72 + centroidX * 0.28;
+    const targetCenterY = boundsCenterY * 0.72 + centroidY * 0.28;
+    const nextPan = {
+      x: rect.width / 2 - targetCenterX * fitZoom,
+      y: rect.height / 2 - targetCenterY * fitZoom
+    };
+
+    setZoom((prev) => (Math.abs(prev - fitZoom) < 0.001 ? prev : fitZoom));
+    setPan((prev) => (
+      Math.abs(prev.x - nextPan.x) < 0.5 && Math.abs(prev.y - nextPan.y) < 0.5
+        ? prev
+        : nextPan
+    ));
+
+    return true;
+  }, [isPhoneViewport]);
+
+  const queueCenteredFitView = useCallback((delay = 0, mapOverride = null) => {
+    if (centerMapTimerRef.current) {
+      clearTimeout(centerMapTimerRef.current);
+      centerMapTimerRef.current = null;
+    }
+
+    const runFit = () => {
+      window.requestAnimationFrame(() => {
+        fitView(mapOverride);
+      });
+    };
+
+    if (delay <= 0) {
+      runFit();
+      return;
+    }
+
+    centerMapTimerRef.current = setTimeout(() => {
+      runFit();
+      centerMapTimerRef.current = null;
+    }, delay);
+  }, [fitView]);
+
   const getTouchNodeId = (target) => {
     if (!(target instanceof Element)) return null;
     const nodeElement = target.closest('[data-node-id]');
@@ -1753,7 +1848,7 @@ const Mindmaps = () => {
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [fitView]);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', JSON.stringify(sidebarCollapsed));
@@ -1894,6 +1989,79 @@ const Mindmaps = () => {
     };
   }, []);
 
+  const closeLabelDetailsPanel = useCallback(() => {
+    setIsLabelPanelEditing(false);
+    setLabelDetailsPanel({
+      open: false,
+      nodeId: null,
+      labelIndex: null,
+      nodeTitle: '',
+      labelTitle: '',
+      labelInfo: ''
+    });
+  }, []);
+
+  const buildHistorySnapshot = useCallback(() => ({
+    maps: cloneMindmapsState(maps),
+    activeMapId,
+    selectedNodeId,
+    selectedNodeIds: [...selectedNodeIds],
+    selectedEdgeId
+  }), [activeMapId, maps, selectedEdgeId, selectedNodeId, selectedNodeIds]);
+
+  const pushUndoSnapshot = useCallback(() => {
+    if (!Array.isArray(maps) || maps.length === 0) return;
+
+    const snapshot = buildHistorySnapshot();
+
+    setUndoStack((prev) => {
+      const next = [...prev, snapshot];
+      return next.length > MAX_UNDO_STEPS ? next.slice(next.length - MAX_UNDO_STEPS) : next;
+    });
+    setRedoStack([]);
+  }, [buildHistorySnapshot, maps]);
+
+  const updateActiveMap = useCallback((updater, options = {}) => {
+    const { recordHistory = true } = options;
+    if (recordHistory) {
+      pushUndoSnapshot();
+    }
+
+    setMaps((prev) =>
+      prev.map((map) => {
+        if (map.id !== activeMapId) return map;
+        const updated = updater(map);
+        return { ...updated, updatedAt: Date.now() };
+      })
+    );
+  }, [activeMapId, pushUndoSnapshot]);
+
+  const createEdgeBetweenNodes = useCallback((sourceId, targetId) => {
+    if (isPresentationMode) return;
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    const edgeStyleForNewEdges = normalizeEdgeStyle(edgeStylePresetRef.current);
+    updateActiveMap((map) => {
+      const exists = map.edges.some(
+        (edge) =>
+          (edge.source === sourceId && edge.target === targetId) ||
+          (edge.source === targetId && edge.target === sourceId)
+      );
+      if (exists) return map;
+      return {
+        ...map,
+        edges: [
+          ...map.edges,
+          {
+            id: `edge_${sourceId}_${targetId}_${Date.now()}`,
+            source: sourceId,
+            target: targetId,
+            style: edgeStyleForNewEdges
+          }
+        ]
+      };
+    });
+  }, [isPresentationMode, updateActiveMap]);
+
   const openMapFromSidebar = useCallback((map, options = {}) => {
     const {
       clearSearch = false,
@@ -1909,7 +2077,15 @@ const Mindmaps = () => {
     setHoveredEdgeId(null);
     setHoveredNodeId(null);
     setConnectionDrag(null);
-    closeLabelDetailsPanel();
+    setIsLabelPanelEditing(false);
+    setLabelDetailsPanel({
+      open: false,
+      nodeId: null,
+      labelIndex: null,
+      nodeTitle: '',
+      labelTitle: '',
+      labelInfo: ''
+    });
 
     if (clearSearch) {
       setMapSearchQuery('');
@@ -1928,7 +2104,7 @@ const Mindmaps = () => {
       // If the user re-opens the already active map, re-center immediately.
       queueCenteredFitView(0, map);
     }
-  }, [activeMapId, closeLabelDetailsPanel, isPhoneViewport, queueCenteredFitView, startMapSpotlight]);
+  }, [activeMapId, isPhoneViewport, queueCenteredFitView, startMapSpotlight]);
 
   const openMapLibraryModal = () => {
     const preferred = maps.find((map) => map.id === activeMapId) || maps[0] || null;
@@ -1989,18 +2165,6 @@ const Mindmaps = () => {
     }
   };
 
-  const closeLabelDetailsPanel = useCallback(() => {
-    setIsLabelPanelEditing(false);
-    setLabelDetailsPanel({
-      open: false,
-      nodeId: null,
-      labelIndex: null,
-      nodeTitle: '',
-      labelTitle: '',
-      labelInfo: ''
-    });
-  }, []);
-
   useEffect(() => {
     const handleEscapeForPanels = (event) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
@@ -2033,14 +2197,6 @@ const Mindmaps = () => {
     };
   }, [closeLabelDetailsPanel, mobileToolbarMenu, isMobileNodeEditorOpen, labelDetailsPanel.open]);
 
-  const buildHistorySnapshot = useCallback(() => ({
-    maps: cloneMindmapsState(maps),
-    activeMapId,
-    selectedNodeId,
-    selectedNodeIds: [...selectedNodeIds],
-    selectedEdgeId
-  }), [activeMapId, maps, selectedEdgeId, selectedNodeId, selectedNodeIds]);
-
   const restoreHistorySnapshot = (snapshot) => {
     setMaps(cloneMindmapsState(snapshot.maps || []));
     setActiveMapId(snapshot.activeMapId || snapshot.maps?.[0]?.id || null);
@@ -2056,18 +2212,6 @@ const Mindmaps = () => {
     nodeEditSessionRef.current = null;
     closeLabelDetailsPanel();
   };
-
-  const pushUndoSnapshot = useCallback(() => {
-    if (!Array.isArray(maps) || maps.length === 0) return;
-
-    const snapshot = buildHistorySnapshot();
-
-    setUndoStack((prev) => {
-      const next = [...prev, snapshot];
-      return next.length > MAX_UNDO_STEPS ? next.slice(next.length - MAX_UNDO_STEPS) : next;
-    });
-    setRedoStack([]);
-  }, [buildHistorySnapshot, maps]);
 
   const undoLastChange = () => {
     setUndoStack((prev) => {
@@ -3531,32 +3675,6 @@ const Mindmaps = () => {
     setIsPanning(false);
   };
 
-  const createEdgeBetweenNodes = useCallback((sourceId, targetId) => {
-    if (isPresentationMode) return;
-    if (!sourceId || !targetId || sourceId === targetId) return;
-    const edgeStyleForNewEdges = normalizeEdgeStyle(edgeStylePresetRef.current);
-    updateActiveMap((map) => {
-      const exists = map.edges.some(
-        (edge) =>
-          (edge.source === sourceId && edge.target === targetId) ||
-          (edge.source === targetId && edge.target === sourceId)
-      );
-      if (exists) return map;
-      return {
-        ...map,
-        edges: [
-          ...map.edges,
-          {
-            id: `edge_${sourceId}_${targetId}_${Date.now()}`,
-            source: sourceId,
-            target: targetId,
-            style: edgeStyleForNewEdges
-          }
-        ]
-      };
-    });
-  }, [isPresentationMode, updateActiveMap]);
-
   const handleHandleMouseDown = (event, node, side) => {
     if (isPresentationMode) return;
     event.preventDefault();
@@ -3753,21 +3871,6 @@ const Mindmaps = () => {
 
     clearGlobalSearchState();
   }, [location.state, location.pathname, maps, navigate, openMapFromSidebar, showToast]);
-
-  const updateActiveMap = useCallback((updater, options = {}) => {
-    const { recordHistory = true } = options;
-    if (recordHistory) {
-      pushUndoSnapshot();
-    }
-
-    setMaps((prev) =>
-      prev.map((map) => {
-        if (map.id !== activeMapId) return map;
-        const updated = updater(map);
-        return { ...updated, updatedAt: Date.now() };
-      })
-    );
-  }, [activeMapId, pushUndoSnapshot]);
 
   const linkActiveMapToTopic = () => {
     if (!activeMap) return;
@@ -4355,102 +4458,6 @@ const Mindmaps = () => {
     const direction = dy >= 0 ? 1 : -1;
     return `M ${fromX} ${fromY} C ${fromX} ${fromY + curve * direction}, ${toX} ${toY - curve * direction}, ${toX} ${toY}`;
   };
-
-  const fitView = useCallback((mapOverride = null) => {
-    const mapToFit = mapOverride || activeMapRef.current;
-    const viewport = viewportRef.current;
-    if (!mapToFit || !Array.isArray(mapToFit.nodes) || mapToFit.nodes.length === 0 || !viewport) return false;
-
-    const rect = viewport.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
-
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    let weightedCenterX = 0;
-    let weightedCenterY = 0;
-    let totalWeight = 0;
-
-    mapToFit.nodes.forEach((node) => {
-      const width = Math.max(42, Number(node.width) || 180);
-      const height = Math.max(28, Number(estimateRenderedNodeHeight(node)) || Number(node.height) || 64);
-      const x = Number(node.x) || 0;
-      const y = Number(node.y) || 0;
-
-      const nodeMaxX = x + width;
-      const nodeMaxY = y + height;
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, nodeMaxX);
-      maxY = Math.max(maxY, nodeMaxY);
-
-      const centerX = x + width / 2;
-      const centerY = y + height / 2;
-      const weight = Math.max(1, Math.sqrt(width * height));
-      weightedCenterX += centerX * weight;
-      weightedCenterY += centerY * weight;
-      totalWeight += weight;
-    });
-
-    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
-      return false;
-    }
-
-    const boundsWidth = Math.max(1, maxX - minX);
-    const boundsHeight = Math.max(1, maxY - minY);
-    const paddingX = clamp(rect.width * (isPhoneViewport ? 0.10 : 0.12), 52, 180);
-    const paddingY = clamp(rect.height * (isPhoneViewport ? 0.12 : 0.14), 58, 220);
-    const frameWidth = Math.max(120, rect.width - paddingX * 2);
-    const frameHeight = Math.max(120, rect.height - paddingY * 2);
-
-    const fitZoom = clamp(Math.min(frameWidth / boundsWidth, frameHeight / boundsHeight), 0.2, 1.5);
-
-    const boundsCenterX = (minX + maxX) / 2;
-    const boundsCenterY = (minY + maxY) / 2;
-    const centroidX = totalWeight > 0 ? weightedCenterX / totalWeight : boundsCenterX;
-    const centroidY = totalWeight > 0 ? weightedCenterY / totalWeight : boundsCenterY;
-
-    // Blend bounds-center with weighted centroid to avoid off-feeling centers on skewed maps.
-    const targetCenterX = boundsCenterX * 0.72 + centroidX * 0.28;
-    const targetCenterY = boundsCenterY * 0.72 + centroidY * 0.28;
-    const nextPan = {
-      x: rect.width / 2 - targetCenterX * fitZoom,
-      y: rect.height / 2 - targetCenterY * fitZoom
-    };
-
-    setZoom((prev) => (Math.abs(prev - fitZoom) < 0.001 ? prev : fitZoom));
-    setPan((prev) => (
-      Math.abs(prev.x - nextPan.x) < 0.5 && Math.abs(prev.y - nextPan.y) < 0.5
-        ? prev
-        : nextPan
-    ));
-
-    return true;
-  }, [isPhoneViewport]);
-
-  const queueCenteredFitView = useCallback((delay = 0, mapOverride = null) => {
-    if (centerMapTimerRef.current) {
-      clearTimeout(centerMapTimerRef.current);
-      centerMapTimerRef.current = null;
-    }
-
-    const runFit = () => {
-      window.requestAnimationFrame(() => {
-        fitView(mapOverride);
-      });
-    };
-
-    if (delay <= 0) {
-      runFit();
-      return;
-    }
-
-    centerMapTimerRef.current = setTimeout(() => {
-      runFit();
-      centerMapTimerRef.current = null;
-    }, delay);
-  }, [fitView]);
 
   useLayoutEffect(() => {
     if (!activeMap || isPhoneViewport) return;

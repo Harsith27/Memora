@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getAchievementsState, syncAchievements } from '../services/achievementsService';
 
@@ -61,6 +61,24 @@ const AchievementUnlockNotifier = () => {
       queuedPollTimerRef.current = null;
     }
   }, []);
+
+  const handleClose = useCallback((event) => {
+    if (event && event.preventDefault) event.preventDefault();
+    if (event && event.stopPropagation) event.stopPropagation();
+
+    clearTimers();
+
+    // Mark active claims as seen so they won't reappear
+    const activeIds = Array.from(activeClaimIdsRef.current || []);
+    activeIds.forEach((id) => seenClaimIdsRef.current.add(String(id)));
+    persistNotifierSeenIds(userStorageKey, Array.from(seenClaimIdsRef.current));
+
+    // Clear notifier state
+    setActiveClaims([]);
+    activeClaimIdsRef.current = new Set();
+    setQueue([]);
+    setShowCta(false);
+  }, [clearTimers, userStorageKey]);
 
   const enqueueClaims = useCallback((claims) => {
     if (!Array.isArray(claims) || claims.length === 0) return;
@@ -241,7 +259,15 @@ const AchievementUnlockNotifier = () => {
 
   return (
     <div className="fixed top-4 right-4 z-[200] w-[min(92vw,23rem)] pointer-events-none">
-      <div className="pointer-events-auto rounded-2xl border border-emerald-300/25 bg-slate-950/92 px-4 py-3 shadow-[0_18px_50px_rgba(15,23,42,0.45)] backdrop-blur-md">
+      <div className="relative pointer-events-auto rounded-2xl border border-emerald-300/25 bg-slate-950/92 px-4 py-3 shadow-[0_18px_50px_rgba(15,23,42,0.45)] backdrop-blur-md">
+        <button
+          type="button"
+          aria-label="Close achievement notification"
+          onClick={handleClose}
+          className="absolute top-2 right-2 p-1 rounded-full text-emerald-100/80 hover:bg-emerald-800/30 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+        >
+          <X className="w-4 h-4" />
+        </button>
         <p className="text-emerald-200 text-[10px] sm:text-[11px] uppercase tracking-[0.24em] inline-flex items-center gap-1.5">
           <Sparkles className="w-4 h-4" />
           achievement completed

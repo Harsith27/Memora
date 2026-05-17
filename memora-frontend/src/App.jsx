@@ -7,6 +7,7 @@ import AchievementUnlockNotifier from './components/AchievementUnlockNotifier';
 import UserProfileDropdown from './components/UserProfileDropdown';
 
 const loadLanding = () => import('./pages/Landing');
+const loadDocs = () => import('./pages/docs/DocsShell');
 const loadLogin = () => import('./pages/Login');
 const loadSignUp = () => import('./pages/SignUp');
 const loadDashboard = () => import('./pages/Dashboard');
@@ -24,6 +25,7 @@ const loadProfile = () => import('./pages/Profile');
 const loadAchievements = () => import('./pages/Achievements');
 
 const Landing = lazy(loadLanding);
+const Docs = lazy(loadDocs);
 const Login = lazy(loadLogin);
 const SignUp = lazy(loadSignUp);
 const Dashboard = lazy(loadDashboard);
@@ -130,6 +132,7 @@ function RoutePrefetcher() {
         loadFocusMode();
         loadAchievements();
       } else {
+        loadDocs();
         loadLogin();
         loadSignUp();
       }
@@ -347,6 +350,7 @@ function App() {
               <GlobalProfileDock />
               <Routes>
                 <Route path="/" element={<Landing />} />
+                <Route path="/docs/*" element={<Docs />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<SignUp />} />
                 <Route path="/evaluation" element={<EvaluationRoute><MemScoreEvaluation /></EvaluationRoute>} />

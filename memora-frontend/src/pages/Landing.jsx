@@ -10,6 +10,7 @@ import {
   Clock,
   FileText,
   BarChart3,
+  Github,
   Zap,
   Globe,
   Users,
@@ -760,10 +761,7 @@ function Landing() {
   const currentHeadlinePhrase = rotatingHeadlinePhrases[headlinePhraseIndex];
   const isHeadlineIdle = !isHeadlineDeleting && typedHeadline === currentHeadlinePhrase;
 
-  const { scrollYProgress: heroProgress } = useScroll({
-    target: heroRef,
-    offset: ['start start', 'end start'],
-  });
+  const { scrollYProgress: heroProgress } = useScroll();
 
   const heroTitleY = useTransform(heroProgress, [0, 1], [0, -116]);
   const heroTextY = useTransform(heroProgress, [0, 1], [0, -72]);
@@ -771,10 +769,12 @@ function Landing() {
   const heroPreviewScale = useTransform(heroProgress, [0, 1], [1, 0.93]);
 
   const navItems = [
-    { id: 'memscore', label: 'MemScore' },
-    { id: 'features', label: 'Modules' },
-    { id: 'feedback', label: 'Feedback' },
-    { id: 'pricing', label: 'Pricing' },
+    { id: 'memscore', label: 'Product', chevron: true },
+    { id: 'features', label: 'Use cases', chevron: true },
+    { id: 'feedback', label: 'Docs', chevron: true },
+    { id: 'pricing', label: 'Community', chevron: true },
+    { id: 'pricing', label: 'Enterprise', chevron: false },
+    { id: 'pricing', label: 'Pricing', chevron: false },
   ];
 
   const mobileFeatureCards = featureCards;
@@ -785,6 +785,20 @@ function Landing() {
     { id: 'feedback', label: 'Feedback', icon: Users },
     { id: 'pricing', label: 'Pricing', icon: Target },
   ];
+
+  const getDisplayName = (currentUser) => {
+    const rawName = currentUser?.displayName
+      || currentUser?.fullName
+      || currentUser?.username
+      || currentUser?.name
+      || currentUser?.email
+      || '';
+
+    const cleaned = String(rawName).trim();
+    if (!cleaned) return '';
+
+    return cleaned.includes('@') ? cleaned.split('@')[0] : cleaned;
+  };
 
   useEffect(() => {
     const sectionIds = navItems.map((item) => item.id);
@@ -861,56 +875,63 @@ function Landing() {
   }, [typedHeadline, isHeadlineDeleting, headlinePhraseIndex, currentHeadlinePhrase]);
 
   return (
-    <div className="bg-black text-white min-h-screen pt-16">
-      <nav className={`fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-md supports-[backdrop-filter]:bg-black/50 transition-colors duration-300 ${
-        isScrolled ? 'border-white/20 bg-black/80' : 'border-white/10 bg-black/65'
-      }`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-3 sm:space-x-8 min-w-0">
-              <motion.div
-                className="flex items-center space-x-2 cursor-pointer min-w-0"
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.96 }}
-              >
-                <motion.div
-                  whileHover={{ rotate: 360 }}
-                  transition={{ duration: 0.5 }}
-                  className="w-8 h-8"
-                >
-                  <img src={logoImg} alt="Memora Logo" className="w-full h-full object-cover rounded-lg" />
-                </motion.div>
-                <span className="font-semibold text-base sm:text-lg truncate">Memora</span>
-              </motion.div>
-
-              <div className="hidden lg:flex items-center space-x-2">
-                {navItems.map((item) => {
-                  const isActive = activeSection === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => scrollToSection(item.id)}
-                      className={`px-3 py-2 text-sm transition-colors ${
-                        isActive ? 'text-white font-medium' : 'text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  );
-                })}
+    <div className="bg-black text-white min-h-screen pt-24 sm:pt-28">
+      <nav className="fixed top-0 left-0 right-0 z-50 px-3 sm:px-4 pt-3">
+        <div className={`mx-auto max-w-7xl rounded-[22px] border px-4 sm:px-5 ${
+          isScrolled
+            ? 'border-white/10 bg-[#07070c]/76 shadow-[0_16px_36px_rgba(0,0,0,0.34)] backdrop-blur-2xl'
+            : 'border-white/10 bg-[#07070c]/70 shadow-[0_14px_30px_rgba(0,0,0,0.28)] backdrop-blur-2xl'
+        }`}>
+          <div className="flex h-16 items-center justify-between gap-3">
+            <motion.div
+              className="flex items-center gap-2.5 min-w-0"
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <div className="w-8 h-8 overflow-hidden rounded-lg ring-1 ring-white/10">
+                <img src={logoImg} alt="Memora Logo" className="w-full h-full object-cover" />
               </div>
+              <span className="font-semibold text-base sm:text-[1.05rem] tracking-tight truncate">Memora</span>
+            </motion.div>
+
+            <div className="hidden lg:flex items-center justify-center gap-1 xl:gap-2 rounded-full px-2 py-1">
+              {navItems.map((item) => {
+                const isActive = activeSection === item.id;
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => scrollToSection(item.id)}
+                    className={`inline-flex items-center gap-1 rounded-full px-3 py-2 text-[0.92rem] transition-colors ${
+                      isActive ? 'text-white' : 'text-zinc-300/90 hover:text-white'
+                    }`}
+                  >
+                    <span>{item.label}</span>
+                    {item.chevron ? <ChevronDown className="h-3.5 w-3.5 opacity-80" /> : null}
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="flex items-center space-x-2 sm:space-x-4">
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               {user ? (
                 <>
-                  <Link to="/dashboard" className="text-gray-400 hover:text-white transition-colors text-xs sm:text-sm">Dashboard</Link>
+                  <span className="hidden sm:inline-flex items-center rounded-lg border border-white/12 bg-white/6 px-3 py-1.5 text-sm font-medium text-zinc-100 whitespace-nowrap">
+                    {getDisplayName(user) || 'User'}
+                  </span>
+                  <Link to="/dashboard" className="text-sm text-zinc-300 hover:text-white transition-colors whitespace-nowrap">
+                    Dashboard
+                  </Link>
                 </>
               ) : (
                 <>
-                  <Link to="/login" className="text-gray-400 hover:text-white transition-colors text-xs sm:text-sm whitespace-nowrap">Sign In</Link>
-                  <Link to="/signup" className="bg-white text-black px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-medium hover:bg-gray-100 transition-colors whitespace-nowrap">
+                  <Link to="/login" className="text-sm text-zinc-300 hover:text-white transition-colors whitespace-nowrap">
+                    Sign in
+                  </Link>
+                  <Link
+                    to="/signup"
+                    className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-[0_8px_22px_rgba(249,115,22,0.28)] hover:from-orange-400 hover:to-orange-500 transition-colors whitespace-nowrap"
+                  >
                     Sign Up
                   </Link>
                 </>
