@@ -10,8 +10,9 @@ const UserProfileDropdown = ({ placement = 'inline', isSidebarCollapsed = false,
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const isDockedBottomLeft = placement === 'bottom-left-dock';
+  const isSidebarFooterDock = isDockedBottomLeft && integratedInSidebar;
   const isCompactDock = isDockedBottomLeft && isSidebarCollapsed;
-  const isIntegratedDock = isDockedBottomLeft && integratedInSidebar;
+  const isIntegratedDock = isSidebarFooterDock;
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -49,10 +50,8 @@ const UserProfileDropdown = ({ placement = 'inline', isSidebarCollapsed = false,
   if (!user) return null;
 
   const dockContainerClass = isDockedBottomLeft
-    ? (isIntegratedDock
-      ? (isCompactDock
-        ? 'relative z-[70] w-full flex flex-col items-center'
-        : 'relative z-[70] w-full')
+    ? (isSidebarFooterDock
+      ? 'relative z-[70] w-full flex flex-col items-stretch'
       : (isCompactDock
         ? 'fixed left-0 bottom-3 z-[70] w-16 flex flex-col items-center'
         : 'fixed left-3 bottom-3 sm:left-4 sm:bottom-4 z-[70]'))
@@ -62,22 +61,22 @@ const UserProfileDropdown = ({ placement = 'inline', isSidebarCollapsed = false,
     <div className={dockContainerClass} ref={dropdownRef}>
       {isDockedBottomLeft ? (
         <div
-          className={`${isCompactDock ? 'mb-2 w-11 bg-transparent rounded-none shadow-none backdrop-blur-0 overflow-visible' : `${isIntegratedDock ? 'w-full' : 'w-[218px] max-w-[calc(100vw-1.5rem)]'} mb-2 bg-black/92 rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-sm overflow-hidden`}`}
+          className={`${isCompactDock ? 'mb-2 w-11 bg-transparent rounded-none shadow-none backdrop-blur-0 overflow-visible' : `${isIntegratedDock ? 'w-full mb-0 bg-black/92 rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-sm overflow-hidden' : 'w-[218px] max-w-[calc(100vw-1.5rem)] mb-2 bg-black/92 rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-sm overflow-hidden'}`}`}
         >
           <button
             onClick={handleProfile}
-            className={`${isCompactDock ? 'justify-center px-0 rounded-lg' : 'gap-2 px-3'} w-full flex items-center py-2 text-sm text-gray-300 hover:text-white hover:bg-white/8 active:text-white transition-colors`}
+            className={`${isCompactDock ? 'justify-center px-0 rounded-lg' : `${isIntegratedDock ? 'gap-2 px-3 py-2.5' : 'gap-2 px-3'}`} w-full flex items-center text-sm text-gray-300 hover:text-white hover:bg-white/8 active:text-white transition-colors`}
             title="Profile"
           >
-            <User className="w-4 h-4 text-gray-400" />
+            <User className="w-4 h-4 text-gray-400 shrink-0" />
             {!isCompactDock ? <span>Profile</span> : null}
           </button>
           <button
             onClick={handleSettings}
-            className={`${isCompactDock ? 'justify-center px-0 rounded-lg' : 'gap-2 px-3'} w-full flex items-center py-2 text-sm text-gray-300 hover:text-white hover:bg-white/8 active:text-white transition-colors`}
+            className={`${isCompactDock ? 'justify-center px-0 rounded-lg' : `${isIntegratedDock ? 'gap-2 px-3 py-2.5' : 'gap-2 px-3'}`} w-full flex items-center text-sm text-gray-300 hover:text-white hover:bg-white/8 active:text-white transition-colors`}
             title="Settings"
           >
-            <Settings className="w-4 h-4 text-gray-400" />
+            <Settings className="w-4 h-4 text-gray-400 shrink-0" />
             {!isCompactDock ? <span>Settings</span> : null}
           </button>
         </div>
@@ -89,7 +88,7 @@ const UserProfileDropdown = ({ placement = 'inline', isSidebarCollapsed = false,
         className={isDockedBottomLeft
           ? (isCompactDock
             ? 'w-11 h-11 flex items-center justify-center bg-black/85 hover:bg-white/10 rounded-lg p-0 transition-colors shadow-[0_8px_24px_rgba(0,0,0,0.42)] backdrop-blur-sm'
-            : `${isIntegratedDock ? 'w-full' : 'w-[218px] max-w-[calc(100vw-1.5rem)]'} flex items-center justify-between bg-black/85 border border-white/20 hover:bg-white/10 rounded-lg px-2.5 py-1.5 transition-colors shadow-[0_8px_24px_rgba(0,0,0,0.42)] backdrop-blur-sm`)
+            : `${isIntegratedDock ? 'w-full flex items-center justify-between bg-black/88 border border-white/18 rounded-xl px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.34)] backdrop-blur-sm' : 'w-[218px] max-w-[calc(100vw-1.5rem)] flex items-center justify-between bg-black/85 border border-white/20 hover:bg-white/10 rounded-lg px-2.5 py-1.5 transition-colors shadow-[0_8px_24px_rgba(0,0,0,0.42)] backdrop-blur-sm'}`)
           : 'flex items-center hover:bg-white/5 rounded-lg px-2 py-1 transition-colors'}
         title="Profile"
       >
@@ -98,7 +97,7 @@ const UserProfileDropdown = ({ placement = 'inline', isSidebarCollapsed = false,
             <div className={`${isCompactDock ? 'justify-center' : 'gap-2 min-w-0'} flex items-center`}>
               <ProfileSphereAvatar iconId={user?.profileIconId} username={user?.username || user?.email?.split('@')[0] || 'User'} size="sm" />
               {!isCompactDock ? (
-                <span className="text-sm text-white truncate">
+                <span className={`text-sm text-white truncate ${isIntegratedDock ? 'font-medium' : ''}`}>
                 {user?.username || user?.email?.split('@')[0] || 'User'}
                 </span>
               ) : null}
@@ -113,7 +112,7 @@ const UserProfileDropdown = ({ placement = 'inline', isSidebarCollapsed = false,
       {/* Dropdown Menu */}
       {isOpen && (
         <div className={isDockedBottomLeft
-          ? `${isCompactDock ? 'w-48' : `${isIntegratedDock ? 'w-full' : 'w-[218px] max-w-[calc(100vw-1.5rem)]'}`} absolute ${isIntegratedDock ? (isCompactDock ? 'left-full ml-2 bottom-0 mb-0' : 'left-0 bottom-full') : 'left-0 bottom-full'} mb-2 bg-black/95 border border-white/20 rounded-lg shadow-2xl z-50`
+          ? `${isCompactDock ? 'w-48' : `${isIntegratedDock ? 'w-full' : 'w-[218px] max-w-[calc(100vw-1.5rem)]'}`} absolute ${isIntegratedDock ? 'left-0 bottom-full mb-2' : 'left-0 bottom-full mb-2'} bg-black/95 border border-white/20 rounded-lg shadow-2xl z-50`
           : 'absolute right-0 top-full mt-2 w-56 bg-black border border-white/20 rounded-xl shadow-2xl z-50'}>
           {/* User Info Header */}
           <div className="px-6 py-4 border-b border-white/10">

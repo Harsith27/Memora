@@ -5,9 +5,10 @@ import { useAuth } from './contexts/AuthContext';
 import { TimerProvider } from './contexts/TimerContext';
 import AchievementUnlockNotifier from './components/AchievementUnlockNotifier';
 import UserProfileDropdown from './components/UserProfileDropdown';
+import SeoManager from './components/SeoManager';
 
 const loadLanding = () => import('./pages/Landing');
-const loadDocs = () => import('./pages/docs/DocsShell');
+const loadDocs = () => import('./pages/Docs');
 const loadLogin = () => import('./pages/Login');
 const loadSignUp = () => import('./pages/SignUp');
 const loadDashboard = () => import('./pages/Dashboard');
@@ -333,7 +334,17 @@ function GlobalProfileDock() {
     return null;
   }
 
-  return <UserProfileDropdown placement="bottom-left-dock" isSidebarCollapsed={sidebarCollapsed} />;
+  return (
+    <div
+      className={`fixed left-0 bottom-0 z-30 ${sidebarCollapsed ? 'w-16' : 'w-64'} max-h-[calc(100vh-80px)] pointer-events-none transition-[width,transform] duration-300`}
+    >
+      <div className="flex h-full flex-col justify-end p-3 sm:p-4 pointer-events-none overflow-y-auto">
+        <div className="pointer-events-auto w-full">
+          <UserProfileDropdown placement="bottom-left-dock" isSidebarCollapsed={sidebarCollapsed} integratedInSidebar />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function App() {
@@ -342,6 +353,7 @@ function App() {
       <TimerProvider>
         <Router>
           <div className="App">
+            <SeoManager />
             <ScrollToTopOnRouteChange />
             <OverlayScrollLockManager />
             <RoutePrefetcher />
@@ -356,15 +368,15 @@ function App() {
                 <Route path="/evaluation" element={<EvaluationRoute><MemScoreEvaluation /></EvaluationRoute>} />
                 <Route
                   path="/evaluation/_memory-match"
-                  element={<ProtectedRoute requireCompletedEvaluation={false}><MemScoreEvaluation initialPhase="memory-game" /></ProtectedRoute>}
+                  element={<ProtectedRoute requireCompletedEvaluation={true}><MemScoreEvaluation initialPhase="memory-game" /></ProtectedRoute>}
                 />
                 <Route
                   path="/evaluation/_tile-recall"
-                  element={<ProtectedRoute requireCompletedEvaluation={false}><MemScoreEvaluation initialPhase="tile-recall" /></ProtectedRoute>}
+                  element={<ProtectedRoute requireCompletedEvaluation={true}><MemScoreEvaluation initialPhase="tile-recall" /></ProtectedRoute>}
                 />
                 <Route
                   path="/evaluation/_speed-test"
-                  element={<ProtectedRoute requireCompletedEvaluation={false}><MemScoreEvaluation initialPhase="speed-test" /></ProtectedRoute>}
+                  element={<ProtectedRoute requireCompletedEvaluation={true}><MemScoreEvaluation initialPhase="speed-test" /></ProtectedRoute>}
                 />
                 <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                 <Route path="/graph" element={<ProtectedRoute><Graph /></ProtectedRoute>} />
@@ -378,6 +390,8 @@ function App() {
                 <Route path="/focus" element={<ProtectedRoute><FocusMode /></ProtectedRoute>} />
                 <Route path="/achievements" element={<ProtectedRoute><Achievements /></ProtectedRoute>} />
                 <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                {/* Catch-all 404 route */}
+                <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Suspense>
           </div>

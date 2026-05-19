@@ -293,17 +293,8 @@ export const AuthProvider = ({ children }) => {
           memScore: response.memScore // Use the memScore returned from backend
         });
 
-        // Also store in localStorage for persistence
-        const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-        const updatedUser = {
-          ...currentUser,
-          hasCompletedEvaluation: true,
-          evaluationResults: results,
-          memScore: response.memScore
-        };
-        localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-
         // Refresh user data from backend to ensure consistency
+        // This will also update localStorage via dispatch
         try {
           const userResponse = await apiService.verifyToken();
           if (userResponse.success) {
@@ -311,9 +302,12 @@ export const AuthProvider = ({ children }) => {
               type: AUTH_ACTIONS.SET_USER,
               payload: { user: userResponse.user }
             });
+            // Update localStorage after backend sync confirms
+            persistUser(userResponse.user);
           }
         } catch (refreshError) {
           console.error('Failed to refresh user data:', refreshError);
+          // Fallback: at least we have the optimistic update from updateUser
         }
       }
       return response;

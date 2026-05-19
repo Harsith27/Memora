@@ -748,7 +748,7 @@ const FeatureCard = ({ card, index }) => {
 };
 
 function Landing() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [activeSection, setActiveSection] = useState('memscore');
   const [isScrolled, setIsScrolled] = useState(false);
   const [ctaGlow, setCtaGlow] = useState({ x: 50, y: 50, hovering: false });
@@ -757,6 +757,8 @@ function Landing() {
   const [typedHeadline, setTypedHeadline] = useState('');
   const [isHeadlineDeleting, setIsHeadlineDeleting] = useState(false);
   const [mobileFocus, setMobileFocus] = useState('memscore');
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef(null);
   const heroRef = useRef(null);
   const currentHeadlinePhrase = rotatingHeadlinePhrases[headlinePhraseIndex];
   const isHeadlineIdle = !isHeadlineDeleting && typedHeadline === currentHeadlinePhrase;
@@ -844,6 +846,26 @@ function Landing() {
   };
 
   useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(event.target)) {
+        setIsAccountMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      setIsAccountMenuOpen(false);
+      await logout();
+    } catch (error) {
+      console.error('Logout failed from landing page:', error);
+    }
+  };
+
+  useEffect(() => {
     const fullPhrase = currentHeadlinePhrase;
     const isPhraseComplete = !isHeadlineDeleting && typedHeadline === fullPhrase;
     const isPhraseCleared = isHeadlineDeleting && typedHeadline.length === 0;
@@ -915,14 +937,53 @@ function Landing() {
 
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               {user ? (
-                <>
-                  <span className="hidden sm:inline-flex items-center rounded-lg border border-white/12 bg-white/6 px-3 py-1.5 text-sm font-medium text-zinc-100 whitespace-nowrap">
-                    {getDisplayName(user) || 'User'}
-                  </span>
-                  <Link to="/dashboard" className="text-sm text-zinc-300 hover:text-white transition-colors whitespace-nowrap">
-                    Dashboard
-                  </Link>
-                </>
+                <div className="relative" ref={accountMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsAccountMenuOpen((prev) => !prev)}
+                    className="hidden sm:inline-flex items-center gap-2 rounded-lg border border-white/12 bg-white/6 px-3 py-1.5 text-sm font-medium text-zinc-100 whitespace-nowrap hover:bg-white/10 transition-colors"
+                  >
+                    <span>{getDisplayName(user) || 'User'}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isAccountMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAccountMenuOpen((prev) => !prev)}
+                    className="inline-flex sm:hidden items-center gap-2 rounded-lg border border-white/12 bg-white/6 px-3 py-1.5 text-sm font-medium text-zinc-100 whitespace-nowrap hover:bg-white/10 transition-colors"
+                  >
+                    <span>{getDisplayName(user) || 'User'}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isAccountMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {isAccountMenuOpen ? (
+                    <div className="absolute right-0 top-full mt-2 w-52 overflow-hidden rounded-xl border border-white/12 bg-[#07070c]/95 shadow-[0_18px_48px_rgba(0,0,0,0.45)] backdrop-blur-xl z-50">
+                      <div className="border-b border-white/10 px-4 py-3">
+                        <div className="text-sm font-semibold text-white truncate">
+                          {getDisplayName(user) || 'User'}
+                        </div>
+                        <div className="mt-1 text-xs text-zinc-400 truncate">
+                          {user?.email}
+                        </div>
+                      </div>
+                      <div className="py-2">
+                        <Link
+                          to="/dashboard"
+                          onClick={() => setIsAccountMenuOpen(false)}
+                          className="block px-4 py-2 text-sm text-zinc-200 hover:bg-white/6 hover:text-white transition-colors"
+                        >
+                          Dashboard
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={handleLogout}
+                          className="block w-full px-4 py-2 text-left text-sm text-red-300 hover:bg-white/6 hover:text-red-200 transition-colors"
+                        >
+                          Logout
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               ) : (
                 <>
                   <Link to="/login" className="text-sm text-zinc-300 hover:text-white transition-colors whitespace-nowrap">

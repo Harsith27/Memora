@@ -1,120 +1,405 @@
 import React, { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { NavLink, Link, Routes, Route, useParams } from 'react-router-dom';
 import {
   ArrowRight,
   BookOpen,
   Brain,
   Calendar,
+  CheckCircle2,
+  Clock3,
   FileText,
   Focus,
+  Layers3,
+  PanelLeft,
   Search,
   Sparkles,
   BarChart3,
-  Clock3,
-  PanelLeft,
-  CheckCircle2,
-  Layers3,
+  GitBranch,
+  LayoutGrid,
+  LineChart,
+  MessageSquare,
+  UserCircle2,
+  Waypoints,
+  ChevronDown,
 } from 'lucide-react';
 import logoImg from '../assets/logo.jpg';
 
-const leftNavGroups = [
+function InlineBarChart({ values = [], color = '#94A3B8', height = 28 }) {
+  const max = Math.max(...values, 1);
+  return (
+    <svg width="120" height={height} viewBox={`0 0 120 ${height}`} aria-hidden>
+      {values.map((v, i) => {
+        const w = 10; const gap = 4; const x = i * (w + gap);
+        const h = Math.round((v / max) * (height - 6));
+        return <rect key={i} x={x} y={height - h - 2} width={w} height={h} rx={2} fill={color} />;
+      })}
+    </svg>
+  );
+}
+
+function Sparkline({ values = [], color = '#94A3B8', stroke = 2 }) {
+  if (!values || values.length === 0) return null;
+  const max = Math.max(...values); const min = Math.min(...values);
+  const range = Math.max(max - min, 1);
+  const points = values.map((v, i) => `${(i / (values.length - 1)) * 100},${100 - ((v - min) / range) * 100}`).join(' ');
+  return (
+    <svg viewBox="0 0 100 100" width="120" height="28" preserveAspectRatio="none" aria-hidden>
+      <polyline points={points} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+const navGroups = [
   {
     title: 'Getting started',
     items: [
-      { id: 'what-is-memora', label: 'What is Memora?' },
-      { id: 'workflow', label: 'How the workflow fits together' },
-      { id: 'tips', label: 'Quick tips' },
+      { id: 'overview', label: 'Overview' },
+      { id: 'workflow', label: 'How Memora works' },
+      { id: 'memscore', label: 'MemScore' },
+      { id: 'tips', label: 'Usage tips' },
     ],
   },
   {
     title: 'Modules',
     items: [
-      { id: 'core-modules', label: 'Core modules' },
-      { id: 'memscore', label: 'MemScore' },
       { id: 'dashboard', label: 'Dashboard' },
       { id: 'topics', label: 'Topics' },
-      { id: 'journals', label: 'Journal' },
+      { id: 'doctags', label: 'DocTags' },
+      { id: 'journal', label: 'Journal' },
+      { id: 'focus-mode', label: 'Focus Mode' },
+      { id: 'chronicle', label: 'Chronicle' },
       { id: 'analytics', label: 'Analytics' },
+      { id: 'mindmaps', label: 'Mindmaps' },
+      { id: 'listener', label: 'Listener' },
+      { id: 'achievements', label: 'Achievements' },
+      { id: 'profile', label: 'Profile' },
     ],
   },
 ];
 
-const quickCards = [
-  { title: 'Dashboard', icon: PanelLeft, text: 'Start from today’s focus, due items, and the next action.' },
-  { title: 'Topics', icon: Layers3, text: 'Group study material by subject, priority, and deadline.' },
-  { title: 'Journal', icon: FileText, text: 'Capture what worked after a session and what needs another pass.' },
-  { title: 'Analytics', icon: BarChart3, text: 'Read retention and consistency trends without leaving the app.' },
-  { title: 'Focus Mode', icon: Focus, text: 'Keep a study sprint tight with a simple, distraction-light timer.' },
-  { title: 'Chronicle', icon: Calendar, text: 'See revision across time and keep your plan anchored to the calendar.' },
+const tocItems = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'workflow', label: 'How Memora works' },
+  { id: 'memscore', label: 'MemScore' },
+  { id: 'modules', label: 'Modules' },
+  { id: 'tips', label: 'Usage tips' },
 ];
 
-const moduleCards = [
+const docsPages = {};
+
+const moduleReference = [
   {
     id: 'dashboard',
-    title: 'Dashboard',
     icon: PanelLeft,
-    accent: 'from-sky-400/25 to-cyan-400/10',
-    points: ['Today view', 'Due topics', 'Quick actions'],
-    description: 'A calm launch point for the day that surfaces what needs attention first.',
+    title: 'Dashboard',
+    summary: 'The starting point for the day. It brings due topics, focus items, and progress signals together so you do not need to hunt for the next action.',
+    details: [
+      'Use it for a quick morning check-in before you begin studying.',
+      'Keep the view short and directional rather than trying to replace every other page.',
+      'Treat it as the launch point for everything else in the app.',
+    ],
   },
   {
     id: 'topics',
-    title: 'Topics',
     icon: Layers3,
-    accent: 'from-emerald-400/20 to-lime-400/10',
-    points: ['Priority labels', 'Deadline links', 'Scheduling'],
-    description: 'The place to store subjects, connect revision timing, and shape the study queue.',
+    title: 'Topics',
+    summary: 'The core structure layer. Topics organize what you need to revise, when it should come back, and which items deserve more attention.',
+    details: [
+      'Add topics early so the schedule has something to work with.',
+      'Use deadlines and priority labels to keep the queue realistic.',
+      'Think of Topics as the memory map for the rest of Memora.',
+    ],
   },
   {
-    title: 'DocTags',
+    id: 'doctags',
     icon: FileText,
-    accent: 'from-violet-400/20 to-fuchsia-400/10',
-    points: ['PDFs', 'Links', 'Notes'],
-    description: 'Attach resources directly to the right topic so the context never gets lost.',
+    title: 'DocTags',
+    summary: 'Your attachment layer for notes, PDFs, links, and references. It keeps context close to the topic instead of scattering it across separate tools.',
+    details: [
+      'Attach sources when you create or review a topic.',
+      'Use it to keep reading material, screenshots, and notes grouped cleanly.',
+      'This is the fastest way to preserve the reason behind a revision item.',
+    ],
   },
   {
-    id: 'journals',
-    title: 'Journal',
+    id: 'journal',
     icon: BookOpen,
-    accent: 'from-amber-400/20 to-orange-400/10',
-    points: ['Session notes', 'Reflection', 'Revision intent'],
-    description: 'A lightweight space to record what clicked, what drifted, and what to improve next.',
+    title: 'Journal',
+    summary: 'A reflection space for what happened during a session. It captures what worked, what felt difficult, and what should change next time.',
+    details: [
+      'Write short notes immediately after a session while the details are still fresh.',
+      'Keep the entry focused on learning, not long-form documentation.',
+      'Use the journal to close the loop between planning and actual performance.',
+    ],
   },
   {
-    title: 'MemScore',
-    icon: Brain,
-    accent: 'from-pink-400/20 to-rose-400/10',
-    points: ['Baseline signal', 'Adaptive spacing', 'Weak-zone tracking'],
-    description: 'A practical learning signal that helps Memora tune the revision queue around your actual recall.',
+    id: 'focus-mode',
+    icon: Focus,
+    title: 'Focus Mode',
+    summary: 'A simple study sprint environment for concentrated revision. It helps you stay with one task long enough to make the session count.',
+    details: [
+      'Use it for smaller sessions when the day is fragmented.',
+      'Keep distractions low and set a clear end point for the sprint.',
+      'Pair it with topics and journals to avoid random study drift.',
+    ],
+  },
+  {
+    id: 'chronicle',
+    icon: Calendar,
+    title: 'Chronicle',
+    summary: 'The time-based view of revision. Chronicle helps you see the flow of completed, upcoming, and overdue work in a way that is easier to schedule against.',
+    details: [
+      'Use Chronicle when you want the week or month to feel more structured.',
+      'It is especially useful when you want to balance repetition with deadline pressure.',
+      'The calendar view makes long-range planning feel less abstract.',
+    ],
   },
   {
     id: 'analytics',
-    title: 'Analytics',
     icon: BarChart3,
-    accent: 'from-indigo-400/20 to-blue-400/10',
-    points: ['Retention trends', 'Consistency', 'Progress shape'],
-    description: 'Visual feedback that helps you see whether the current plan is working.',
+    title: 'Analytics',
+    summary: 'The progress layer for retention trends, consistency, and weak-zone review. It keeps feedback measurable instead of relying only on intuition.',
+    details: [
+      'Check the trends after a few sessions instead of after every single action.',
+      'Use it to see whether your revision plan is stable or too crowded.',
+      'The goal is clarity: what to keep, what to repeat, and what to move.',
+    ],
+  },
+  {
+    id: 'mindmaps',
+    icon: Waypoints,
+    title: 'Mindmaps',
+    summary: 'A visual network for linking related ideas and spotting relationships between topics. It is useful when a subject needs structure, not just a list.',
+    details: [
+      'Use it when a topic has branches, dependencies, or sub-topics.',
+      'It works well for outlining revision pathways before a session begins.',
+      'Mindmaps help make complex subjects feel easier to revisit.',
+    ],
+  },
+  {
+    id: 'listener',
+    icon: MessageSquare,
+    title: 'Listener',
+    summary: 'A conversational helper module for guided interaction and quick support surfaces. It belongs in Memora because the app is meant to feel responsive, not static.',
+    details: [
+      'Keep interactions short and direct so they do not interrupt the study flow.',
+      'Use it when you want a faster way to move through common actions.',
+      'It should support the workspace without becoming noisy.',
+    ],
+  },
+  {
+    id: 'achievements',
+    icon: Sparkles,
+    title: 'Achievements',
+    summary: 'The progress and motivation layer. Achievements help surface milestones and keep momentum visible over time.',
+    details: [
+      'Use achievements as light reinforcement, not as the main objective.',
+      'They work best when they reflect real learning behavior.',
+      'Keep the feedback useful and tied to actual progress.',
+    ],
+  },
+  {
+    id: 'profile',
+    icon: UserCircle2,
+    title: 'Profile',
+    summary: 'The account and identity layer where personal settings, preferences, and visible user information stay organized.',
+    details: [
+      'Use profile settings to keep the workspace aligned with the user.',
+      'Make it easy to recognize current state without extra clutter.',
+      'Profile should feel like a control surface, not a separate product.',
+    ],
+  },
+  {
+    id: 'memscore',
+    icon: Brain,
+    title: 'MemScore',
+    summary: 'The baseline signal that helps Memora adapt review timing and prioritization. It connects performance, recall confidence, and spacing into a single useful signal.',
+    details: [
+      'MemScore should shape the next step, not just report a number.',
+      'It should help the app decide what comes back soon and what can wait.',
+      'Treat it as the main memory signal across the product.',
+    ],
   },
 ];
 
-const tocItems = [
-  { id: 'what-is-memora', label: 'What is Memora?' },
-  { id: 'core-modules', label: 'Core modules' },
-  { id: 'memscore', label: 'MemScore' },
-  { id: 'workflow', label: 'Workflow' },
-  { id: 'module-grid', label: 'Module reference' },
-  { id: 'tips', label: 'Quick tips' },
-];
+docsPages.overview = {
+    title: 'Memora docs',
+    icon: BookOpen,
+    summary: 'A concise entry point for the docs. Start here, then open the individual pages for getting started and the module reference.',
+    sections: [
+      {
+        title: 'What this docs area covers',
+        body: 'This is the index page. Each sidebar item opens a dedicated page so you can jump straight to the topic you want instead of scrolling through one long overview.',
+      },
+      {
+        title: 'Where to start',
+        body: 'Use the Getting started pages for the product flow, then switch to the Modules pages for the feature-by-feature reference.',
+      },
+    ],
+    links: [
+      { label: 'What is Memora?', to: '/docs/workflow' },
+      { label: 'MemScore', to: '/docs/memscore' },
+      { label: 'Usage tips', to: '/docs/tips' },
+    ],
+};
+
+docsPages.workflow = {
+  title: 'How Memora works',
+  icon: Layers3,
+  summary: 'Memora is built around a simple loop: structure topics, review in focused sessions, and use feedback to guide what comes next.',
+  sections: [
+    {
+      title: 'Workflow loop',
+      body: 'Create topics, attach resources, let MemScore guide the next review, then use Journal and Analytics to tune the following session.',
+    },
+    {
+      title: 'What to expect',
+      body: 'Each page in the Getting started group focuses on one idea so the docs behave more like Next.js: short, targeted, and easy to navigate.',
+    },
+  ],
+  links: [
+    { label: 'Overview', to: '/docs' },
+    { label: 'MemScore', to: '/docs/memscore' },
+    { label: 'Topics', to: '/docs/topics' },
+  ],
+};
+
+docsPages.memscore = {
+  title: 'MemScore',
+  icon: Brain,
+  summary: 'MemScore is the signal Memora uses to decide what should come back sooner, what can wait, and how intensely a topic should be revisited.',
+  sections: [
+    {
+      title: 'Why it matters',
+      body: 'It turns a session into a measurable memory signal so the app can prioritize, space, and repeat the right work.',
+    },
+    {
+      title: 'How to use it',
+      body: 'Treat it as a guide for the next action, not just a score on the page.',
+    },
+  ],
+  links: [
+    { label: 'How Memora works', to: '/docs/workflow' },
+    { label: 'Dashboard', to: '/docs/dashboard' },
+    { label: 'Analytics', to: '/docs/analytics' },
+  ],
+};
+
+docsPages.tips = {
+  title: 'Usage tips',
+  icon: Sparkles,
+  summary: 'A few practical habits that keep the app clean and the study loop consistent.',
+  sections: [
+    {
+      title: 'Use small queues',
+      body: 'Keep the active list close to what you can actually finish so the system stays useful instead of noisy.',
+    },
+    {
+      title: 'Review quickly after a session',
+      body: 'Add DocTags early, write a journal note after the session, and check Analytics after a few cycles instead of after every click.',
+    },
+  ],
+  links: [
+    { label: 'DocTags', to: '/docs/doctags' },
+    { label: 'Journal', to: '/docs/journal' },
+    { label: 'Mindmaps', to: '/docs/mindmaps' },
+  ],
+};
+
+docsPages.workflow = {
+  title: 'How Memora works',
+  icon: Layers3,
+  summary: 'Memora is built around a simple loop: structure topics, review in focused sessions, and use feedback to guide what comes next.',
+  sections: [
+    {
+      title: 'Workflow loop',
+      body: 'Create topics, attach resources, let MemScore guide the next review, then use Journal and Analytics to tune the following session.',
+    },
+    {
+      title: 'What to expect',
+      body: 'Each page in the Getting started group focuses on one idea so the docs behave more like Next.js: short, targeted, and easy to navigate.',
+    },
+  ],
+  links: [
+    { label: 'Overview', to: '/docs' },
+    { label: 'MemScore', to: '/docs/memscore' },
+    { label: 'Topics', to: '/docs/topics' },
+  ],
+};
+
+docsPages.memscore = {
+  title: 'MemScore',
+  icon: Brain,
+  summary: 'MemScore is the signal Memora uses to decide what should come back sooner, what can wait, and how intensely a topic should be revisited.',
+  sections: [
+    {
+      title: 'Why it matters',
+      body: 'It turns a session into a measurable memory signal so the app can prioritize, space, and repeat the right work.',
+    },
+    {
+      title: 'How to use it',
+      body: 'Treat it as a guide for the next action, not just a score on the page.',
+    },
+  ],
+  links: [
+    { label: 'How Memora works', to: '/docs/workflow' },
+    { label: 'Dashboard', to: '/docs/dashboard' },
+    { label: 'Analytics', to: '/docs/analytics' },
+  ],
+};
+
+docsPages.tips = {
+  title: 'Usage tips',
+  icon: Sparkles,
+  summary: 'A few practical habits that keep the app clean and the study loop consistent.',
+  sections: [
+    {
+      title: 'Use small queues',
+      body: 'Keep the active list close to what you can actually finish so the system stays useful instead of noisy.',
+    },
+    {
+      title: 'Review quickly after a session',
+      body: 'Add DocTags early, write a journal note after the session, and check Analytics after a few cycles instead of after every click.',
+    },
+  ],
+  links: [
+    { label: 'DocTags', to: '/docs/doctags' },
+    { label: 'Journal', to: '/docs/journal' },
+    { label: 'Mindmaps', to: '/docs/mindmaps' },
+  ],
+};
+
+moduleReference.forEach((module) => {
+  docsPages[module.id] = {
+    title: module.title,
+    icon: module.icon,
+    summary: module.summary,
+    sections: [
+      {
+        title: 'What it does',
+        body: module.summary,
+      },
+      {
+        title: 'Details',
+        body: module.details.join(' '),
+      },
+    ],
+    links: [
+      { label: 'Overview', to: '/docs' },
+      { label: 'How Memora works', to: '/docs/workflow' },
+      { label: 'Usage tips', to: '/docs/tips' },
+    ],
+  };
+});
 
 const Docs = () => {
   const [query, setQuery] = useState('');
-
   const normalizedQuery = query.trim().toLowerCase();
 
   const filteredNavGroups = useMemo(() => {
-    if (!normalizedQuery) return leftNavGroups;
+    if (!normalizedQuery) return navGroups;
 
-    return leftNavGroups
+    return navGroups
       .map((group) => ({
         ...group,
         items: group.items.filter((item) => item.label.toLowerCase().includes(normalizedQuery)),
@@ -122,303 +407,278 @@ const Docs = () => {
       .filter((group) => group.items.length > 0);
   }, [normalizedQuery]);
 
-  const filteredCards = useMemo(() => {
-    if (!normalizedQuery) return moduleCards;
+  const filteredModules = useMemo(() => {
+    if (!normalizedQuery) return moduleReference;
 
-    return moduleCards.filter((card) => {
-      const haystack = `${card.title} ${card.description} ${card.points.join(' ')}`.toLowerCase();
+    return moduleReference.filter((module) => {
+      const haystack = `${module.title} ${module.summary} ${module.details.join(' ')}`.toLowerCase();
       return haystack.includes(normalizedQuery);
     });
   }, [normalizedQuery]);
 
   return (
-    <div className="min-h-screen bg-[#050505] text-zinc-100">
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-black/82 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-4 px-4 sm:px-6 lg:px-8">
-          <Link to="/" className="inline-flex items-center gap-2 text-white transition-opacity hover:opacity-90">
-            <img src={logoImg} alt="Memora" className="h-9 w-9 rounded-lg object-cover ring-1 ring-white/10" />
-            <span className="text-base font-semibold tracking-tight sm:text-lg">Memora Docs</span>
+    <div className="docs-root min-h-screen bg-black text-slate-200">
+      <header className="docs-header sticky top-0 z-50 border-b border-white/6 bg-black/95 backdrop-blur-md">
+        <div className="mx-auto flex h-20 max-w-[1600px] items-center gap-4 px-6 sm:px-8 lg:px-10">
+          <Link to="/" className="inline-flex items-center gap-3 text-white hover:opacity-90 transition-opacity">
+            <img src={logoImg} alt="Memora" className="h-7 w-7 rounded-sm object-cover ring-1 ring-white/10" />
+            <span className="text-base font-semibold tracking-tight text-white">Memora</span>
           </Link>
 
-          <div className="hidden flex-1 justify-center lg:flex">
-            <label className="flex w-full max-w-2xl items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-zinc-400 shadow-inner shadow-black/20">
-              <Search className="h-4 w-4" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search Memora docs..."
-                className="w-full bg-transparent text-sm text-white placeholder:text-zinc-500 focus:outline-none"
-              />
-              <span className="rounded-md border border-white/10 bg-black/50 px-2 py-0.5 text-[11px] text-zinc-400">
-                Ctrl K
-              </span>
-            </label>
-          </div>
+          <nav className="hidden lg:flex top-nav items-center gap-6 ml-6">
+            <Link to="/showcase" className="text-sm text-slate-400 hover:text-white transition-colors">Showcase</Link>
+            <NavLink to="/docs" className={({isActive}) => isActive ? 'text-sm text-[#60a5fa] font-semibold' : 'text-sm text-slate-400 hover:text-white'}>Docs</NavLink>
+            <Link to="/blog" className="text-sm text-slate-400 hover:text-white transition-colors">Blog</Link>
+            <a href="/templates" className="text-sm text-slate-400 hover:text-white transition-colors">Templates</a>
+            <a href="/enterprise" className="text-sm text-slate-400 hover:text-white transition-colors">Enterprise</a>
+          </nav>
 
-          <div className="ml-auto flex items-center gap-2 sm:gap-3">
-            <a
-              href="#tips"
-              className="hidden rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-white/20 hover:bg-white/[0.08] md:inline-flex"
-            >
-              Feedback
-            </a>
-            <a
-              href="#what-is-memora"
-              className="inline-flex items-center rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-zinc-200"
-            >
-              Learn
-            </a>
+          <div className="flex-1" />
+
+          <div className="flex items-center gap-3">
+            <label className="hidden md:inline-flex items-center gap-2 rounded-md border border-white/6 bg-white/[0.03] px-3 py-1 text-sm text-slate-300">
+              <Search className="h-4 w-4 text-slate-400" />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search documentation..." className="bg-transparent focus:outline-none text-sm text-white placeholder:text-slate-500 w-44" />
+            </label>
+            <span className="hidden md:inline-flex items-center rounded px-2 py-1 text-xs text-slate-400 border border-white/6">CtrlK</span>
+            <button className="hidden md:inline-flex items-center px-3 py-1 border border-white/6 rounded text-sm text-slate-300 hover:bg-white/[0.03]">Feedback</button>
+            <button className="ml-2 inline-flex items-center rounded-full bg-white text-black px-3 py-1 text-sm font-medium">Learn</button>
           </div>
         </div>
-        <div className="border-t border-white/5 px-4 py-3 lg:hidden">
-          <label className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-zinc-400 shadow-inner shadow-black/20">
-            <Search className="h-4 w-4" />
+        <div className="border-t border-white/6 px-4 py-3 lg:hidden">
+          <label className="flex items-center gap-3 rounded-full border border-white/6 bg-white/[0.03] px-4 py-2 text-sm text-slate-300">
+            <Search className="h-4 w-4 text-slate-400" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search Memora docs..."
-              className="w-full bg-transparent text-sm text-white placeholder:text-zinc-500 focus:outline-none"
+              className="w-full bg-transparent text-sm text-white placeholder:text-slate-500 focus:outline-none"
             />
           </label>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1600px] gap-0 lg:grid-cols-[280px_minmax(0,1fr)_250px]">
-        <aside className="hidden min-h-[calc(100vh-4rem)] border-r border-white/10 px-5 py-8 lg:block">
-          <div className="sticky top-24 space-y-6">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-blue-200 ring-1 ring-blue-400/20">
-                  <Sparkles className="h-5 w-5" />
+        <div className="grid min-h-[calc(100vh-5rem)] overflow-hidden lg:grid-cols-[320px_minmax(0,1fr)_300px] lg:px-6">
+        <aside className="hidden h-full border-r border-white/6 pl-10 pr-8 py-8 lg:block overflow-y-auto">
+          <div className="flex h-full flex-col gap-6">
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-slate-300">Quick highlights</p>
+                <p className="text-sm leading-6 text-slate-400">Context and current release info for Memora.</p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-start gap-3 rounded-md border border-white/6 p-3 bg-white/[0.02]">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-md bg-black border border-white/6 text-[#60a5fa]"><BookOpen className="h-5 w-5" /></div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-white">Using App Router</div>
+                    <div className="text-xs text-white/70">Features available in /app</div>
+                  </div>
+                  <div className="ml-auto text-slate-400"><ChevronDown className="h-4 w-4" /></div>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-white">Using Memora</p>
-                  <p className="text-xs text-zinc-400">A focused overview of the app and its modules</p>
+
+                <div className="flex items-start gap-3 rounded-md border border-white/6 p-3 bg-white/[0.02]">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-md bg-black border border-white/6 text-[#60a5fa]"><GitBranch className="h-5 w-5" /></div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-white">Latest Version</div>
+                    <div className="text-xs text-white/70">16.2.6</div>
+                  </div>
+                  <div className="ml-auto text-slate-400"><ChevronDown className="h-4 w-4" /></div>
                 </div>
               </div>
+
             </div>
 
-            <div className="space-y-5">
+            <div className="space-y-6 pr-2 left-nav">
               {filteredNavGroups.map((group) => (
                 <div key={group.title}>
-                  <h2 className="mb-3 text-sm font-semibold text-zinc-100">{group.title}</h2>
+                  <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] nav-group-title">{group.title}</h2>
                   <div className="space-y-1">
                     {group.items.map((item) => (
-                      <a
-                        key={item.id}
-                        href={`#${item.id}`}
-                        className="block rounded-lg px-3 py-2 text-sm text-zinc-400 transition-colors hover:bg-white/[0.04] hover:text-zinc-100"
-                      >
-                        {item.label}
-                      </a>
+                      <NavLink key={item.id} to={item.id === 'overview' ? '/docs' : `/docs/${item.id}`} end={item.id === 'overview'} className={({isActive}) => `block rounded-md px-2 py-1.5 text-sm transition-colors ${isActive ? 'active' : 'text-slate-400 hover:text-white'}`}>{item.label}</NavLink>
                     ))}
                   </div>
                 </div>
               ))}
             </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-zinc-300">
-              <p className="font-semibold text-white">Need a quick start?</p>
-              <p className="mt-2 leading-6 text-zinc-400">
-                Use Dashboard for the day view, Topics for structure, and Journal for the session reflection loop.
-              </p>
-            </div>
           </div>
         </aside>
 
-        <main className="min-w-0 px-4 py-8 sm:px-6 lg:px-10 lg:py-10">
-          <section className="pb-8 pt-2 sm:pt-4">
-            <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-medium text-cyan-200">
-                <BookOpen className="h-3.5 w-3.5" />
-                Memora documentation
-              </div>
-              <h1 className="mt-5 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-                Memora Docs
-              </h1>
-              <p className="mt-5 max-w-2xl text-lg leading-8 text-zinc-300">
-                Build revision plans, manage topic memory, and review progress with a docs layout that keeps the app structure easy to scan.
-              </p>
-            </div>
-          </section>
-
-          <section id="what-is-memora" className="scroll-mt-28 border-t border-white/10 py-8">
-            <h2 className="text-2xl font-semibold tracking-tight text-white">What is Memora?</h2>
-            <p className="mt-4 max-w-3xl text-base leading-7 text-zinc-300">
-              Memora is designed to help you turn studying into a visible system. Instead of juggling notes, timers, and progress in separate places, the app keeps your revision flow in one workspace so each step feeds the next.
-            </p>
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
-              {[
-                ['Track', 'Capture topics, attachments, and daily tasks in one place.'],
-                ['Plan', 'Use MemScore, deadlines, and revision history to shape the next session.'],
-                ['Improve', 'Review analytics and journals to adjust the plan based on real outcomes.'],
-              ].map(([label, text]) => (
-                <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                  <p className="text-sm font-semibold text-white">{label}</p>
-                  <p className="mt-2 text-sm leading-6 text-zinc-400">{text}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section id="core-modules" className="scroll-mt-28 border-t border-white/10 py-8">
-            <h2 className="text-2xl font-semibold tracking-tight text-white">Core modules</h2>
-            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {quickCards.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <div key={item.title} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:bg-white/[0.045]">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/10 text-blue-200 ring-1 ring-blue-400/15">
-                        <Icon className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-base font-semibold text-white">{item.title}</h3>
-                        <p className="mt-1 text-sm leading-6 text-zinc-400">{item.text}</p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section id="memscore" className="scroll-mt-28 border-t border-white/10 py-8">
-            <h2 className="text-2xl font-semibold tracking-tight text-white">MemScore</h2>
-            <div className="mt-4 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.04] to-white/[0.02] p-5">
-                <p className="text-base leading-7 text-zinc-300">
-                  MemScore is the baseline signal Memora uses to adapt review intensity. It is not just a score card; it is the piece that helps the app decide whether to keep a topic close, move it later, or surface it again after a weak recall.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2 text-xs text-zinc-300">
-                  {['Recall strength', 'Review spacing', 'Weak-zone focus', 'Session feedback'].map((chip) => (
-                    <span key={chip} className="rounded-full border border-white/10 bg-black/40 px-3 py-1">{chip}</span>
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-                <p className="text-sm font-semibold text-white">Recommended flow</p>
-                <ol className="mt-4 space-y-3 text-sm leading-6 text-zinc-400">
-                  <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-300" />Complete the evaluation once.</li>
-                  <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-300" />Use the result to seed the first revision plan.</li>
-                  <li className="flex gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-300" />Check analytics after a few sessions and adjust.</li>
-                </ol>
-              </div>
-            </div>
-          </section>
-
-          <section id="workflow" className="scroll-mt-28 border-t border-white/10 py-8">
-            <h2 className="text-2xl font-semibold tracking-tight text-white">How the workflow fits together</h2>
-            <div className="mt-5 grid gap-4 lg:grid-cols-4">
-              {[
-                { step: '1', title: 'Add a topic', text: 'Create the subject and connect resources or deadlines.' },
-                { step: '2', title: 'Review with focus', text: 'Run a concise session instead of drifting across unrelated material.' },
-                { step: '3', title: 'Log what happened', text: 'Capture reflection in the journal while the session is fresh.' },
-                { step: '4', title: 'Adjust the plan', text: 'Use analytics and MemScore to guide the next pass.' },
-              ].map((item) => (
-                <div key={item.step} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-sm font-semibold text-black">
-                      {item.step}
-                    </div>
-                    <h3 className="text-base font-semibold text-white">{item.title}</h3>
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-zinc-400">{item.text}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section id="module-grid" className="scroll-mt-28 border-t border-white/10 py-8">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold tracking-tight text-white">Module reference</h2>
-                <p className="mt-2 text-sm text-zinc-400">A compact map of the main Memora modules and what each one is for.</p>
-              </div>
-              <p className="text-sm text-zinc-500">{filteredCards.length} modules shown</p>
-            </div>
-
-            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {filteredCards.map((card) => {
-                const Icon = card.icon;
-                return (
-                  <div key={card.title} id={card.id} className="scroll-mt-28 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
-                    <div className={`rounded-2xl bg-gradient-to-br ${card.accent} p-4 ring-1 ring-white/5`}>
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-black/40 text-white ring-1 ring-white/10">
-                          <Icon className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <h3 className="text-base font-semibold text-white">{card.title}</h3>
-                          <p className="text-sm text-zinc-300">{card.description}</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {card.points.map((point) => (
-                        <span key={point} className="rounded-full border border-white/10 bg-black/40 px-3 py-1 text-xs text-zinc-300">
-                          {point}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section id="tips" className="scroll-mt-28 border-t border-white/10 py-8">
-            <h2 className="text-2xl font-semibold tracking-tight text-white">Quick tips</h2>
-            <div className="mt-4 grid gap-4 lg:grid-cols-2">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-                <p className="text-sm font-semibold text-white">Keep the plan realistic</p>
-                <p className="mt-2 text-sm leading-6 text-zinc-400">
-                  Limit the daily queue to the topics you can actually finish so the schedule stays useful instead of crowded.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-                <p className="text-sm font-semibold text-white">Use journals to close the loop</p>
-                <p className="mt-2 text-sm leading-6 text-zinc-400">
-                  Small reflection notes after a session make the next revision pass easier to plan and more honest to evaluate.
-                </p>
-              </div>
-            </div>
-          </section>
+        <main className="h-full px-8 py-8 sm:px-10 lg:px-14 lg:py-10">
+          <div className="h-full max-w-4xl mx-auto overflow-y-auto pb-20">
+            <Routes>
+              <Route index element={<DocShellContent docsPages={docsPages} />} />
+              <Route path=":docId" element={<DocShellContent docsPages={docsPages} />} />
+            </Routes>
+          </div>
         </main>
 
-        <aside className="hidden border-l border-white/10 px-5 py-8 xl:block">
-          <div className="sticky top-24 space-y-6">
-            <div>
-              <p className="text-sm font-semibold text-white">On this page</p>
-              <div className="mt-4 space-y-2 text-sm">
-                {tocItems.map((item) => (
-                  <a key={item.id} href={`#${item.id}`} className="block rounded-lg px-3 py-2 text-zinc-400 transition-colors hover:bg-white/[0.04] hover:text-zinc-100">
-                    {item.label}
-                  </a>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-zinc-300">
-              <div className="flex items-center gap-2 text-white">
-                <Clock3 className="h-4 w-4 text-cyan-300" />
-                <p className="font-semibold">Next step</p>
-              </div>
-              <p className="mt-2 leading-6 text-zinc-400">
-                Start with Dashboard, then move into Topics and Journal to see the loop in action.
-              </p>
-              <Link
-                to="/dashboard"
-                className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-cyan-200 transition-colors hover:text-cyan-100"
-              >
-                Open dashboard <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
-          </div>
+        <aside className="hidden h-full border-l border-white/6 px-10 py-8 xl:block overflow-y-auto">
+          <DocSidebar />
         </aside>
       </div>
+
+      <DocsFooter />
+
     </div>
   );
 };
+
+function DocsFooter() {
+  return (
+    <footer className="docs-footer mt-12 border-t border-white/6 bg-black text-slate-300">
+      <div className="mx-auto max-w-[1600px] px-6 py-10 lg:px-10">
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <h3 className="text-white font-semibold mb-2">Memora</h3>
+            <p className="text-sm text-slate-400">Lightweight, focused study tools to help you remember more with less friction.</p>
+          </div>
+
+          <div>
+            <h4 className="text-white font-semibold mb-2">Product</h4>
+            <ul className="space-y-1 text-sm">
+              <li><Link to="/docs" className="text-slate-400 hover:text-white">Docs</Link></li>
+              <li><Link to="/showcase" className="text-slate-400 hover:text-white">Showcase</Link></li>
+              <li><Link to="/blog" className="text-slate-400 hover:text-white">Blog</Link></li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-white font-semibold mb-2">Resources</h4>
+            <ul className="space-y-1 text-sm">
+              <li><a href="/templates" className="text-slate-400 hover:text-white">Templates</a></li>
+              <li><a href="/enterprise" className="text-slate-400 hover:text-white">Enterprise</a></li>
+              <li><a href="/contact" className="text-slate-400 hover:text-white">Contact</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-white font-semibold mb-2">Legal</h4>
+            <ul className="space-y-1 text-sm">
+              <li><a href="/terms" className="text-slate-400 hover:text-white">Terms</a></li>
+              <li><a href="/privacy" className="text-slate-400 hover:text-white">Privacy</a></li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="mt-8 border-t border-white/6 pt-6 text-sm text-slate-500">
+          © {new Date().getFullYear()} Memora — built for remembering. All rights reserved.
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+function DocShellContent({ docsPages }) {
+  const { docId } = useParams();
+  const activeId = docId || 'overview';
+  const page = docsPages[activeId] || docsPages.overview;
+  const pageToc = page.links || [];
+  const isOverview = activeId === 'overview';
+
+  return (
+    <>
+      <div className="breadcrumb">Next.js Docs &nbsp;›&nbsp; Memora Docs &nbsp;›&nbsp; {page.title}</div>
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <div />
+        <div>
+          <button className="copy-page">Copy page</button>
+        </div>
+      </div>
+
+      {isOverview ? (
+        <section className="scroll-mt-28 max-w-4xl pb-8">
+          <p className="text-sm font-medium text-slate-300">Memora documentation</p>
+          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-white sm:text-5xl">Memora docs</h1>
+          <p className="mt-5 max-w-3xl text-lg leading-8 text-white/90">Choose a page from the sidebar. The docs are split into distinct routes so the flow behaves more like Next.js and less like a single oversized page.</p>
+          <div className="mt-8 grid gap-4 sm:grid-cols-2">
+            {page.sections.map((section) => (
+              <div key={section.title} className="rounded-md border border-white/6 bg-white/5 p-4">
+                <div className="text-sm font-semibold text-white">{section.title}</div>
+                <p className="mt-2 text-sm leading-7 text-white/90">{section.body}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* horizontal rule and extra content blocks like Next.js docs */}
+          <hr className="my-8 border-white/6" />
+          <div className="prose max-w-3xl space-y-6">
+            <p className="text-white/90">Memora is designed to be lightweight and focused: short docs, clear flows, and quick links to the feature pages. Below are a few short paragraphs demonstrating content blocks separated by subtle rules, similar to Next.js documentation.</p>
+            <p className="text-white/80">Use topics to collect small, reviewable pieces of information. Attach DocTags to keep source material close to the topic so you do not lose context during review.</p>
+            <hr className="border-white/6" />
+            <p className="text-white/80">Write short journal notes after sessions to close the loop between practice and planning. Analytics then surfaces trends so you can adjust your plan with confidence.</p>
+          </div>
+
+          <div className="mt-8 space-y-3">
+            {page.links.map((link) => (
+              <Link key={link.to} to={link.to} className="block text-sm text-slate-400 hover:text-white">{link.label}</Link>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <article className="py-8">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-semibold text-white">{page.title}</h1>
+              <p className="mt-2 max-w-3xl text-white/90">{page.summary}</p>
+            </div>
+            <div className="hidden items-center text-white/70 sm:flex">{page.icon ? React.createElement(page.icon, { className: 'h-8 w-8' }) : null}</div>
+          </div>
+
+          <div className="mt-6 space-y-8">
+            {page.sections.map((section, idx) => (
+              <section key={section.title} className="scroll-mt-28">
+                <h2 className="text-2xl font-semibold tracking-tight text-white">{section.title}</h2>
+                <p className="mt-3 max-w-4xl text-sm leading-7 text-white/90">{section.body}</p>
+                {/* insert a subtle horizontal rule between major sections */}
+                {idx < page.sections.length - 1 ? <hr className="my-8 border-white/6" /> : null}
+              </section>
+            ))}
+          </div>
+
+          <div className="mt-8 flex flex-wrap gap-3">
+            {page.links.map((link) => (
+              <Link key={link.to} to={link.to} className="text-sm text-slate-400 hover:text-white">{link.label}</Link>
+            ))}
+          </div>
+        </article>
+      )}
+    </>
+  );
+}
+
+function DocSidebar() {
+  const { docId } = useParams();
+  const activeId = docId || 'overview';
+  return (
+    <div className="flex h-full flex-col justify-between gap-8">
+      <div>
+        <p className="text-sm font-medium text-slate-400">On this page</p>
+        <div className="mt-4 space-y-2 toc">
+          {(activeId === 'overview' ? tocItems.slice(0, 3) : tocItems).map((item) => (
+            <a key={item.id} href={`#${item.id}`} className="block rounded-md px-3 py-1.5 text-sm text-slate-400 transition-colors hover:bg-white/5 hover:text-white">{item.label}</a>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div className="pt-4">
+          <p className="text-sm font-medium text-slate-400">Quick links</p>
+          <div className="mt-3 space-y-2 text-sm">
+            <Link to="/dashboard" className="block text-slate-400 transition-colors hover:text-white">Open Dashboard</Link>
+            <Link to="/topics" className="block text-slate-400 transition-colors hover:text-white">Open Topics</Link>
+            <Link to="/journal" className="block text-slate-400 transition-colors hover:text-white">Open Journal</Link>
+          </div>
+        </div>
+
+        <div className="pt-4">
+          <p className="text-sm font-medium text-slate-400">Next step</p>
+          <p className="mt-2 text-sm leading-7 text-white/90">Start with the overview, then open each page directly from the sidebar to follow the same docs flow as Next.js.</p>
+          <Link to="/dashboard" className="mt-3 inline-flex items-center gap-2 text-sm text-slate-400 transition-colors hover:text-white">Go to dashboard <ArrowRight className="h-4 w-4" /></Link>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default Docs;

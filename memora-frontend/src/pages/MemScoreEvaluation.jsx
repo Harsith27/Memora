@@ -603,16 +603,16 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
     setSaveError('');
 
     try {
-      // Save results to backend
+      // Save results to backend (this handles state sync with verifyToken)
       await saveEvaluationResults(testResults);
 
       // Log to journal
       journalService.logMemScoreEvaluation(testResults);
 
-      // Wait a bit to ensure state is updated before navigation
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 500);
+      // Wait to ensure all state updates (including backend refresh) have settled
+      // before navigating to avoid race conditions
+      await new Promise(resolve => setTimeout(resolve, 800));
+      navigate('/dashboard');
     } catch (error) {
       console.error('Failed to save evaluation results:', error);
       setSaveError(error.message || 'Failed to save your MemScore result. Please try again.');
@@ -711,6 +711,7 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
         </div>
 
         <motion.button
+          type="button"
           whileHover={{ scale: 1.03, y: -1 }}
           whileTap={{ scale: 0.97 }}
           onClick={() => {
@@ -824,11 +825,19 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
                 </div>
 
                 <motion.button
+                  type="button"
                   whileHover={{ scale: 1.03, y: -1 }}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => {
                     setCurrentPhase('memory-game');
-                    setTimeout(initMemoryGame, 500);
+                    // Ensure the game is initialized immediately to avoid timing/race issues
+                    // that can make the start button appear unresponsive in some environments.
+                    try {
+                      initMemoryGame();
+                    } catch (e) {
+                      // Fallback to delayed init if immediate call fails
+                      setTimeout(initMemoryGame, 500);
+                    }
                   }}
                   className="group mx-auto flex items-center gap-2 rounded-xl border border-white/20 bg-black/60 px-8 py-3 font-medium text-indigo-200 transition-all hover:border-indigo-400/50 hover:bg-black/75"
                 >
@@ -965,11 +974,16 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
                 </div>
 
                 <motion.button
+                  type="button"
                   whileHover={{ scale: 1.03, y: -1 }}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => {
                     setCurrentPhase('tile-recall');
-                    setTimeout(initTileRecall, 500);
+                    try {
+                      initTileRecall();
+                    } catch (e) {
+                      setTimeout(initTileRecall, 500);
+                    }
                   }}
                   className="group mx-auto flex items-center gap-2 rounded-xl border border-white/20 bg-black/60 px-8 py-3 font-medium text-emerald-200 transition-all hover:border-emerald-400/50 hover:bg-black/75"
                 >
@@ -1142,11 +1156,16 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
                 </div>
 
                 <motion.button
+                  type="button"
                   whileHover={{ scale: 1.03, y: -1 }}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => {
                     setCurrentPhase('speed-test');
-                    setTimeout(initSpeedTest, 500);
+                    try {
+                      initSpeedTest();
+                    } catch (e) {
+                      setTimeout(initSpeedTest, 500);
+                    }
                   }}
                   className="group mx-auto flex items-center gap-2 rounded-xl border border-white/20 bg-black/60 px-8 py-3 font-medium text-amber-200 transition-all hover:border-amber-400/50 hover:bg-black/75"
                 >

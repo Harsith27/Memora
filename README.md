@@ -8,8 +8,8 @@ Memora is a sophisticated full-stack learning platform that combines cognitive a
 
 ### 🎯 Cognitive Assessment System (MemScore)
 - **Memory Game**: Card matching with 10-second preview and emoji-based challenges
-- **Tile Recall**: Progressive spatial memory test with 5 rounds (3→5→7→9→11 tiles)
-- **Processing Speed**: 30-second rapid math challenge with auto-focus input
+- **Tile Recall**: Progressive spatial memory test with 5 rounds (3→4→5→6→7 tiles)
+- **Speed Test**: 30-second rapid math challenge with auto-focus input
 - **Intelligent Scoring**: Advanced algorithms that generate personalized MemScore (0-10)
 - **Performance Analytics**: Detailed breakdown of cognitive strengths and areas for improvement
 

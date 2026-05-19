@@ -377,6 +377,12 @@ const Dashboard = () => {
   const [taskSpotlightId, setTaskSpotlightId] = useState(null);
   const [isTaskSpotlightActive, setIsTaskSpotlightActive] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+  };
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const saved = localStorage.getItem('sidebarCollapsed');
     return saved ? JSON.parse(saved) : false;

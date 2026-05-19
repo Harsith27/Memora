@@ -167,6 +167,168 @@ html, body {
   @apply border-l-4 border-blue-500 pl-4 italic text-gray-400 my-4;
 }
 
+/* Docs-specific overrides: prefer subtle white borders and no blue highlights */
+.docs-root .border {
+  border-color: rgba(255,255,255,0.06) !important;
+}
+.docs-root .border-l-4 {
+  border-left-color: rgba(255,255,255,0.06) !important;
+}
+.docs-root .text-blue-400,
+.docs-root .text-blue-300,
+.docs-root .hover\:text-blue-400,
+.docs-root .hover\:text-blue-300 {
+  color: #60a5fa !important;
+}
+.docs-root .bg-blue-500\/10,
+.docs-root .bg-blue-300\/10,
+.docs-root .bg-blue-600\/20,
+.docs-root .border-blue-400\/20 {
+  background-color: transparent !important;
+  border-color: rgba(255,255,255,0.06) !important;
+}
+
+/* Docs typography and layout to match Next.js docs feel */
+.docs-root {
+  --docs-link: #3EA8FF;
+  --docs-hr: rgba(255,255,255,0.06);
+}
+.docs-root body, .docs-root {
+  color: #ffffff;
+}
+.docs-root .docs-header {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+.docs-root .docs-search {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+}
+.docs-header {
+  background: linear-gradient(180deg, rgba(0,0,0,0.95), rgba(0,0,0,0.95));
+}
+.docs-header .top-nav a,
+.docs-header .top-nav .active {
+  text-decoration: none;
+}
+.docs-header .top-nav a {
+  color: rgba(203,213,225,0.8);
+}
+.docs-header .top-nav a:hover {
+  color: #ffffff;
+}
+.docs-header .top-nav .active {
+  color: #60a5fa;
+  font-weight: 600;
+}
+.docs-header .docs-search input::placeholder {
+  color: rgba(148,163,184,0.6);
+}
+.docs-header button {
+  outline: none;
+}
+.docs-header .ctrl-pill {
+  border: 1px solid rgba(255,255,255,0.06);
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: rgba(203,213,225,0.9);
+}
+
+/* Left sidebar highlight cards */
+.left-nav .rounded-md.border {
+  border-color: rgba(255,255,255,0.06);
+}
+.left-nav .space-y-3 > div {
+  transition: background-color .12s ease, transform .08s ease;
+}
+.left-nav .space-y-3 > div:hover {
+  background: rgba(255,255,255,0.02);
+  transform: translateY(-1px);
+}
+
+/* Slightly wider header spacing */
+.docs-header .top-nav {
+  gap: 18px;
+}
+.docs-header .top-nav a { padding-left: 2px; padding-right: 2px }
+.docs-root main h1 {
+  font-size: 40px;
+  line-height: 1.05;
+  font-weight: 700;
+  margin: 0 0 12px 0;
+  color: #ffffff;
+}
+.docs-root main h2 {
+  font-size: 22px;
+  margin-top: 28px;
+  margin-bottom: 12px;
+  font-weight: 700;
+  color: #ffffff;
+}
+.docs-root main h3 {
+  color: #ffffff;
+}
+.docs-root main p, .docs-root main li {
+  color: #ffffff;
+  opacity: 0.9;
+}
+.docs-root a {
+  color: var(--docs-link);
+}
+.docs-root .toc a {
+  color: #94a3b8;
+}
+.docs-root .toc a:hover {
+  color: #ffffff;
+}
+.docs-root hr {
+  border-color: var(--docs-hr);
+}
+
+/* refine docs horizontal rules and footer */
+.docs-root hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+  margin: 2rem 0;
+}
+.docs-root .prose p { color: rgba(255,255,255,0.9); }
+
+.docs-root .docs-footer {
+  background: #000; /* explicitly black */
+  color: #94a3b8;
+}
+.docs-root .docs-footer a { color: #94a3b8; }
+.docs-root .docs-footer a:hover { color: #ffffff; }
+.docs-root .docs-footer h3, .docs-root .docs-footer h4 { color: #ffffff; }
+.docs-root .copy-page {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+.docs-root .breadcrumb {
+  color: #94a3b8;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.docs-root .nav-group-title {
+  color: #60a5fa;
+  letter-spacing: .12em;
+  font-size: 11px;
+}
+.docs-root .left-nav a {
+  color: #94a3b8;
+  display: block;
+  padding: 6px 0;
+}
+.docs-root .left-nav a.active {
+  color: var(--docs-link);
+  font-weight: 600;
+}
+.docs-root .left-nav a:not(.active):hover {
+  color: #ffffff;
+}
+
 .memora-datepicker {
   background-color: #050608 !important;
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
