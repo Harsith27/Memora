@@ -45,21 +45,15 @@ import DashboardFooter from '../components/DashboardFooter';
 import Modal from '../components/Modal';
 
 const PASTEL_COLORS = [
-  '#3A3F45',
-  '#4C2F36',
-  '#4B3727',
-  '#4D4A27',
-  '#2D4E38',
-  '#2F4E55',
-  '#3F4A73',
-  '#4D3D68',
-  '#5B3A44',
-  '#3B5059',
-  '#4C4738',
-  '#39434B',
-  '#3F3A56',
-  '#4A4047',
-  '#2F4641'
+  '#AECBFA',
+  '#D7AEFB',
+  '#FDCFE8',
+  '#FEEFC3',
+  '#CCFF90',
+  '#A7FFEB',
+  '#FAD2CF',
+  '#C8E6C9',
+  '#FFF9C4'
 ];
 
 const BRIGHT_MINDMAP_COLORS = [
