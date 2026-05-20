@@ -22,6 +22,7 @@ import {
   Play,
   Settings2,
   Sparkles,
+  Star,
   Trash2,
   X
 } from 'lucide-react';
@@ -39,6 +40,7 @@ const NAV_ITEMS = [
   { icon: BookOpen, label: 'Journal', path: '/journal' },
   { icon: GitBranch, label: 'Mindmaps', path: '/mindmaps' },
   { icon: Mic, label: 'Listener', path: '/listener' },
+  { icon: Star, label: 'Flashcards', path: '/flashcards' },
   { icon: Globe, label: 'Graph Mode', path: '/graph' },
   { icon: BarChart3, label: 'Analytics', path: '/analytics' },
   { icon: Award, label: 'Achievements', path: '/achievements' }
