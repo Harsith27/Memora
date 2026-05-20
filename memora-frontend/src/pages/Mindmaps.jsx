@@ -2828,17 +2828,18 @@ const Mindmaps = () => {
       // ignore if not in mobile context
     }
 
-    if (!activeMap) return;
-
     const paletteColors = getMindmapPaletteColors(resolvedPalette);
-    updateActiveMap((map) => ({
+
+    setMaps((prevMaps) => prevMaps.map((map) => ({
       ...map,
-      nodes: map.nodes.map((node, index) => (
-        selectedNodeIds.length > 0
-          ? (selectedNodeIds.includes(node.id) ? { ...node, color: paletteColors[index % paletteColors.length] } : node)
-          : (node.id === selectedNodeId ? { ...node, color: paletteColors[index % paletteColors.length] } : node)
-      ))
-    }));
+      nodes: Array.isArray(map.nodes)
+        ? map.nodes.map((node, index) => (
+          node.nodeKind === 'topic'
+            ? { ...node, color: paletteColors[index % paletteColors.length] }
+            : node
+        ))
+        : map.nodes
+    })));
   };
 
   useEffect(() => {
