@@ -132,6 +132,7 @@ function RoutePrefetcher() {
         loadAnalytics();
         loadMindmaps();
         loadListener();
+        loadFlashcards();
         loadFocusMode();
         loadAchievements();
       } else {
@@ -254,6 +255,7 @@ const SIDEBAR_LAYOUT_PATHS = new Set([
   '/analytics',
   '/mindmaps',
   '/listener',
+  '/flashcards',
   '/achievements'
 ]);
 
@@ -338,7 +340,7 @@ function GlobalProfileDock() {
 
   return (
     <div
-      className={`fixed left-0 bottom-0 z-30 ${sidebarCollapsed ? 'w-16' : 'w-64'} max-h-[calc(100vh-80px)] pointer-events-none transition-[width,transform] duration-300`}
+      className={`fixed left-0 bottom-0 z-50 ${sidebarCollapsed ? 'w-16' : 'w-64'} max-h-[calc(100vh-80px)] pointer-events-none transition-[width,transform] duration-300`}
     >
       <div className="flex h-full flex-col justify-end p-3 sm:p-4 pointer-events-none overflow-y-auto">
         <div className="pointer-events-auto w-full">

@@ -803,11 +803,11 @@ router.post('/generate-ai', async (req, res) => {
     });
   }
 
-  const aiProvider = String(process.env.AI_PROVIDER || 'none').trim().toLowerCase();
+  const aiProvider = String(process.env.AI_PROVIDER || '').trim().toLowerCase();
   const hasGroqKey = Boolean(clampText(process.env.GROQ_API_KEY, 500));
   const hasGeminiKey = Boolean(clampText(process.env.GEMINI_API_KEY, 500));
 
-  const shouldTryGroq = aiProvider === 'groq' || aiProvider === '';
+  const shouldTryGroq = hasGroqKey && (aiProvider === '' || aiProvider === 'groq');
 
   if (shouldTryGroq && hasGroqKey) {
     try {

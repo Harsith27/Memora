@@ -40,6 +40,7 @@ import Logo from '../components/Logo';
 import Toast from '../components/Toast';
 import apiService from '../services/api';
 import journalService from '../services/journalService';
+import { getSidebarNavItems } from '../constants/sidebarNavigation';
 import ShadcnSelect from '../components/ShadcnSelect';
 import DashboardGlyph from '../components/DashboardGlyph';
 import DashboardFooter from '../components/DashboardFooter';
@@ -2788,6 +2789,9 @@ const Mindmaps = () => {
     if (!activeMap) return null;
     return pickRadialCenters(activeMap.nodes, activeMap.edges)[0] || activeMap.nodes[0]?.id || null;
   }, [activeMap]);
+  const activeMapNodeById = useMemo(() => {
+    return new Map((Array.isArray(activeMap?.nodes) ? activeMap.nodes : []).map((node) => [node.id, node]));
+  }, [activeMap]);
   const shouldRenderBottomToolbar = Boolean(activeMap);
   const shouldHideLayoutChrome = !isPhoneViewport && isPresentationMode;
 
@@ -4981,18 +4985,7 @@ const Mindmaps = () => {
     }
   };
 
-  const sidebarItems = [
-    { icon: DashboardGlyph, label: 'Dashboard', active: location.pathname === '/dashboard', path: '/dashboard' },
-    { icon: FileText, label: 'DocTags', active: location.pathname === '/doctags', path: '/doctags' },
-    { icon: Calendar, label: 'Chronicle', active: location.pathname === '/chronicle', path: '/chronicle' },
-    { icon: BookOpen, label: 'Journal', active: location.pathname === '/journal', path: '/journal' },
-    { icon: GitBranch, label: 'Mindmaps', active: location.pathname === '/mindmaps', path: '/mindmaps' },
-    { icon: Mic, label: 'Listener', active: location.pathname === '/listener', path: '/listener' },
-    { icon: Globe, label: 'Graph Mode', active: location.pathname === '/graph', path: '/graph' },
-    { icon: BarChart3, label: 'Analytics', active: location.pathname === '/analytics', path: '/analytics' },
-    { icon: Star, label: 'Flashcards', active: location.pathname === '/flashcards', path: '/flashcards' },
-    { icon: Award, label: 'Achievements', active: location.pathname === '/achievements', path: '/achievements' }
-  ];
+  const sidebarItems = getSidebarNavItems(location.pathname);
 
   if (isLoading) {
     return (
@@ -5409,11 +5402,35 @@ const Mindmaps = () => {
                         return null;
                       }
 
-                      const source = activeMap.nodes.find((node) => node.id === edge.source);
-                      const target = activeMap.nodes.find((node) => node.id === edge.target);
+                      const source = activeMapNodeById.get(edge.source);
+                      const target = activeMapNodeById.get(edge.target);
                       if (!source || !target) return null;
 
-                      const edgePath = getCurvedEdgePath(source, target);
+                      const sourceRect = {
+                        left: source.x,
+                        top: source.y,
+                        right: source.x + source.width,
+                        bottom: source.y + estimateRenderedNodeHeight(source)
+                      };
+                      const targetRect = {
+                        left: target.x,
+                        top: target.y,
+                        right: target.x + target.width,
+                        bottom: target.y + estimateRenderedNodeHeight(target)
+                      };
+                      const sourceHandleSide = getClosestHandleSide(
+                        target.x + target.width / 2,
+                        target.y + estimateRenderedNodeHeight(target) / 2,
+                        sourceRect
+                      );
+                      const targetHandleSide = getClosestHandleSide(
+                        source.x + source.width / 2,
+                        source.y + estimateRenderedNodeHeight(source) / 2,
+                        targetRect
+                      );
+                      const sourcePoint = getHandlePosition(source, sourceHandleSide);
+                      const targetPoint = getHandlePosition(target, targetHandleSide);
+                      const edgePath = getCurvedEdgePath(sourcePoint, targetPoint);
                       const isEdgeSelected = selectedEdgeId === edge.id;
                       const isEdgeHovered = hoveredEdgeId === edge.id;
                       const isEdgeActive = isEdgeSelected || isEdgeHovered;
@@ -5561,12 +5578,12 @@ const Mindmaps = () => {
                           top: node.y,
                           width: node.width,
                           minHeight: estimateRenderedNodeHeight(node),
-                          backgroundColor: isCenterNode ? 'transparent' : (isInlineNode ? 'rgba(255,255,255,0.9)' : node.color),
+                          backgroundColor: isCenterNode ? 'rgba(3,7,18,0.92)' : (isInlineNode ? 'transparent' : node.color),
                           color: nodeFontColor,
-                          borderColor: isCenterNode ? 'transparent' : getNodeBorderColor(node.color),
-                          borderWidth: isCenterNode ? 0 : 2,
+                          borderColor: isCenterNode ? 'rgba(167,139,250,0.42)' : (isInlineNode ? 'transparent' : getNodeBorderColor(node.color)),
+                          borderWidth: isCenterNode ? 1.5 : (isInlineNode ? 0 : 2),
                           borderStyle: 'solid',
-                          boxShadow: isCenterNode ? 'none' : `0 0 0 1px ${getNodeBorderColor(node.color)}`
+                          boxShadow: isCenterNode ? '0 0 0 1px rgba(167,139,250,0.2), 0 16px 40px rgba(15,23,42,0.45)' : (isInlineNode ? 'none' : `0 0 0 1px ${getNodeBorderColor(node.color)}`)
                         }}
                         onMouseEnter={(event) => {
                           const side = getClosestHandleSide(
@@ -5647,6 +5664,9 @@ const Mindmaps = () => {
                         }}
                         title={node.note || node.label}
                       >
+                        {isCenterNode ? (
+                          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-violet-300 to-transparent opacity-90" />
+                        ) : null}
                         <div className={isCenterNode ? 'px-0 py-0' : (isInlineNode ? 'px-1.5 py-1' : (useCompactTopicLayout ? 'px-2.5 py-1.5 min-h-[42px] flex items-center justify-center text-center' : 'px-3 py-2.5'))}>
                           <p className={`leading-tight ${nodeTitleWhitespaceClass} ${isCenterNode ? 'text-3xl sm:text-4xl font-black tracking-tight' : `font-semibold text-sm ${useCompactTopicLayout ? 'text-center' : ''}`} ${isLabelNode ? 'underline decoration-violet-300/70 underline-offset-2 cursor-pointer' : ''}`} style={{ color: nodeFontColor, fontFamily: nodeFontFamily, fontWeight: isCenterNode ? 900 : 700 }}>
                             {labelText}
@@ -5672,7 +5692,7 @@ const Mindmaps = () => {
                                 <button
                                   key={`${node.id}_label_${index}`}
                                   type="button"
-                                  className="text-[10px] px-1.5 py-0.5 rounded border border-white/35 hover:border-white/60 bg-black/15 underline decoration-dotted"
+                                  className="text-[10px] px-1.5 py-0.5 rounded border border-transparent hover:border-white/20 bg-transparent hover:bg-white/5 underline decoration-dotted"
                                   style={{ color: nodeFontColor }}
                                   onMouseDown={(event) => {
                                     event.stopPropagation();
@@ -5770,7 +5790,9 @@ const Mindmaps = () => {
                         left: satellite.x,
                         top: satellite.y,
                         transform: 'translate(-50%, -50%)',
-                        textShadow: 'none'
+                        textShadow: 'none',
+                        backgroundColor: 'transparent',
+                        boxShadow: 'none'
                       }}
                       onMouseDown={(event) => {
                         event.preventDefault();

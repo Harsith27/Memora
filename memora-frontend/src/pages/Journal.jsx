@@ -13,6 +13,7 @@ import DashboardGlyph from '../components/DashboardGlyph';
 import DashboardFooter from '../components/DashboardFooter';
 import { useAuth } from '../contexts/AuthContext';
 import apiService from '../services/api';
+import { getSidebarNavItems } from '../constants/sidebarNavigation';
 import journalService from '../services/journalService';
 import { formatDateDDMMYYYY, formatDateWithWeekday, parseDateInputToIso } from '../utils/dateFormat';
 
@@ -427,18 +428,7 @@ const Journal = () => {
   const isCurrentDateToday = currentDate === getLocalDateString();
 
   // Sidebar navigation items
-  const sidebarItems = [
-    { icon: DashboardGlyph, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
-    { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
-    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
-    { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
-    { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
-    { icon: Mic, label: "Listener", active: location.pathname === "/listener", path: "/listener" },
-    { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
-    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
-    { icon: Star, label: "Flashcards", active: location.pathname === "/flashcards", path: "/flashcards" },
-    { icon: Award, label: "Achievements", active: location.pathname === "/achievements", path: "/achievements" }
-  ];
+  const sidebarItems = getSidebarNavItems(location.pathname);
 
   const switchToView = (view) => {
     const today = new Date();

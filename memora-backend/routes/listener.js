@@ -100,7 +100,7 @@ const upload = multer({
 });
 
 const callGroqTranscription = async ({ filePath, mimeType, fileName, language }) => {
-  const apiKey = process.env.GROQ_API_KEY;
+  const apiKey = String(process.env.GROQ_API_KEY || '').trim();
   if (!apiKey) {
     throw new Error('GROQ_API_KEY is missing in backend environment variables');
   }
@@ -146,7 +146,7 @@ const callGroqTranscription = async ({ filePath, mimeType, fileName, language })
 };
 
 const callGroqSummarization = async (transcript) => {
-  const apiKey = process.env.GROQ_API_KEY;
+  const apiKey = String(process.env.GROQ_API_KEY || '').trim();
   if (!apiKey) {
     throw new Error('GROQ_API_KEY is missing in backend environment variables');
   }

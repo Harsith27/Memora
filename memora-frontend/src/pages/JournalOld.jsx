@@ -13,6 +13,7 @@ import DashboardGlyph from '../components/DashboardGlyph';
 import { useAuth } from '../contexts/AuthContext';
 import apiService from '../services/api';
 import { formatDateWithWeekday } from '../utils/dateFormat';
+import { getSidebarNavItems } from '../constants/sidebarNavigation';
 
 const escapeHtml = (value = '') => {
   return value
@@ -124,13 +125,7 @@ const Journal = () => {
   };
 
   // Sidebar navigation items
-  const sidebarItems = [
-    { icon: DashboardGlyph, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
-    { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
-    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
-    { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
-    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" }
-  ];
+  const sidebarItems = getSidebarNavItems(location.pathname);
 
   // Quick actions for Journal
   const quickActions = [

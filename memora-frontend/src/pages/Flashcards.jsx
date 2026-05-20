@@ -40,19 +40,9 @@ import Logo from '../components/Logo';
 import Toast from '../components/Toast';
 import apiService from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { SIDEBAR_NAV_ITEMS } from '../constants/sidebarNavigation';
 
-const NAV_ITEMS = [
-  { icon: DashboardGlyph, label: 'Dashboard', path: '/dashboard' },
-  { icon: FileText, label: 'DocTags', path: '/doctags' },
-  { icon: Calendar, label: 'Chronicle', path: '/chronicle' },
-  { icon: BookOpen, label: 'Journal', path: '/journal' },
-  { icon: GitBranch, label: 'Mindmaps', path: '/mindmaps' },
-  { icon: Mic, label: 'Listener', path: '/listener' },
-  { icon: Globe, label: 'Graph Mode', path: '/graph' },
-  { icon: BarChart3, label: 'Analytics', path: '/analytics' },
-  { icon: Star, label: 'Flashcards', path: '/flashcards' },
-  { icon: Award, label: 'Achievements', path: '/achievements' }
-];
+const NAV_ITEMS = SIDEBAR_NAV_ITEMS;
 
 const FLOW_STEPS = [
   { id: 'collect', label: 'Collect', icon: Layers3 },

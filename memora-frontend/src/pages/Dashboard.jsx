@@ -20,6 +20,7 @@ import GraphModeView from '../components/GraphModeView';
 import GlobalSearchBar from '../components/GlobalSearchBar';
 import DashboardGlyph from '../components/DashboardGlyph';
 import logoImg from '../assets/logo.jpg';
+import { getSidebarNavItems } from '../constants/sidebarNavigation';
 import { useAuth } from '../contexts/AuthContext';
 import { useTopics } from '../hooks/useTopics';
 import apiService from '../services/api';
@@ -1620,18 +1621,7 @@ const Dashboard = () => {
   }
 
   // Sidebar navigation items
-  const sidebarItems = [
-    { icon: DashboardGlyph, label: "Dashboard", active: location.pathname === "/dashboard", path: "/dashboard" },
-    { icon: FileText, label: "DocTags", active: location.pathname === "/doctags", path: "/doctags" },
-    { icon: Calendar, label: "Chronicle", active: location.pathname === "/chronicle", path: "/chronicle" },
-    { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
-    { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
-    { icon: Mic, label: "Listener", active: location.pathname === "/listener", path: "/listener" },
-    { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
-    { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
-    { icon: Star, label: "Flashcards", active: location.pathname === "/flashcards", path: "/flashcards" },
-    { icon: Award, label: "Achievements", active: location.pathname === "/achievements", path: "/achievements" }
-  ];
+  const sidebarItems = getSidebarNavItems(location.pathname);
   const isGraphMode = location.pathname === '/graph';
 
   const quickActions = [
