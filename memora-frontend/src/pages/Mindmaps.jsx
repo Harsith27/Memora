@@ -1701,7 +1701,6 @@ const Mindmaps = () => {
   const [isLabelPanelEditing, setIsLabelPanelEditing] = useState(false);
   const [spotlightMapId, setSpotlightMapId] = useState(null);
   const [isMapSpotlightActive, setIsMapSpotlightActive] = useState(false);
-  const [canvasGlowPoint, setCanvasGlowPoint] = useState(null);
 
   const viewportRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -4583,9 +4582,20 @@ const Mindmaps = () => {
     return `M ${fromX} ${fromY} C ${fromX} ${fromY + curve * direction}, ${toX} ${toY - curve * direction}, ${toX} ${toY}`;
   };
 
+  const prevActiveMapIdRef = useRef(null);
   useLayoutEffect(() => {
-    if (!activeMap || isPhoneViewport) return;
-    queueCenteredFitView(0, activeMap);
+    if (!activeMap || isPhoneViewport) {
+      prevActiveMapIdRef.current = activeMapId;
+      return;
+    }
+
+    // Only auto-center when the active map ID changes (user opened a different map),
+    // not when the map object identity changes due to small edits (like color or links).
+    if (prevActiveMapIdRef.current !== activeMapId) {
+      queueCenteredFitView(0, activeMap);
+    }
+
+    prevActiveMapIdRef.current = activeMapId;
   }, [activeMap, activeMapId, isPhoneViewport, queueCenteredFitView]);
 
   const togglePresentationMode = async () => {
@@ -5273,21 +5283,13 @@ const Mindmaps = () => {
                 onPointerMove={(event) => {
                   const target = event.target;
                   if (target instanceof Element && target.closest('[data-node="true"]')) {
-                    setCanvasGlowPoint(null);
                     return;
                   }
 
-                  const rect = viewportRef.current?.getBoundingClientRect();
-                  if (!rect) return;
-
-                  setCanvasGlowPoint({
-                    x: event.clientX - rect.left,
-                    y: event.clientY - rect.top
-                  });
+                  // No canvas glow - intentionally left blank to avoid visual noise
                 }}
                 onPointerLeave={() => {
                   isPointerOverCanvasRef.current = false;
-                  setCanvasGlowPoint(null);
                 }}
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
@@ -5356,21 +5358,7 @@ const Mindmaps = () => {
                 }}
               >
                 <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.22)_1px,transparent_1.4px)] [background-size:20px_20px] opacity-50" />
-                {canvasGlowPoint ? (
-                  <div
-                    className="pointer-events-none absolute z-[1] rounded-full overflow-hidden"
-                    style={{
-                      left: canvasGlowPoint.x - 36,
-                      top: canvasGlowPoint.y - 36,
-                      width: 72,
-                      height: 72,
-                      backgroundColor: 'rgba(255,255,255,0.04)',
-                      backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.92) 1px, transparent 1.6px)',
-                      backgroundSize: '20px 20px',
-                      opacity: 0.72
-                    }}
-                  />
-                ) : null}
+                {/* canvas glow disabled */}
 
                 <div
                   className="absolute inset-0 z-[2]"
@@ -5517,7 +5505,7 @@ const Mindmaps = () => {
                     const isCenterNode = node.id === centerNodeId;
                     const isLabelNode = node.nodeKind === 'label';
                     const useCompactTopicLayout = !isInlineNode && !isCenterNode && !isMinimalView && estimateRenderedNodeHeight(node) <= 42;
-                    const nodeFontColor = '#000000';
+                    const nodeFontColor = isCenterNode ? '#ffffff' : '#000000';
                     const nodeFontFamily = getNodeFontFamily(node);
                     const labelText = isMinimalView ? String(node.label || '').split('\n')[0] : String(node.label || '');
                     const hasExplicitLineBreak = !isMinimalView && isInlineNode && labelText.includes('\n');
