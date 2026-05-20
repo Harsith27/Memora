@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FRONTEND_DIR="$ROOT_DIR/memora-frontend"
-ALIAS_URL="${1:-memoraapp-next.vercel.app}"
+ALIAS_URL="${1:-memoraapp.vercel.app}"
 BACKEND_HEALTH_URL="${2:-https://memora-api-04021453.azurewebsites.net/api/health}"
 DEPLOY_TARGET="${3:-preview}"
 
@@ -41,10 +41,6 @@ verify_url_200() {
 
 require_command vercel
 require_command curl
-
-if [[ "$ALIAS_URL" == "memoraapp.vercel.app" ]]; then
-  fail "Deprecated alias memoraapp.vercel.app is blocked. Use memoraapp-next.vercel.app for latest deployment."
-fi
 
 cd "$FRONTEND_DIR"
 
