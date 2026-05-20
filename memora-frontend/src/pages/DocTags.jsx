@@ -192,6 +192,7 @@ const DocTags = () => {
     { icon: BookOpen, label: "Journal", active: location.pathname === "/journal", path: "/journal" },
     { icon: GitBranch, label: "Mindmaps", active: location.pathname === "/mindmaps", path: "/mindmaps" },
     { icon: Mic, label: "Listener", active: location.pathname === "/listener", path: "/listener" },
+    { icon: Star, label: "Flashcards", active: location.pathname === "/flashcards", path: "/flashcards" },
     { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
     { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
     { icon: Award, label: "Achievements", active: location.pathname === "/achievements", path: "/achievements" }

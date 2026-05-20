@@ -4,6 +4,7 @@ import {
   Calendar, BarChart3, Settings, FileText, BookOpen,
   Plus, Flame, Zap, ArrowLeft, CheckCircle, Target, Clock, Edit3, Trash2, SkipForward, Loader, GitBranch,
   Twitter, Github, Mail, Globe, Heart, Linkedin, Instagram, Menu, PanelLeftClose, PanelLeft, CheckSquare,
+  Star,
   Save, X, ChevronLeft, ChevronRight, Maximize2, Minimize2, Play, Square, Award, Mic
 } from 'lucide-react';
 import Logo from '../components/Logo';
@@ -1628,6 +1629,7 @@ const Dashboard = () => {
     { icon: Mic, label: "Listener", active: location.pathname === "/listener", path: "/listener" },
     { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
     { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
+    { icon: Star, label: "Flashcards", active: location.pathname === "/flashcards", path: "/flashcards" },
     { icon: Award, label: "Achievements", active: location.pathname === "/achievements", path: "/achievements" }
   ];
   const isGraphMode = location.pathname === '/graph';

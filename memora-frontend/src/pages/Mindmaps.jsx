@@ -30,6 +30,7 @@ import {
   Type,
   Info,
   Award,
+  Star,
   Map as MapIcon,
   Mic,
   X
@@ -3106,6 +3107,7 @@ const Mindmaps = () => {
         }
       }
 
+      // Only refocus (fitView) on double-click/tap to avoid accidental single-tap refocus.
       if (
         emptyCanvasPointerRef.current.active
         && !emptyCanvasPointerRef.current.moved
@@ -3115,7 +3117,13 @@ const Mindmaps = () => {
         && Array.isArray(activeMap.nodes)
         && activeMap.nodes.length > 0
       ) {
-        fitView();
+        const now = Date.now();
+        const last = emptyCanvasPointerRef.current.lastClickAt || 0;
+        emptyCanvasPointerRef.current.lastClickAt = now;
+        // 350ms double-click/tap window
+        if (now - last <= 350) {
+          fitView();
+        }
       }
 
       emptyCanvasPointerRef.current = { active: false, startX: 0, startY: 0, moved: false };
@@ -4982,6 +4990,7 @@ const Mindmaps = () => {
     { icon: Mic, label: 'Listener', active: location.pathname === '/listener', path: '/listener' },
     { icon: Globe, label: 'Graph Mode', active: location.pathname === '/graph', path: '/graph' },
     { icon: BarChart3, label: 'Analytics', active: location.pathname === '/analytics', path: '/analytics' },
+    { icon: Star, label: 'Flashcards', active: location.pathname === '/flashcards', path: '/flashcards' },
     { icon: Award, label: 'Achievements', active: location.pathname === '/achievements', path: '/achievements' }
   ];
 

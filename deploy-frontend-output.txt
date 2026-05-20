@@ -1,0 +1,152 @@
+[frontend] Pulling production environment
+Retrieving project…
+> Overwriting existing .vercel\.env.production.local file
+> Downloading `production` Environment Variables for charanbheesetti123-2300s-projects/memora-frontend
+Downloading
+
+Changes:
++ VERCEL_OIDC_TOKEN (Updated)
+
+Updated .vercel\.env.production.local file  [323ms]
+
+> Downloading project settings
+Downloaded project settings to ~\Downloads\Imp Items\Memora v1\memora-frontend\.vercel\project.json [0ms]
+[frontend] Deploying latest build as preview deployment
+Retrieving project…
+Deploying charanbheesetti123-2300s-projects/memora-frontend
+Inspect: https://vercel.com/charanbheesetti123-2300s-projects/memora-frontend/2QLhtd5YbxtovPderZrA5C4PA7i3 [2s]
+Preview: https://memora-frontend-f213a0wlk-charanbheesetti123-2300s-projects.vercel.app [2s]
+https://memora-frontend-f213a0wlk-charanbheesetti123-2300s-projects.vercel.appBuilding...
+Building...
+Building: Running build in Washington, D.C., USA (East) – iad1
+Building: Build machine configuration: 2 cores, 8 GB
+Building: Retrieving list of deployment files...
+Building: Downloading 218 deployment files...
+Building: Restored build cache from previous deployment (JD5LDaK4wcM9VEN474hgnoD7jUEx)
+Building: Running "vercel build"
+Building: Vercel CLI 53.3.2
+Building: Installing dependencies...
+Building: up to date in 695ms
+Building: 52 packages are looking for funding
+Building: run `npm fund` for details
+Building: Running "npm run build"
+Building: > memora-frontend@0.0.0 build
+Building: > vite build
+Building: vite v7.3.1 building client environment for production...
+Building: transforming...
+Building: Browserslist: browsers data (caniuse-lite) is 11 months old. Please run:
+Building: npx update-browserslist-db@latest
+Building: Why you should do it regularly: https://github.com/browserslist/update-db#readme
+Building: ✓ 3339 modules transformed.
+Building: rendering chunks...
+Building: computing gzip size...
+Building: dist/index.html                               0.47 kB │ gzip:   0.30 kB
+Building: dist/assets/logo-COOUUOUW.jpg                46.23 kB
+Building: dist/assets/index-HIcCql2M.css              237.08 kB │ gzip:  31.60 kB
+Building: dist/assets/logo-DUcuOrEG.js                  0.05 kB │ gzip:   0.07 kB
+Building: dist/assets/check-CpMsMjVU.js                 0.12 kB │ gzip:   0.14 kB
+Building: dist/assets/circle-GdF2SlW7.js                0.13 kB │ gzip:   0.13 kB
+Building: dist/assets/chevron-down-fMBaZrbW.js          0.13 kB │ gzip:   0.14 kB
+Building: dist/assets/play-DPYXNTT8.js                  0.14 kB │ gzip:   0.15 kB
+Building: dist/assets/loader-circle-DlCV1zc6.js         0.14 kB │ gzip:   0.15 kB
+Building: dist/assets/square-C3-cHLIu.js                0.15 kB │ gzip:   0.15 kB
+Building: dist/assets/plus-CQf4VnsZ.js                  0.15 kB │ gzip:   0.15 kB
+Building: dist/assets/clock-Cme4o472.js                 0.17 kB │ gzip:   0.16 kB
+Building: dist/assets/arrow-right-CgyTrTW5.js           0.17 kB │ gzip:   0.16 kB
+Building: dist/assets/arrow-left-Dw_UPvmt.js            0.17 kB │ gzip:   0.16 kB
+Building: dist/assets/search-DWnubJul.js                0.17 kB │ gzip:   0.17 kB
+Building: dist/assets/trending-up-BYvc0jyr.js           0.18 kB │ gzip:   0.17 kB
+Building: dist/assets/panel-left-DQhelFdV.js            0.19 kB │ gzip:   0.18 kB
+Building: dist/assets/circle-check-big-q4q2KPrK.js      0.19 kB │ gzip:   0.18 kB
+Building: dist/assets/rotate-ccw-B6u1NhuU.js            0.20 kB │ gzip:   0.18 kB
+Building: dist/assets/undo-2-nidztUS6.js                0.21 kB │ gzip:   0.18 kB
+Building: dist/assets/pause-BSaufXlb.js                 0.21 kB │ gzip:   0.17 kB
+Building: dist/assets/chevron-right-C6YskTQH.js         0.21 kB │ gzip:   0.18 kB
+Building: dist/assets/file-BQyQvx9e.js                  0.22 kB │ gzip:   0.18 kB
+Building: dist/assets/target-cemIJMPD.js                0.22 kB │ gzip:   0.16 kB
+Building: dist/assets/square-check-big-DXE0A41l.js      0.23 kB │ gzip:   0.20 kB
+Building: dist/assets/upload-Ct02Zdzu.js                0.23 kB │ gzip:   0.19 kB
+Building: dist/assets/download-DXI0X_Lw.js              0.23 kB │ gzip:   0.19 kB
+Building: dist/assets/panel-left-close-CTKurP10.js      0.24 kB │ gzip:   0.21 kB
+Building: dist/assets/globe-CrUF7MNx.js                 0.24 kB │ gzip:   0.19 kB
+Building: dist/assets/circle-alert-ACufgsXV.js          0.25 kB │ gzip:   0.19 kB
+Building: dist/assets/funnel-Ch2vA45Y.js                0.25 kB │ gzip:   0.21 kB
+Building: dist/assets/eye-nzRI_Bsj.js                   0.25 kB │ gzip:   0.20 kB
+Building: dist/assets/chart-column-PZU2Fr1Y.js          0.25 kB │ gzip:   0.19 kB
+Building: dist/assets/calendar-7Evk4SBe.js              0.26 kB │ gzip:   0.20 kB
+Building: dist/assets/zap-UzFg4uSt.js                   0.26 kB │ gzip:   0.21 kB
+Building: dist/assets/git-branch-OQOIhez3.js            0.28 kB │ gzip:   0.22 kB
+Building: dist/assets/pen-line-Ddy9nxrW.js              0.28 kB │ gzip:   0.23 kB
+Building: dist/assets/book-open-Ls7q3THR.js             0.28 kB │ gzip:   0.21 kB
+Building: dist/assets/zoom-in-CqE39B7I.js               0.30 kB │ gzip:   0.21 kB
+Building: dist/assets/users-aiRGRDiC.js                 0.31 kB │ gzip:   0.23 kB
+Building: dist/assets/refresh-cw-C9LMMNqU.js            0.32 kB │ gzip:   0.23 kB
+Building: dist/assets/save-BN_uvTmP.js                  0.33 kB │ gzip:   0.23 kB
+Building: dist/assets/focus-BMlCgusr.js                 0.33 kB │ gzip:   0.23 kB
+Building: dist/assets/file-text-DSEo-C4S.js             0.33 kB │ gzip:   0.22 kB
+Building: dist/assets/Logo-D5jEJjoH.js                  0.35 kB │ gzip:   0.28 kB
+Building: dist/assets/trash-2-B-ey6-bp.js               0.36 kB │ gzip:   0.25 kB
+Building: dist/assets/eye-off-B_ceWwp-.js               0.43 kB │ gzip:   0.27 kB
+Building: dist/assets/clsx-Cw67PLK6.js                  0.45 kB │ gzip:   0.30 kB
+Building: dist/assets/twitter-DcmRhsND.js               0.49 kB │ gzip:   0.35 kB
+Building: dist/assets/palette-Bbo_WzO3.js               0.51 kB │ gzip:   0.28 kB
+Building: dist/assets/brain-laKfmbpB.js                 0.74 kB │ gzip:   0.35 kB
+Building: dist/assets/minimize-2-B0iwoteO.js            0.82 kB │ gzip:   0.41 kB
+Building: dist/assets/DashboardGlyph-X9oXDBYH.js        1.00 kB │ gzip:   0.47 kB
+Building: dist/assets/dateFormat-CrggacSF.js            1.24 kB │ gzip:   0.55 kB
+Building: dist/assets/DashboardFooter-DjwMdytB.js       1.90 kB │ gzip:   0.64 kB
+Building: dist/assets/FloatingParticles-B80lCbml.js     2.04 kB │ gzip:   0.93 kB
+Building: dist/assets/ShadcnSelect-B-Cbfvqx.js          2.17 kB │ gzip:   1.07 kB
+Building: dist/assets/Dialog-B0Kagbtk.js                2.33 kB │ gzip:   1.02 kB
+Building: dist/assets/Toast-Bc1q3Q4b.js                 2.65 kB │ gzip:   1.18 kB
+Building: dist/assets/Modal-CIre2Jbz.js                 2.68 kB │ gzip:   1.19 kB
+Building: dist/assets/PublicFooter-BZYQdkin.js          3.09 kB │ gzip:   1.29 kB
+Building: dist/assets/docTagsService-B4D4Rkog.js        3.55 kB │ gzip:   1.16 kB
+Building: dist/assets/Login-DbxkQw5c.js                 6.99 kB │ gzip:   2.45 kB
+Building: dist/assets/FileViewer-BITloStM.js            8.05 kB │ gzip:   2.57 kB
+Building: dist/assets/Topics-DDpdciV8.js                8.27 kB │ gzip:   2.79 kB
+Building: dist/assets/SignUp-pdsaE-2f.js                9.88 kB │ gzip:   2.84 kB
+Building: dist/assets/Graph-C_jepi0u.js                12.71 kB │ gzip:   3.68 kB
+Building: dist/assets/journalService-rm2j3RZw.js       12.88 kB │ gzip:   4.33 kB
+Building: dist/assets/EditTopicModal-DrESTRxI.js       20.22 kB │ gzip:   5.75 kB
+Building: dist/assets/purify.es-CovBOfck.js            22.58 kB │ gzip:   8.67 kB
+Building: dist/assets/Listener-BllJxQdb.js             24.21 kB │ gzip:   7.25 kB
+Building: dist/assets/Docs-hLJD6dbU.js                 24.69 kB │ gzip:   7.02 kB
+Building: dist/assets/Profile-BiVcNpp_.js              29.41 kB │ gzip:   6.69 kB
+Building: dist/assets/MemScoreEvaluation-CLEIZD-6.js   36.05 kB │ gzip:   8.54 kB
+Building: dist/assets/FocusMode-jcgsNQ4X.js            41.10 kB │ gzip:  10.50 kB
+Building: dist/assets/Journal-MuTn0nX5.js              45.22 kB │ gzip:  12.92 kB
+Building: dist/assets/Chronicle-ByBs2lhQ.js            47.69 kB │ gzip:  12.72 kB
+Building: dist/assets/Achievements-DyqMJaB4.js         49.40 kB │ gzip:  13.80 kB
+Building: dist/assets/DocTags-84UR8d3P.js              55.22 kB │ gzip:  13.50 kB
+Building: dist/assets/GraphModeView-DQ7CVlmL.js        56.09 kB │ gzip:  18.50 kB
+Building: dist/assets/Landing-BiC49OZm.js              61.92 kB │ gzip:  16.12 kB
+Building: dist/assets/Dashboard-DVPnIXv7.js           113.23 kB │ gzip:  30.37 kB
+Building: dist/assets/proxy-BNdFm_Mi.js               114.68 kB │ gzip:  37.98 kB
+Building: dist/assets/Mindmaps-DlYWOcdc.js            118.02 kB │ gzip:  34.43 kB
+Building: dist/assets/index.es-CgH-r26E.js            159.70 kB │ gzip:  53.47 kB
+Building: dist/assets/html2canvas.esm-DXEQVQnt.js     201.04 kB │ gzip:  47.43 kB
+Building: dist/assets/useTopics-BIf_uspz.js           203.78 kB │ gzip:  53.11 kB
+Building: dist/assets/index-B1vDiZb8.js               293.78 kB │ gzip:  94.28 kB
+Building: dist/assets/Analytics-NsGmXI5S.js           849.43 kB │ gzip: 259.62 kB
+Building: ✓ built in 13.84s
+Building: (!) Some chunks are larger than 500 kB after minification. Consider:
+Building: - Using dynamic import() to code-split the application
+Building: - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+Building: - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+Building: Build Completed in /vercel/output [16s]
+Building: Deploying outputs...
+Building: Deployment completed
+[2K[1A[2K[GPreview: https://memora-frontend-f213a0wlk-charanbheesetti123-2300s-projects.vercel.app [29s]
+Completing...
+To deploy to production (memora-frontend-sage.vercel.app), run `vercel --prod`
+[frontend] Assigning alias memoraapp-next.vercel.app -> https://memora-frontend-f213a0wlk-charanbheesetti123-2300s-projects.vercel.app
+> Assigning alias memoraapp-next.vercel.app to deployment memora-frontend-f213a0wlk-charanbheesetti123-2300s-projects.vercel.app
+Creating alias
+> Success! https://memoraapp-next.vercel.app now points to https://memora-frontend-f213a0wlk-charanbheesetti123-2300s-projects.vercel.app [2s]
+[frontend] Frontend deployment root check passed: https://memora-frontend-f213a0wlk-charanbheesetti123-2300s-projects.vercel.app
+[frontend] Frontend deployment rewrite API check passed: https://memora-frontend-f213a0wlk-charanbheesetti123-2300s-projects.vercel.app/api/health
+[frontend] Frontend root check passed: https://memoraapp-next.vercel.app
+[frontend] Frontend rewrite API check passed: https://memoraapp-next.vercel.app/api/health
+[frontend] Backend health check passed: https://memora-api-04021453.azurewebsites.net/api/health
+[frontend] Done: https://memora-frontend-f213a0wlk-charanbheesetti123-2300s-projects.vercel.app

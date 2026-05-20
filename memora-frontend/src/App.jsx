@@ -20,6 +20,7 @@ const loadChronicle = () => import('./pages/Chronicle');
 const loadAnalytics = () => import('./pages/Analytics');
 const loadMindmaps = () => import('./pages/Mindmaps');
 const loadListener = () => import('./pages/Listener');
+const loadFlashcards = () => import('./pages/Flashcards');
 const loadMemScoreEvaluation = () => import('./pages/MemScoreEvaluation');
 const loadFocusMode = () => import('./pages/FocusMode');
 const loadProfile = () => import('./pages/Profile');
@@ -38,6 +39,7 @@ const Chronicle = lazy(loadChronicle);
 const Analytics = lazy(loadAnalytics);
 const Mindmaps = lazy(loadMindmaps);
 const Listener = lazy(loadListener);
+const Flashcards = lazy(loadFlashcards);
 const MemScoreEvaluation = lazy(loadMemScoreEvaluation);
 const FocusMode = lazy(loadFocusMode);
 const Profile = lazy(loadProfile);
@@ -387,6 +389,7 @@ function App() {
                 <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
                 <Route path="/mindmaps" element={<ProtectedRoute><Mindmaps /></ProtectedRoute>} />
                 <Route path="/listener" element={<ProtectedRoute><Listener /></ProtectedRoute>} />
+                <Route path="/flashcards" element={<ProtectedRoute><Flashcards /></ProtectedRoute>} />
                 <Route path="/focus" element={<ProtectedRoute><FocusMode /></ProtectedRoute>} />
                 <Route path="/achievements" element={<ProtectedRoute><Achievements /></ProtectedRoute>} />
                 <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

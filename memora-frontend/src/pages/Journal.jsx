@@ -4,7 +4,7 @@ import {
   BookOpen, Save, Edit3, Calendar,
   ChevronLeft, ChevronRight, TrendingUp, BarChart2,
   FileText, BarChart3, PanelLeft, PanelLeftClose, Settings,
-  RefreshCw, ToggleLeft, ToggleRight, Globe, GitBranch, Award, Mic
+  RefreshCw, ToggleLeft, ToggleRight, Globe, GitBranch, Star, Award, Mic
 } from 'lucide-react';
 import Logo from '../components/Logo';
 import Toast from '../components/Toast';
@@ -436,6 +436,7 @@ const Journal = () => {
     { icon: Mic, label: "Listener", active: location.pathname === "/listener", path: "/listener" },
     { icon: Globe, label: "Graph Mode", active: location.pathname === "/graph", path: "/graph" },
     { icon: BarChart3, label: "Analytics", active: location.pathname === "/analytics", path: "/analytics" },
+    { icon: Star, label: "Flashcards", active: location.pathname === "/flashcards", path: "/flashcards" },
     { icon: Award, label: "Achievements", active: location.pathname === "/achievements", path: "/achievements" }
   ];
 
