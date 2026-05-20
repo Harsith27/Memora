@@ -2790,6 +2790,10 @@ const Mindmaps = () => {
     () => normalizeEdgeStyle(selectedEdge?.style || edgeStylePreset),
     [edgeStylePreset, selectedEdge]
   );
+  const centerNodeId = useMemo(() => {
+    if (!activeMap) return null;
+    return pickRadialCenters(activeMap.nodes, activeMap.edges)[0] || activeMap.nodes[0]?.id || null;
+  }, [activeMap]);
   const shouldRenderBottomToolbar = Boolean(activeMap);
   const shouldHideLayoutChrome = !isPhoneViewport && isPresentationMode;
 
@@ -5354,10 +5358,16 @@ const Mindmaps = () => {
                 <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.22)_1px,transparent_1.4px)] [background-size:20px_20px] opacity-50" />
                 {canvasGlowPoint ? (
                   <div
-                    className="pointer-events-none absolute inset-0 z-[1] mix-blend-screen"
+                    className="pointer-events-none absolute z-[1] rounded-full overflow-hidden"
                     style={{
-                      backgroundImage: `radial-gradient(circle at ${canvasGlowPoint.x}px ${canvasGlowPoint.y}px, rgba(255,255,255,0.36) 0, rgba(255,255,255,0.18) 14%, rgba(255,255,255,0.08) 26%, transparent 48%)`,
-                      filter: 'blur(0.5px)'
+                      left: canvasGlowPoint.x - 36,
+                      top: canvasGlowPoint.y - 36,
+                      width: 72,
+                      height: 72,
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                      backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.92) 1px, transparent 1.6px)',
+                      backgroundSize: '20px 20px',
+                      opacity: 0.72
                     }}
                   />
                 ) : null}
@@ -5504,9 +5514,10 @@ const Mindmaps = () => {
                       ? (connectionDrag?.sourceSide || 'right')
                       : (hoveredNodeHandle?.nodeId === node.id ? hoveredNodeHandle.side : 'right');
                     const isInlineNode = isInlineTextNode(node);
+                    const isCenterNode = node.id === centerNodeId;
                     const isLabelNode = node.nodeKind === 'label';
-                    const useCompactTopicLayout = !isInlineNode && !isMinimalView && estimateRenderedNodeHeight(node) <= 42;
-                    const nodeFontColor = isInlineNode ? 'rgba(229,231,235,0.98)' : getNodeFontColor(node.color);
+                    const useCompactTopicLayout = !isInlineNode && !isCenterNode && !isMinimalView && estimateRenderedNodeHeight(node) <= 42;
+                    const nodeFontColor = '#000000';
                     const nodeFontFamily = getNodeFontFamily(node);
                     const labelText = isMinimalView ? String(node.label || '').split('\n')[0] : String(node.label || '');
                     const hasExplicitLineBreak = !isMinimalView && isInlineNode && labelText.includes('\n');
@@ -5527,23 +5538,23 @@ const Mindmaps = () => {
                         data-node="true"
                         data-node-id={node.id}
                         className={`absolute select-none cursor-move ${
-                          isInlineNode
-                            ? `rounded-md ${isMultiSelected ? 'ring-2 ring-violet-400/60' : ''}`
-                            : `rounded-xl border shadow-lg ${isMultiSelected ? 'ring-2 ring-violet-400/60' : ''}`
+                          isCenterNode
+                            ? 'rounded-none'
+                            : isInlineNode
+                              ? `rounded-md ${isMultiSelected ? 'ring-2 ring-violet-400/60' : ''}`
+                              : `rounded-xl border shadow-lg ${isMultiSelected ? 'ring-2 ring-violet-400/60' : ''}`
                         }`}
                         style={{
                           left: node.x,
                           top: node.y,
                           width: node.width,
                           minHeight: estimateRenderedNodeHeight(node),
-                          backgroundColor: isInlineNode ? 'transparent' : node.color,
+                          backgroundColor: isCenterNode ? 'transparent' : (isInlineNode ? 'rgba(255,255,255,0.9)' : node.color),
                           color: nodeFontColor,
-                          borderColor: isInlineNode ? 'transparent' : getNodeBorderColor(node.color),
-                          borderWidth: isInlineNode ? 0 : 2,
+                          borderColor: isCenterNode ? 'transparent' : getNodeBorderColor(node.color),
+                          borderWidth: isCenterNode ? 0 : 2,
                           borderStyle: 'solid',
-                          boxShadow: isInlineNode
-                            ? 'none'
-                            : `0 0 0 1px ${getNodeBorderColor(node.color)}, 0 0 24px ${getNodeGlowColor(node.color)}`
+                          boxShadow: isCenterNode ? 'none' : `0 0 0 1px ${getNodeBorderColor(node.color)}`
                         }}
                         onMouseEnter={(event) => {
                           const side = getClosestHandleSide(
@@ -5624,11 +5635,11 @@ const Mindmaps = () => {
                         }}
                         title={node.note || node.label}
                       >
-                        <div className={isInlineNode ? 'px-1.5 py-1' : (useCompactTopicLayout ? 'px-2.5 py-1.5 min-h-[42px] flex items-center justify-center text-center' : 'px-3 py-2.5')}>
-                          <p className={`font-semibold text-sm leading-tight ${nodeTitleWhitespaceClass} ${useCompactTopicLayout ? 'text-center' : ''} ${isLabelNode ? 'underline decoration-violet-300/70 underline-offset-2 cursor-pointer' : ''}`} style={{ color: nodeFontColor, fontFamily: nodeFontFamily, fontWeight: 700 }}>
+                        <div className={isCenterNode ? 'px-0 py-0' : (isInlineNode ? 'px-1.5 py-1' : (useCompactTopicLayout ? 'px-2.5 py-1.5 min-h-[42px] flex items-center justify-center text-center' : 'px-3 py-2.5'))}>
+                          <p className={`leading-tight ${nodeTitleWhitespaceClass} ${isCenterNode ? 'text-3xl sm:text-4xl font-black tracking-tight' : `font-semibold text-sm ${useCompactTopicLayout ? 'text-center' : ''}`} ${isLabelNode ? 'underline decoration-violet-300/70 underline-offset-2 cursor-pointer' : ''}`} style={{ color: nodeFontColor, fontFamily: nodeFontFamily, fontWeight: isCenterNode ? 900 : 700 }}>
                             {labelText}
                           </p>
-                          {!isInlineNode && !isMinimalView && detailLines.length > 0 ? (
+                          {!isInlineNode && !isCenterNode && !isMinimalView && detailLines.length > 0 ? (
                             <div className="mt-1.5 space-y-0.5">
                               {detailLines.slice(0, 12).map((line, index) => (
                                 <p key={`${node.id}_detail_${index}`} className="text-[11px] leading-snug break-words" style={{ color: nodeFontColor, opacity: 0.9, fontFamily: nodeFontFamily }}>
@@ -5643,7 +5654,7 @@ const Mindmaps = () => {
                             </div>
                           ) : null}
 
-                          {!isInlineNode && !isMinimalView && nodeLabels.length > 0 ? (
+                          {!isInlineNode && !isCenterNode && !isMinimalView && nodeLabels.length > 0 ? (
                             <div className="mt-2 flex flex-wrap gap-1.5">
                               {nodeLabels.slice(0, 8).map((item, index) => (
                                 <button
@@ -5706,7 +5717,7 @@ const Mindmaps = () => {
                                   style={{
                                     backgroundColor: node.color,
                                     border: `2px solid ${getNodeBorderColor(node.color)}`,
-                                    boxShadow: `0 0 0 1px rgba(10,10,14,0.8), 0 0 14px ${getNodeGlowColor(node.color)}`
+                                    boxShadow: `0 0 0 1px rgba(10,10,14,0.8)`
                                   }}
                                   onMouseDown={(event) => {
                                     handleHandleMouseDown(event, node, side);
@@ -5736,7 +5747,7 @@ const Mindmaps = () => {
                       type="button"
                       data-node="true"
                       data-node-id={satellite.id}
-                      className={`absolute text-[11px] leading-tight font-medium text-gray-100/95 hover:text-violet-200 transition-colors ${
+                      className={`absolute text-[11px] leading-tight font-medium text-black transition-colors ${
                         satellite.align === 'left'
                           ? 'text-left'
                           : satellite.align === 'right'
@@ -5747,7 +5758,7 @@ const Mindmaps = () => {
                         left: satellite.x,
                         top: satellite.y,
                         transform: 'translate(-50%, -50%)',
-                        textShadow: '0 0 8px rgba(0,0,0,0.75)'
+                        textShadow: 'none'
                       }}
                       onMouseDown={(event) => {
                         event.preventDefault();
