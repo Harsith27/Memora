@@ -62,6 +62,57 @@ const PASTEL_COLORS = [
   '#2F4641'
 ];
 
+const BRIGHT_MINDMAP_COLORS = [
+  '#22c55e',
+  '#06b6d4',
+  '#3b82f6',
+  '#8b5cf6',
+  '#ec4899',
+  '#f97316',
+  '#eab308',
+  '#14b8a6',
+  '#ef4444',
+  '#0ea5e9',
+  '#84cc16',
+  '#a855f7',
+  '#f43f5e',
+  '#10b981',
+  '#fb7185'
+];
+
+const MINDMAP_COLOR_PALETTE_OPTIONS = [
+  { value: 'bright', label: 'Bright' },
+  { value: 'pastel', label: 'Pastel' }
+];
+
+const getMindmapPaletteColors = (paletteKey = 'bright') => (
+  String(paletteKey || '').toLowerCase() === 'pastel'
+    ? PASTEL_COLORS
+    : BRIGHT_MINDMAP_COLORS
+);
+
+const mixHexWithWhite = (hexColor, amount = 0.35) => {
+  const color = String(hexColor || '').trim().replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(color)) return '#ffffff';
+
+  const red = parseInt(color.slice(0, 2), 16);
+  const green = parseInt(color.slice(2, 4), 16);
+  const blue = parseInt(color.slice(4, 6), 16);
+  const mix = (component) => Math.round(component + (255 - component) * clamp(amount, 0, 1));
+  return `rgb(${mix(red)}, ${mix(green)}, ${mix(blue)})`;
+};
+
+const getNodeBorderColor = (hexColor) => mixHexWithWhite(hexColor, 0.48);
+
+const getNodeGlowColor = (hexColor) => {
+  const color = String(hexColor || '').trim().replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(color)) return 'rgba(255,255,255,0.36)';
+  const red = parseInt(color.slice(0, 2), 16);
+  const green = parseInt(color.slice(2, 4), 16);
+  const blue = parseInt(color.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, 0.36)`;
+};
+
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const formatTimestampLabel = (value) => {
   if (value === null || value === undefined || value === '') return 'Unknown time';
@@ -451,11 +502,12 @@ const pointToSegmentDistance = (px, py, x1, y1, x2, y2) => {
   };
 };
 
-const createStarterMap = (title = 'Learning Mindmap', fontFamily = MINDMAP_FONT_OPTIONS[0].value) => {
-  const root = createNode(title, 420, 240, PASTEL_COLORS[0], 'topic', fontFamily);
-  const fundamentals = createNode('Fundamentals', 150, 90, PASTEL_COLORS[1], 'topic', fontFamily);
-  const practice = createNode('Practice', 150, 260, PASTEL_COLORS[2], 'topic', fontFamily);
-  const advanced = createNode('Advanced', 150, 430, PASTEL_COLORS[3], 'topic', fontFamily);
+const createStarterMap = (title = 'Learning Mindmap', fontFamily = MINDMAP_FONT_OPTIONS[0].value, paletteColors = BRIGHT_MINDMAP_COLORS) => {
+  const palette = Array.isArray(paletteColors) && paletteColors.length > 0 ? paletteColors : BRIGHT_MINDMAP_COLORS;
+  const root = createNode(title, 420, 240, palette[0], 'topic', fontFamily);
+  const fundamentals = createNode('Fundamentals', 150, 90, palette[1 % palette.length], 'topic', fontFamily);
+  const practice = createNode('Practice', 150, 260, palette[2 % palette.length], 'topic', fontFamily);
+  const advanced = createNode('Advanced', 150, 430, palette[3 % palette.length], 'topic', fontFamily);
 
   return {
     id: `map_${Date.now()}`,
@@ -473,16 +525,17 @@ const createStarterMap = (title = 'Learning Mindmap', fontFamily = MINDMAP_FONT_
   };
 };
 
-const normalizeLoadedMap = (map, mapIndex = 0) => {
+const normalizeLoadedMap = (map, mapIndex = 0, paletteColors = BRIGHT_MINDMAP_COLORS) => {
   const mapId = String(map?.id || `map_${Date.now()}_${mapIndex}`);
   const rawNodes = Array.isArray(map?.nodes) ? map.nodes : [];
+  const palette = Array.isArray(paletteColors) && paletteColors.length > 0 ? paletteColors : BRIGHT_MINDMAP_COLORS;
 
   const normalizedNodes = rawNodes
     .filter(Boolean)
     .map((node, nodeIndex) => {
       const nodeKind = normalizeGeneratedNodeKind(node);
       const nodeId = String(node?.id || `${mapId}_node_${nodeIndex}`);
-      const fallbackColor = nodeKind === 'topic' ? PASTEL_COLORS[nodeIndex % PASTEL_COLORS.length] : '#E5E7EB';
+      const fallbackColor = nodeKind === 'topic' ? palette[nodeIndex % palette.length] : '#E5E7EB';
 
       const inlineDimensions = getInlineNodeDimensions(node?.label, nodeKind);
 
@@ -1594,6 +1647,7 @@ const Mindmaps = () => {
   const storageKey = `memora_mindmaps_${userStorageKey}`;
   const undoStorageKey = `memora_mindmaps_undo_${userStorageKey}`;
   const mindmapFontStorageKey = `memora_mindmaps_font_${userStorageKey}`;
+  const mindmapPaletteStorageKey = `memora_mindmaps_palette_${userStorageKey}`;
   const allMindmapStorageKeys = useMemo(
     () => storageKeyVariants.map((variant) => `memora_mindmaps_${variant}`),
     [storageKeyVariants]
@@ -1628,6 +1682,7 @@ const Mindmaps = () => {
   const [aiIncludeDescriptions, setAiIncludeDescriptions] = useState(true);
   const [aiMindmapStyle, setAiMindmapStyle] = useState('connected');
   const [defaultMindmapFontFamily, setDefaultMindmapFontFamily] = useState(MINDMAP_FONT_OPTIONS[0].value);
+  const [mindmapColorPalette, setMindmapColorPalette] = useState('bright');
   const [interactionMode, setInteractionMode] = useState('pan');
   const [isMinimalView, setIsMinimalView] = useState(false);
   const [isPresentationMode, setIsPresentationMode] = useState(false);
@@ -1646,6 +1701,7 @@ const Mindmaps = () => {
   const [isLabelPanelEditing, setIsLabelPanelEditing] = useState(false);
   const [spotlightMapId, setSpotlightMapId] = useState(null);
   const [isMapSpotlightActive, setIsMapSpotlightActive] = useState(false);
+  const [canvasGlowPoint, setCanvasGlowPoint] = useState(null);
 
   const viewportRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -1688,6 +1744,7 @@ const Mindmaps = () => {
   const centerMapTimerRef = useRef(null);
   const hasRecordedDragHistoryRef = useRef(false);
   const edgeStylePresetRef = useRef(DEFAULT_EDGE_STYLE);
+  const mindmapColorPaletteRef = useRef('bright');
   const previousInteractionModeRef = useRef('pan');
   const lastUndoStorageKeyRef = useRef(null);
   const nodeEditSessionRef = useRef(null);
@@ -1702,6 +1759,11 @@ const Mindmaps = () => {
   const isCanvasZoomContext = useCallback((event) => {
     return isPointerOverCanvasRef.current || isEventInsideViewport(event);
   }, []);
+
+  const activeMindmapPaletteColors = useMemo(
+    () => getMindmapPaletteColors(mindmapColorPalette),
+    [mindmapColorPalette]
+  );
 
   const fitView = useCallback((mapOverride = null) => {
     const mapToFit = mapOverride || activeMapRef.current;
@@ -1925,6 +1987,10 @@ const Mindmaps = () => {
   useEffect(() => {
     edgeStylePresetRef.current = normalizeEdgeStyle(edgeStylePreset);
   }, [edgeStylePreset]);
+
+  useEffect(() => {
+    mindmapColorPaletteRef.current = String(mindmapColorPalette || 'bright').toLowerCase() === 'pastel' ? 'pastel' : 'bright';
+  }, [mindmapColorPalette]);
 
   const setZoomFromViewportCenter = useCallback((nextZoomValue) => {
     const currentZoom = zoomRef.current;
@@ -2388,6 +2454,11 @@ const Mindmaps = () => {
         : MINDMAP_FONT_OPTIONS[0].value;
       setDefaultMindmapFontFamily(resolvedFontFamily);
 
+      const savedPalette = localStorage.getItem(mindmapPaletteStorageKey);
+      const resolvedPalette = String(savedPalette || 'bright').toLowerCase() === 'pastel' ? 'pastel' : 'bright';
+      setMindmapColorPalette(resolvedPalette);
+      const resolvedPaletteColors = getMindmapPaletteColors(resolvedPalette);
+
       const mergedById = new Map();
 
       allMindmapStorageKeys.forEach((candidateKey) => {
@@ -2396,7 +2467,7 @@ const Mindmaps = () => {
           if (!Array.isArray(raw)) return;
 
           raw.forEach((entry, index) => {
-            const normalized = normalizeLoadedMap(entry, index);
+            const normalized = normalizeLoadedMap(entry, index, resolvedPaletteColors);
             if (!normalized) return;
             mergedById.set(normalized.id, normalized);
           });
@@ -2420,7 +2491,7 @@ const Mindmaps = () => {
 
       if (Array.isArray(saved) && saved.length > 0) {
         const normalizedSaved = saved
-          .map((map, mapIndex) => normalizeLoadedMap(map, mapIndex))
+          .map((map, mapIndex) => normalizeLoadedMap(map, mapIndex, resolvedPaletteColors))
           .filter(Boolean);
 
         if (normalizedSaved.length === 0) {
@@ -2432,20 +2503,20 @@ const Mindmaps = () => {
         setRedoStack([]);
         setActiveMapId(normalizedSaved[0].id);
       } else {
-        const initialMap = createStarterMap('DSA Learning Plan', resolvedFontFamily);
+        const initialMap = createStarterMap('DSA Learning Plan', resolvedFontFamily, resolvedPaletteColors);
         setMaps([initialMap]);
         setUndoStack(restoredUndo);
         setRedoStack([]);
         setActiveMapId(initialMap.id);
       }
     } catch {
-      const initialMap = createStarterMap('DSA Learning Plan', MINDMAP_FONT_OPTIONS[0].value);
+      const initialMap = createStarterMap('DSA Learning Plan', MINDMAP_FONT_OPTIONS[0].value, getMindmapPaletteColors('bright'));
       setMaps([initialMap]);
       setUndoStack([]);
       setRedoStack([]);
       setActiveMapId(initialMap.id);
     }
-  }, [allMindmapStorageKeys, mindmapFontStorageKey, storageKey, undoStorageKey, user]);
+  }, [allMindmapStorageKeys, mindmapFontStorageKey, mindmapPaletteStorageKey, storageKey, undoStorageKey, user]);
 
   useEffect(() => {
     if (maps.length === 0) return;
@@ -2486,6 +2557,16 @@ const Mindmaps = () => {
       // Ignore local storage quota/unavailability errors.
     }
   }, [defaultMindmapFontFamily, mindmapFontStorageKey, user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    try {
+      localStorage.setItem(mindmapPaletteStorageKey, mindmapColorPalette);
+    } catch {
+      // Ignore local storage quota/unavailability errors.
+    }
+  }, [mindmapColorPalette, mindmapPaletteStorageKey, user]);
 
   useEffect(() => {
     if (user) {
@@ -2735,6 +2816,29 @@ const Mindmaps = () => {
     } catch {
       // ignore if not in mobile context
     }
+  };
+
+  const applyMindmapColorPalette = (paletteValue) => {
+    const resolvedPalette = String(paletteValue || '').toLowerCase() === 'pastel' ? 'pastel' : 'bright';
+    setMindmapColorPalette(resolvedPalette);
+
+    try {
+      setMobileToolbarMenu(null);
+    } catch {
+      // ignore if not in mobile context
+    }
+
+    if (!activeMap) return;
+
+    const paletteColors = getMindmapPaletteColors(resolvedPalette);
+    updateActiveMap((map) => ({
+      ...map,
+      nodes: map.nodes.map((node, index) => (
+        selectedNodeIds.length > 0
+          ? (selectedNodeIds.includes(node.id) ? { ...node, color: paletteColors[index % paletteColors.length] } : node)
+          : (node.id === selectedNodeId ? { ...node, color: paletteColors[index % paletteColors.length] } : node)
+      ))
+    }));
   };
 
   useEffect(() => {
@@ -4020,7 +4124,7 @@ const Mindmaps = () => {
       defaultLabel,
       0,
       0,
-      PASTEL_COLORS[Math.floor(Math.random() * PASTEL_COLORS.length)],
+      activeMindmapPaletteColors[Math.floor(Math.random() * activeMindmapPaletteColors.length)],
       nodeKind,
       defaultMindmapFontFamily
     );
@@ -4554,7 +4658,7 @@ const Mindmaps = () => {
         label,
         220 + (index % 3) * 260,
         140 + Math.floor(index / 3) * 140,
-        PASTEL_COLORS[index % PASTEL_COLORS.length],
+        activeMindmapPaletteColors[index % activeMindmapPaletteColors.length],
         nodeKind,
         defaultMindmapFontFamily
       );
@@ -5161,8 +5265,24 @@ const Mindmaps = () => {
                 onPointerEnter={() => {
                   isPointerOverCanvasRef.current = true;
                 }}
+                onPointerMove={(event) => {
+                  const target = event.target;
+                  if (target instanceof Element && target.closest('[data-node="true"]')) {
+                    setCanvasGlowPoint(null);
+                    return;
+                  }
+
+                  const rect = viewportRef.current?.getBoundingClientRect();
+                  if (!rect) return;
+
+                  setCanvasGlowPoint({
+                    x: event.clientX - rect.left,
+                    y: event.clientY - rect.top
+                  });
+                }}
                 onPointerLeave={() => {
                   isPointerOverCanvasRef.current = false;
+                  setCanvasGlowPoint(null);
                 }}
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
@@ -5230,10 +5350,19 @@ const Mindmaps = () => {
                   userSelect: 'none'
                 }}
               >
-                <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.25)_1px,transparent_1.4px)] [background-size:20px_20px] opacity-50" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.22)_1px,transparent_1.4px)] [background-size:20px_20px] opacity-50" />
+                {canvasGlowPoint ? (
+                  <div
+                    className="pointer-events-none absolute inset-0 z-[1] mix-blend-screen"
+                    style={{
+                      backgroundImage: `radial-gradient(circle at ${canvasGlowPoint.x}px ${canvasGlowPoint.y}px, rgba(255,255,255,0.36) 0, rgba(255,255,255,0.18) 14%, rgba(255,255,255,0.08) 26%, transparent 48%)`,
+                      filter: 'blur(0.5px)'
+                    }}
+                  />
+                ) : null}
 
                 <div
-                  className="absolute inset-0"
+                  className="absolute inset-0 z-[2]"
                   style={{
                     transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                     transformOrigin: '0 0'
@@ -5399,7 +5528,7 @@ const Mindmaps = () => {
                         className={`absolute select-none cursor-move ${
                           isInlineNode
                             ? `rounded-md ${isMultiSelected ? 'ring-2 ring-violet-400/60' : ''}`
-                            : `rounded-xl border shadow-lg ${isMultiSelected ? 'border-white ring-2 ring-violet-400/60' : 'border-white/35'}`
+                            : `rounded-xl border shadow-lg ${isMultiSelected ? 'ring-2 ring-violet-400/60' : ''}`
                         }`}
                         style={{
                           left: node.x,
@@ -5407,7 +5536,13 @@ const Mindmaps = () => {
                           width: node.width,
                           minHeight: estimateRenderedNodeHeight(node),
                           backgroundColor: isInlineNode ? 'transparent' : node.color,
-                          color: nodeFontColor
+                          color: nodeFontColor,
+                          borderColor: isInlineNode ? 'transparent' : getNodeBorderColor(node.color),
+                          borderWidth: isInlineNode ? 0 : 2,
+                          borderStyle: 'solid',
+                          boxShadow: isInlineNode
+                            ? 'none'
+                            : `0 0 0 1px ${getNodeBorderColor(node.color)}, 0 0 24px ${getNodeGlowColor(node.color)}`
                         }}
                         onMouseEnter={(event) => {
                           const side = getClosestHandleSide(
@@ -5568,8 +5703,9 @@ const Mindmaps = () => {
                                   data-node-handle="true"
                                   className={`absolute ${handleClass} w-5 h-5 rounded-full flex items-center justify-center transition-transform hover:scale-110`}
                                   style={{
-                                    backgroundColor: 'rgba(13,17,26,0.95)',
-                                    border: '1px solid rgba(255,255,255,0.75)'
+                                    backgroundColor: node.color,
+                                    border: `2px solid ${getNodeBorderColor(node.color)}`,
+                                    boxShadow: `0 0 0 1px rgba(10,10,14,0.8), 0 0 14px ${getNodeGlowColor(node.color)}`
                                   }}
                                   onMouseDown={(event) => {
                                     handleHandleMouseDown(event, node, side);
@@ -5802,9 +5938,20 @@ const Mindmaps = () => {
 
                   {mobileToolbarMenu === 'color' ? (
                     <div className="absolute bottom-[4.9rem] left-1/2 -translate-x-1/2 z-30 w-[min(92%,360px)] rounded-xl border border-violet-400/40 bg-black/92 backdrop-blur p-2.5 shadow-[0_18px_45px_rgba(76,29,149,0.26)]">
-                      <p className="text-[11px] text-gray-400 mb-2">Node color</p>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <p className="text-[11px] text-gray-400">Node color</p>
+                        <div className="w-[160px]">
+                          <ShadcnSelect
+                            value={mindmapColorPalette}
+                            onChange={applyMindmapColorPalette}
+                            options={MINDMAP_COLOR_PALETTE_OPTIONS}
+                            menuPlacement="top"
+                            className="w-full"
+                          />
+                        </div>
+                      </div>
                       <div className="flex items-center gap-2 rounded-full border border-white/15 bg-black/70 px-2 py-1.5 overflow-x-auto">
-                        {PASTEL_COLORS.map((color) => (
+                        {activeMindmapPaletteColors.map((color) => (
                           <button
                             key={`mobile_color_${color}`}
                             type="button"
@@ -5830,6 +5977,17 @@ const Mindmaps = () => {
                         <p className="text-[10px] text-gray-500">
                           {selectedFontTargetIds.length > 0 ? `Applies to ${selectedFontTargetIds.length} selected node${selectedFontTargetIds.length > 1 ? 's' : ''}` : 'Sets the default for new nodes'}
                         </p>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] uppercase tracking-wide text-gray-500">Node palette</label>
+                        <ShadcnSelect
+                          value={mindmapColorPalette}
+                          onChange={applyMindmapColorPalette}
+                          options={MINDMAP_COLOR_PALETTE_OPTIONS}
+                          menuPlacement="top"
+                          className="mt-1.5"
+                        />
                       </div>
 
                       <div>
