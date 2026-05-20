@@ -45,21 +45,21 @@ import DashboardFooter from '../components/DashboardFooter';
 import Modal from '../components/Modal';
 
 const PASTEL_COLORS = [
-  '#AECBFA',
-  '#C5E1A5',
-  '#D7AEFB',
-  '#FBBC04',
-  '#FDCFE8',
-  '#FEEFC3',
-  '#CCFF90',
-  '#B39DDB',
-  '#A7FFEB',
-  '#FAD2CF',
-  '#C8E6C9',
-  '#FFF9C4',
-  '#F8BBD0',
-  '#FFCCBC',
-  '#B3E5FC'
+  '#3A3F45',
+  '#4C2F36',
+  '#4B3727',
+  '#4D4A27',
+  '#2D4E38',
+  '#2F4E55',
+  '#3F4A73',
+  '#4D3D68',
+  '#5B3A44',
+  '#3B5059',
+  '#4C4738',
+  '#39434B',
+  '#3F3A56',
+  '#4A4047',
+  '#2F4641'
 ];
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -332,6 +332,20 @@ const getHandlePosition = (node, side) => {
   if (side === 'right') return { x: node.x + node.width + gap, y: centerY };
   if (side === 'bottom') return { x: centerX, y: node.y + renderedHeight + gap };
   return { x: node.x - gap, y: centerY };
+};
+
+const getClosestHandleSide = (pointerX, pointerY, nodeRect) => {
+  if (!nodeRect) return 'right';
+
+  const distances = [
+    { side: 'top', value: Math.abs(pointerY - nodeRect.top) },
+    { side: 'right', value: Math.abs(pointerX - nodeRect.right) },
+    { side: 'bottom', value: Math.abs(pointerY - nodeRect.bottom) },
+    { side: 'left', value: Math.abs(pointerX - nodeRect.left) }
+  ];
+
+  distances.sort((a, b) => a.value - b.value);
+  return distances[0]?.side || 'right';
 };
 
 const createNode = (label, x, y, color, nodeKind = 'topic', fontFamily = MINDMAP_FONT_OPTIONS[0].value) => {
@@ -1598,6 +1612,7 @@ const Mindmaps = () => {
   const [selectedEdgeId, setSelectedEdgeId] = useState(null);
   const [hoveredEdgeId, setHoveredEdgeId] = useState(null);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
+  const [hoveredNodeHandle, setHoveredNodeHandle] = useState({ nodeId: null, side: 'right' });
   const [connectionDrag, setConnectionDrag] = useState(null);
   const [labelDetailsPanel, setLabelDetailsPanel] = useState({
     open: false,
@@ -5355,6 +5370,9 @@ const Mindmaps = () => {
 
                     const isMultiSelected = selectedNodeIds.includes(node.id);
                     const showHandles = isMultiSelected || hoveredNodeId === node.id || connectionDrag?.sourceNodeId === node.id;
+                    const activeHandleSide = connectionDrag?.sourceNodeId === node.id
+                      ? (connectionDrag?.sourceSide || 'right')
+                      : (hoveredNodeHandle?.nodeId === node.id ? hoveredNodeHandle.side : 'right');
                     const isInlineNode = isInlineTextNode(node);
                     const isLabelNode = node.nodeKind === 'label';
                     const useCompactTopicLayout = !isInlineNode && !isMinimalView && estimateRenderedNodeHeight(node) <= 42;
@@ -5391,11 +5409,30 @@ const Mindmaps = () => {
                           backgroundColor: isInlineNode ? 'transparent' : node.color,
                           color: nodeFontColor
                         }}
-                        onMouseEnter={() => {
+                        onMouseEnter={(event) => {
+                          const side = getClosestHandleSide(
+                            event.clientX,
+                            event.clientY,
+                            event.currentTarget.getBoundingClientRect()
+                          );
                           setHoveredNodeId(node.id);
+                          setHoveredNodeHandle({ nodeId: node.id, side });
+                        }}
+                        onMouseMove={(event) => {
+                          if (connectionDrag?.sourceNodeId === node.id) return;
+                          const side = getClosestHandleSide(
+                            event.clientX,
+                            event.clientY,
+                            event.currentTarget.getBoundingClientRect()
+                          );
+                          setHoveredNodeHandle((prev) => {
+                            if (prev.nodeId === node.id && prev.side === side) return prev;
+                            return { nodeId: node.id, side };
+                          });
                         }}
                         onMouseLeave={() => {
                           setHoveredNodeId((prev) => (prev === node.id ? null : prev));
+                          setHoveredNodeHandle((prev) => (prev.nodeId === node.id ? { nodeId: null, side: 'right' } : prev));
                         }}
                         onMouseDown={(event) => {
                           event.stopPropagation();
@@ -5514,7 +5551,7 @@ const Mindmaps = () => {
 
                         {!isPresentationMode && showHandles ? (
                           <>
-                            {['top', 'right', 'bottom', 'left'].map((side) => {
+                            {[activeHandleSide].map((side) => {
                               const handleClass =
                                 side === 'top'
                                   ? 'left-1/2 -top-2.5 -translate-x-1/2'
@@ -5529,10 +5566,9 @@ const Mindmaps = () => {
                                   key={`${node.id}_${side}`}
                                   type="button"
                                   data-node-handle="true"
-                                  className={`absolute ${handleClass} w-5 h-5 rounded-full text-[10px] leading-none font-bold flex items-center justify-center transition-transform hover:scale-110`}
+                                  className={`absolute ${handleClass} w-5 h-5 rounded-full flex items-center justify-center transition-transform hover:scale-110`}
                                   style={{
-                                    backgroundColor: node.color,
-                                    color: '#0f172a',
+                                    backgroundColor: 'rgba(13,17,26,0.95)',
                                     border: '1px solid rgba(255,255,255,0.75)'
                                   }}
                                   onMouseDown={(event) => {
@@ -5548,9 +5584,7 @@ const Mindmaps = () => {
                                     handleHandleTouchEnd(event, node.id);
                                   }}
                                   title="Drag to connect"
-                                >
-                                  +
-                                </button>
+                                />
                               );
                             })}
                           </>
@@ -5769,7 +5803,7 @@ const Mindmaps = () => {
                   {mobileToolbarMenu === 'color' ? (
                     <div className="absolute bottom-[4.9rem] left-1/2 -translate-x-1/2 z-30 w-[min(92%,360px)] rounded-xl border border-violet-400/40 bg-black/92 backdrop-blur p-2.5 shadow-[0_18px_45px_rgba(76,29,149,0.26)]">
                       <p className="text-[11px] text-gray-400 mb-2">Node color</p>
-                      <div className="grid grid-cols-5 gap-1.5">
+                      <div className="flex items-center gap-2 rounded-full border border-white/15 bg-black/70 px-2 py-1.5 overflow-x-auto">
                         {PASTEL_COLORS.map((color) => (
                           <button
                             key={`mobile_color_${color}`}
@@ -5780,7 +5814,7 @@ const Mindmaps = () => {
                                 setMobileToolbarMenu(null);
                               }
                             }}
-                            className={`h-8 rounded-md border ${selectedNode?.color === color ? 'border-white' : 'border-white/25'}`}
+                            className={`h-7 w-7 shrink-0 rounded-full border-2 ${selectedNode?.color === color ? 'border-yellow-300 shadow-[0_0_0_1px_rgba(0,0,0,0.75)_inset]' : 'border-white/25'}`}
                             style={{ backgroundColor: color }}
                             title={color}
                           />
