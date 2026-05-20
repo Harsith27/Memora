@@ -4864,6 +4864,29 @@ const Mindmaps = () => {
       useMixedNodeKinds: styleId === 'detailed'
     };
 
+    const getAIFallbackMessage = (response) => {
+      if (response?.warning) return response.warning;
+
+      switch (String(response?.meta?.aiFallbackReason || '').trim()) {
+        case 'groq-key-missing-or-expired':
+          return 'Alternate template generated because the GROQ key is missing or unavailable in the backend environment.';
+        case 'groq-timeout':
+          return 'Alternate template generated because GROQ timed out.';
+        case 'groq-invalid-json-response':
+          return 'Alternate template generated because GROQ returned an invalid response.';
+        case 'groq-service-unavailable':
+          return 'Alternate template generated because GROQ was unavailable.';
+        case 'gemini-key-missing-or-expired':
+          return 'Alternate template generated because the Gemini key is missing or unavailable in the backend environment.';
+        case 'gemini-service-unavailable':
+          return 'Alternate template generated because Gemini was unavailable.';
+        case 'ai-provider-not-configured':
+          return 'Alternate template generated because no AI provider is configured.';
+        default:
+          return 'Alternate template generated because AI generation was unavailable.';
+      }
+    };
+
     try {
       setIsGeneratingAI(true);
       const response = await apiService.generateMindmapWithAI(topic, options);
@@ -4882,10 +4905,8 @@ const Mindmaps = () => {
       setIsAIModalOpen(false);
       journalService.logMindmapCreated(generatedMap, 'ai');
       const isTemplateFallback = response?.meta?.generation === 'template-structured-v2' || response?.meta?.aiFallback;
-      if (response?.warning) {
-        showToast(response.warning, 'warning');
-      } else if (isTemplateFallback) {
-        showToast('Alternate template generated as AI key expired/unavailable.', 'warning');
+      if (response?.warning || isTemplateFallback) {
+        showToast(getAIFallbackMessage(response), 'warning');
       } else {
         showToast('AI mindmap generated');
       }
