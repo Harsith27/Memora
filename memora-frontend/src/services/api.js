@@ -102,7 +102,19 @@ class ApiService {
         });
       }
 
-      const data = await response.json();
+      let data = null;
+      let _rawResponseText = null;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        // Capture raw response for debugging when JSON parsing fails
+        try {
+          _rawResponseText = await response.text();
+        } catch (_e) {
+          _rawResponseText = null;
+        }
+        // Keep data as null and allow downstream code to surface a helpful error
+      }
 
       if (IS_DEV) {
         console.log('API Response Data:', {
@@ -112,10 +124,11 @@ class ApiService {
       }
 
       if (!response.ok) {
+        const payload = data !== null ? data : _rawResponseText;
         const httpError = this.createHttpError(
-          data?.message || `HTTP error! status: ${response.status}`,
+          (data && data.message) || (typeof _rawResponseText === 'string' ? _rawResponseText : `HTTP error! status: ${response.status}`),
           response.status,
-          data
+          payload
         );
 
         if (!endpoint.startsWith('/auth/') && this.isAuthError(httpError) && !_retryAuth) {
@@ -128,7 +141,9 @@ class ApiService {
         throw httpError;
       }
 
-      return data;
+      // Return parsed JSON when available, otherwise return raw text wrapped for diagnostics
+      if (data !== null) return data;
+      return { success: false, message: 'Invalid JSON response from server', raw: _rawResponseText };
     } catch (error) {
       console.error('API request failed:', {
         error: error.message,

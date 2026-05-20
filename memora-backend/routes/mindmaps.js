@@ -755,10 +755,20 @@ const generateMindmapWithGroq = async ({
 
       const data = await response.json();
       const rawContent = data?.choices?.[0]?.message?.content;
+      // Log raw content (truncated) for debugging invalid JSON responses
+      try {
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('GROQ raw content (truncated):', String(rawContent || '').slice(0, 2000));
+        }
+      } catch (logErr) {
+        // ignore logging errors
+      }
+
       const parsed = parseJsonFromModelOutput(rawContent);
 
       if (!parsed) {
-        throw new Error('groq-invalid-json');
+        const snippet = String(rawContent || '').slice(0, 2000);
+        throw new Error(`groq-invalid-json: ${snippet}`);
       }
 
       return normalizeGeneratedMindmap(parsed, {
