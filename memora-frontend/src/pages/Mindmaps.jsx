@@ -200,7 +200,7 @@ const getFontPreviewStyle = (fontFamily) => ({ fontFamily: String(fontFamily || 
 const getNodeFontFamily = (node) => normalizeMindmapFontFamily(node?.fontFamily, MINDMAP_FONT_OPTIONS[0].value);
 
 const isInlineTextNode = (node) => node?.nodeKind === 'text' || node?.nodeKind === 'label';
-const getNodeConnectorGap = (node) => (isInlineTextNode(node) ? 8 : 0);
+const getNodeConnectorGap = (_node) => 0;
 
 const getMindmapTopicLines = (label) => {
   const raw = String(label || '').trim();
@@ -363,8 +363,8 @@ const getTopicNodeDimensions = (label, labels = []) => {
   const labelRows = normalizedLabels.length > 0 ? Math.ceil(Math.min(8, normalizedLabels.length) / 2) : 0;
   const longestLine = getMindmapTopicLines(rawLabel).reduce((max, line) => Math.max(max, line.trim().length), 0);
 
-  const width = clamp(Math.round(Math.max(48, longestLine * 8.0 + 12)), 48, 200);
-  const height = clamp(Math.round(8 + (titleLines * 14) + (labelRows > 0 ? 2 + (labelRows * 10) : 0)), 20, 84);
+  const width = clamp(Math.round(Math.max(64, longestLine * 8.0 + 24)), 64, 220);
+  const height = clamp(Math.round(12 + (titleLines * 14) + (labelRows > 0 ? 4 + (labelRows * 10) : 0)), 24, 92);
 
   return {
     width,
@@ -425,8 +425,13 @@ const getConnectorAnchorPoint = (node, otherNode, extraPadding = 0) => {
   const padding = getNodeConnectorGap(node) + Math.max(0, Number(extraPadding) || 0);
   const halfWidth = node.width / 2 + padding;
   const halfHeight = renderedHeight / 2 + padding;
-  const borderX = x1 + nx * halfWidth;
-  const borderY = y1 + ny * halfHeight;
+
+  // Exact rectangle-border intersection along the edge direction.
+  const tx = Math.abs(nx) < 1e-6 ? Number.POSITIVE_INFINITY : (halfWidth / Math.abs(nx));
+  const ty = Math.abs(ny) < 1e-6 ? Number.POSITIVE_INFINITY : (halfHeight / Math.abs(ny));
+  const t = Math.min(tx, ty);
+  const borderX = x1 + nx * t;
+  const borderY = y1 + ny * t;
 
   return { x: borderX, y: borderY };
 };
@@ -2862,8 +2867,8 @@ const Mindmaps = () => {
       .map((line) => line.trim())
       .filter(Boolean);
     const longestLine = labelLines.reduce((max, line) => Math.max(max, line.length), 0);
-    const width = clamp(Math.round(Math.max(centerNode.width, (longestLine * 16) + 120, 280)), centerNode.width, 420);
-    const height = clamp(Math.round(Math.max(renderedHeight, (Math.max(1, labelLines.length) * 36) + 40)), renderedHeight, 260);
+    const width = clamp(Math.round(Math.max(centerNode.width, (longestLine * 11) + 72, 168)), centerNode.width, 260);
+    const height = clamp(Math.round(Math.max(renderedHeight, (Math.max(1, labelLines.length) * 24) + 18)), renderedHeight, 140);
 
     return { width, height };
   }, [centerNode]);
@@ -5734,7 +5739,7 @@ const Mindmaps = () => {
                         data-node-id={node.id}
                         className={`absolute select-none cursor-move ${
                           isCenterNode
-                            ? 'rounded-[28px] border shadow-xl'
+                            ? 'rounded-[24px] border shadow-xl overflow-hidden'
                             : isInlineNode
                               ? `rounded-md ${isMultiSelected ? 'ring-2 ring-violet-400/60' : ''}`
                               : `rounded-xl border shadow-lg ${isMultiSelected ? 'ring-2 ring-violet-400/60' : ''}`
@@ -5749,7 +5754,7 @@ const Mindmaps = () => {
                           borderColor: isInlineNode ? 'transparent' : getNodeBorderColor(node.color),
                           borderWidth: isInlineNode ? 0 : (isCenterNode ? 2 : 1),
                           borderStyle: 'solid',
-                          boxShadow: isInlineNode ? 'none' : (isCenterNode ? `0 0 0 1px ${getNodeBorderColor(node.color)}, 0 14px 34px rgba(0,0,0,0.28)` : `0 0 0 0.35px ${getNodeBorderColor(node.color)}`)
+                          boxShadow: isInlineNode ? 'none' : (isCenterNode ? `0 0 0 1px ${getNodeBorderColor(node.color)}, 0 10px 22px rgba(0,0,0,0.24)` : `0 0 0 0.35px ${getNodeBorderColor(node.color)}`)
                         }}
                         onMouseEnter={(event) => {
                           const side = getClosestHandleSide(
@@ -5830,12 +5835,12 @@ const Mindmaps = () => {
                         }}
                         title={node.label}
                       >
-                        <div className={`${isCenterNode ? 'px-5 py-4 flex h-full w-full items-center justify-center' : (isInlineNode ? 'px-0.5 py-[2px] flex flex-col' : 'px-0.5 py-[2px] flex flex-col justify-start')} ${isCenterNode ? '' : `${nodeAlignItemsClass} ${nodeTextAlignClass}`}`}>
+                        <div className={`${isCenterNode ? 'px-3 py-2 flex h-full w-full items-center justify-center' : (isInlineNode ? 'px-1 py-1 flex flex-col' : 'px-2 py-1.5 flex flex-col justify-start')} ${isCenterNode ? '' : `${nodeAlignItemsClass} ${nodeTextAlignClass}`}`}>
                           <div className={`flex flex-col ${isCenterNode ? 'items-center justify-center gap-[2px]' : 'gap-[1px]'} ${isLabelNode ? 'underline decoration-violet-300/70 underline-offset-2 cursor-pointer' : ''}`} style={{ color: nodeFontColor, fontFamily: nodeFontFamily, fontWeight: isCenterNode ? 900 : 700, textAlign: 'center' }}>
                             {nodeTitleLines.map((line, index) => (
                               <span
                                 key={`${node.id}_line_${index}`}
-                                className={`leading-[1] whitespace-nowrap ${isCenterNode ? 'text-3xl sm:text-4xl font-black tracking-tight' : 'font-semibold text-sm'}`}
+                                className={`leading-[1] whitespace-nowrap ${isCenterNode ? 'text-xl sm:text-2xl font-black tracking-tight' : 'font-semibold text-sm'}`}
                               >
                                 {line}
                               </span>
@@ -5888,12 +5893,12 @@ const Mindmaps = () => {
                             {[activeHandleSide].map((side) => {
                               const handleClass =
                                 side === 'top'
-                                  ? 'left-1/2 top-1 -translate-x-1/2'
+                                  ? 'left-1/2 top-0 -translate-x-1/2 -translate-y-1/2'
                                   : side === 'right'
-                                    ? 'top-1/2 right-1 -translate-y-1/2'
+                                    ? 'top-1/2 right-0 translate-x-1/2 -translate-y-1/2'
                                     : side === 'bottom'
-                                      ? 'left-1/2 bottom-1 -translate-x-1/2'
-                                      : 'top-1/2 left-1 -translate-y-1/2';
+                                      ? 'left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2'
+                                      : 'top-1/2 left-0 -translate-x-1/2 -translate-y-1/2';
 
                               return (
                                 <button

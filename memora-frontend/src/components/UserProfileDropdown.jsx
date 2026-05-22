@@ -84,13 +84,14 @@ const UserProfileDropdown = ({ placement = 'inline', isSidebarCollapsed = false,
 
       {/* User Avatar and Name - Clickable */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={isDockedBottomLeft ? undefined : (() => setIsOpen(!isOpen))}
         className={isDockedBottomLeft
           ? (isCompactDock
             ? 'w-11 h-11 flex items-center justify-center bg-black/85 hover:bg-white/10 rounded-lg p-0 transition-colors shadow-[0_8px_24px_rgba(0,0,0,0.42)] backdrop-blur-sm'
             : `${isIntegratedDock ? 'w-full flex items-center justify-between bg-black/88 border border-white/18 rounded-xl px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.34)] backdrop-blur-sm' : 'w-[218px] max-w-[calc(100vw-1.5rem)] flex items-center justify-between bg-black/85 border border-white/20 hover:bg-white/10 rounded-lg px-2.5 py-1.5 transition-colors shadow-[0_8px_24px_rgba(0,0,0,0.42)] backdrop-blur-sm'}`)
           : 'flex items-center hover:bg-white/5 rounded-lg px-2 py-1 transition-colors'}
         title="Profile"
+        aria-expanded={isDockedBottomLeft ? false : isOpen}
       >
         {isDockedBottomLeft ? (
           <>
