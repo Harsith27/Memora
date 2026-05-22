@@ -2862,8 +2862,8 @@ const Mindmaps = () => {
       .map((line) => line.trim())
       .filter(Boolean);
     const longestLine = labelLines.reduce((max, line) => Math.max(max, line.length), 0);
-    const width = clamp(Math.round(Math.max(centerNode.width, (longestLine * 14) + 96, 220)), centerNode.width, 360);
-    const height = clamp(Math.round(Math.max(renderedHeight, (Math.max(1, labelLines.length) * 30) + 30)), renderedHeight, 220);
+    const width = clamp(Math.round(Math.max(centerNode.width, (longestLine * 16) + 120, 280)), centerNode.width, 420);
+    const height = clamp(Math.round(Math.max(renderedHeight, (Math.max(1, labelLines.length) * 36) + 40)), renderedHeight, 260);
 
     return { width, height };
   }, [centerNode]);
@@ -5722,15 +5722,9 @@ const Mindmaps = () => {
                       ? '#ffffff'
                       : '#000000';
                     const nodeFontFamily = getNodeFontFamily(node);
-                    const labelText = isMinimalView
-                      ? String(node.label || '').split('\n')[0]
-                      : (isInlineNode ? String(node.label || '') : formatMindmapTopicLabel(node.label));
-                    const hasExplicitLineBreak = !isMinimalView && isInlineNode && labelText.includes('\n');
-                    const nodeTitleWhitespaceClass = isMinimalView
-                      ? 'whitespace-nowrap truncate'
-                      : isInlineNode
-                        ? (hasExplicitLineBreak ? 'whitespace-pre' : 'whitespace-nowrap')
-                        : 'whitespace-pre-line';
+                    const nodeTitleLines = isMinimalView
+                      ? [String(node.label || '').split('\n')[0]]
+                      : (isInlineNode ? [String(node.label || '')] : getMindmapTopicLines(node.label));
                     const nodeLabels = Array.isArray(node.labels) ? node.labels : [];
 
                     return (
@@ -5836,10 +5830,17 @@ const Mindmaps = () => {
                         }}
                         title={node.label}
                       >
-                        <div className={`${isCenterNode ? 'px-3 py-3 flex h-full w-full items-center justify-center' : (isInlineNode ? 'px-0.5 py-[2px] flex flex-col' : 'px-0.5 py-[2px] flex flex-col justify-start')} ${isCenterNode ? '' : `${nodeAlignItemsClass} ${nodeTextAlignClass}`}`}>
-                          <p className={`leading-[1] ${nodeTitleWhitespaceClass} ${isCenterNode ? 'text-3xl sm:text-4xl font-black tracking-tight' : 'font-semibold text-sm'} ${isLabelNode ? 'underline decoration-violet-300/70 underline-offset-2 cursor-pointer' : ''}`} style={{ color: nodeFontColor, fontFamily: nodeFontFamily, fontWeight: isCenterNode ? 900 : 700, textAlign: isCenterNode ? 'center' : nodeAlignment }}>
-                            {labelText}
-                          </p>
+                        <div className={`${isCenterNode ? 'px-5 py-4 flex h-full w-full items-center justify-center' : (isInlineNode ? 'px-0.5 py-[2px] flex flex-col' : 'px-0.5 py-[2px] flex flex-col justify-start')} ${isCenterNode ? '' : `${nodeAlignItemsClass} ${nodeTextAlignClass}`}`}>
+                          <div className={`flex flex-col ${isCenterNode ? 'items-center justify-center gap-[2px]' : 'gap-[1px]'} ${isLabelNode ? 'underline decoration-violet-300/70 underline-offset-2 cursor-pointer' : ''}`} style={{ color: nodeFontColor, fontFamily: nodeFontFamily, fontWeight: isCenterNode ? 900 : 700, textAlign: 'center' }}>
+                            {nodeTitleLines.map((line, index) => (
+                              <span
+                                key={`${node.id}_line_${index}`}
+                                className={`leading-[1] whitespace-nowrap ${isCenterNode ? 'text-3xl sm:text-4xl font-black tracking-tight' : 'font-semibold text-sm'}`}
+                              >
+                                {line}
+                              </span>
+                            ))}
+                          </div>
                           {!isInlineNode && !isCenterNode && !isMinimalView && nodeLabels.length > 0 ? (
                             <div className={`mt-[2px] flex flex-wrap gap-[2px] ${nodeAlignment === 'center' ? 'justify-center' : nodeAlignment === 'right' ? 'justify-end' : 'justify-start'}`}>
                               {nodeLabels.slice(0, 8).map((item, index) => (
