@@ -200,7 +200,25 @@ const getFontPreviewStyle = (fontFamily) => ({ fontFamily: String(fontFamily || 
 const getNodeFontFamily = (node) => normalizeMindmapFontFamily(node?.fontFamily, MINDMAP_FONT_OPTIONS[0].value);
 
 const isInlineTextNode = (node) => node?.nodeKind === 'text' || node?.nodeKind === 'label';
-const getNodeConnectorGap = (node) => (isInlineTextNode(node) ? 8 : 2);
+const getNodeConnectorGap = (node) => (isInlineTextNode(node) ? 8 : 0);
+
+const getMindmapTopicLines = (label) => {
+  const raw = String(label || '').trim();
+  if (!raw) return ['New Node'];
+  if (raw.includes('\n')) {
+    return raw.split('\n').map((line) => line.trim()).filter(Boolean);
+  }
+
+  const words = raw.split(/\s+/).filter(Boolean);
+  if (words.length <= 2) return [raw];
+
+  const firstLineWordCount = Math.ceil(words.length / 2);
+  const firstLine = words.slice(0, firstLineWordCount).join(' ');
+  const secondLine = words.slice(firstLineWordCount).join(' ');
+  return secondLine ? [firstLine, secondLine] : [firstLine];
+};
+
+const formatMindmapTopicLabel = (label) => getMindmapTopicLines(label).join('\n');
 
 const cloneMindmapsState = (value) => {
   try {
@@ -340,10 +358,10 @@ const getInlineNodeDimensions = (text, nodeKind = 'text') => {
 
 const getTopicNodeDimensions = (label, labels = []) => {
   const rawLabel = String(label ?? '').trim() || 'New Node';
-  const titleLines = Math.max(1, countWrappedLines(rawLabel, 26));
+  const titleLines = Math.max(1, getMindmapTopicLines(rawLabel).length);
   const normalizedLabels = Array.isArray(labels) ? labels.filter(Boolean) : [];
   const labelRows = normalizedLabels.length > 0 ? Math.ceil(Math.min(8, normalizedLabels.length) / 2) : 0;
-  const longestLine = rawLabel.split('\n').reduce((max, line) => Math.max(max, line.trim().length), 0);
+  const longestLine = getMindmapTopicLines(rawLabel).reduce((max, line) => Math.max(max, line.trim().length), 0);
 
   const width = clamp(Math.round(Math.max(48, longestLine * 8.0 + 12)), 48, 200);
   const height = clamp(Math.round(8 + (titleLines * 14) + (labelRows > 0 ? 2 + (labelRows * 10) : 0)), 20, 84);
@@ -2840,8 +2858,7 @@ const Mindmaps = () => {
     if (!centerNode) return null;
 
     const renderedHeight = estimateRenderedNodeHeight(centerNode);
-    const labelLines = String(centerNode.label || '')
-      .split('\n')
+    const labelLines = getMindmapTopicLines(centerNode.label)
       .map((line) => line.trim())
       .filter(Boolean);
     const longestLine = labelLines.reduce((max, line) => Math.max(max, line.length), 0);
@@ -5504,8 +5521,8 @@ const Mindmaps = () => {
                       const sourceNodeForAnchor = source.id === centerNodeId && centerNodeFrame
                         ? {
                             ...source,
-                            x: source.x - ((centerNodeFrame.width - source.width) / 2),
-                            y: source.y - ((centerNodeFrame.height - estimateRenderedNodeHeight(source)) / 2),
+                            x: source.x - (centerNodeFrame.width / 2),
+                            y: source.y - (centerNodeFrame.height / 2),
                             width: centerNodeFrame.width,
                             height: centerNodeFrame.height
                           }
@@ -5513,14 +5530,14 @@ const Mindmaps = () => {
                       const targetNodeForAnchor = target.id === centerNodeId && centerNodeFrame
                         ? {
                             ...target,
-                            x: target.x - ((centerNodeFrame.width - target.width) / 2),
-                            y: target.y - ((centerNodeFrame.height - estimateRenderedNodeHeight(target)) / 2),
+                            x: target.x - (centerNodeFrame.width / 2),
+                            y: target.y - (centerNodeFrame.height / 2),
                             width: centerNodeFrame.width,
                             height: centerNodeFrame.height
                           }
                         : target;
-                      const sourcePoint = getConnectorAnchorPoint(sourceNodeForAnchor, targetNodeForAnchor, 16);
-                      const targetPoint = getConnectorAnchorPoint(targetNodeForAnchor, sourceNodeForAnchor, 16);
+                      const sourcePoint = getConnectorAnchorPoint(sourceNodeForAnchor, targetNodeForAnchor, 0);
+                      const targetPoint = getConnectorAnchorPoint(targetNodeForAnchor, sourceNodeForAnchor, 0);
                       const edgePath = getCurvedEdgePath(sourcePoint, targetPoint);
                       const isEdgeSelected = selectedEdgeId === edge.id;
                       const isEdgeHovered = hoveredEdgeId === edge.id;
@@ -5703,9 +5720,11 @@ const Mindmaps = () => {
                         : 'text-center';
                     const nodeFontColor = isInlineNode || isLabelNode
                       ? '#ffffff'
-                      : (isCenterNode ? '#ffffff' : '#000000');
+                      : '#000000';
                     const nodeFontFamily = getNodeFontFamily(node);
-                    const labelText = isMinimalView ? String(node.label || '').split('\n')[0] : String(node.label || '');
+                    const labelText = isMinimalView
+                      ? String(node.label || '').split('\n')[0]
+                      : (isInlineNode ? String(node.label || '') : formatMindmapTopicLabel(node.label));
                     const hasExplicitLineBreak = !isMinimalView && isInlineNode && labelText.includes('\n');
                     const nodeTitleWhitespaceClass = isMinimalView
                       ? 'whitespace-nowrap truncate'
@@ -5721,7 +5740,7 @@ const Mindmaps = () => {
                         data-node-id={node.id}
                         className={`absolute select-none cursor-move ${
                           isCenterNode
-                            ? 'rounded-none'
+                            ? 'rounded-[28px] border shadow-xl'
                             : isInlineNode
                               ? `rounded-md ${isMultiSelected ? 'ring-2 ring-violet-400/60' : ''}`
                               : `rounded-xl border shadow-lg ${isMultiSelected ? 'ring-2 ring-violet-400/60' : ''}`
@@ -5731,12 +5750,12 @@ const Mindmaps = () => {
                           top: nodeRenderTop,
                           width: nodeRenderWidth,
                           minHeight: nodeRenderHeight,
-                          backgroundColor: isCenterNode ? 'transparent' : (isInlineNode ? 'transparent' : node.color),
+                          backgroundColor: isInlineNode ? 'transparent' : node.color,
                           color: nodeFontColor,
-                          borderColor: isCenterNode ? 'transparent' : (isInlineNode ? 'transparent' : getNodeBorderColor(node.color)),
-                          borderWidth: isCenterNode ? 0 : (isInlineNode ? 0 : 1),
+                          borderColor: isInlineNode ? 'transparent' : getNodeBorderColor(node.color),
+                          borderWidth: isInlineNode ? 0 : (isCenterNode ? 2 : 1),
                           borderStyle: 'solid',
-                          boxShadow: isCenterNode ? 'none' : (isInlineNode ? 'none' : `0 0 0 0.35px ${getNodeBorderColor(node.color)}`)
+                          boxShadow: isInlineNode ? 'none' : (isCenterNode ? `0 0 0 1px ${getNodeBorderColor(node.color)}, 0 14px 34px rgba(0,0,0,0.28)` : `0 0 0 0.35px ${getNodeBorderColor(node.color)}`)
                         }}
                         onMouseEnter={(event) => {
                           const side = getClosestHandleSide(
@@ -5817,7 +5836,7 @@ const Mindmaps = () => {
                         }}
                         title={node.label}
                       >
-                        <div className={`${isCenterNode ? 'px-0 py-0 flex h-full w-full items-center justify-center' : (isInlineNode ? 'px-0.5 py-[2px] flex flex-col' : 'px-0.5 py-[2px] flex flex-col justify-start')} ${isCenterNode ? '' : `${nodeAlignItemsClass} ${nodeTextAlignClass}`}`}>
+                        <div className={`${isCenterNode ? 'px-3 py-3 flex h-full w-full items-center justify-center' : (isInlineNode ? 'px-0.5 py-[2px] flex flex-col' : 'px-0.5 py-[2px] flex flex-col justify-start')} ${isCenterNode ? '' : `${nodeAlignItemsClass} ${nodeTextAlignClass}`}`}>
                           <p className={`leading-[1] ${nodeTitleWhitespaceClass} ${isCenterNode ? 'text-3xl sm:text-4xl font-black tracking-tight' : 'font-semibold text-sm'} ${isLabelNode ? 'underline decoration-violet-300/70 underline-offset-2 cursor-pointer' : ''}`} style={{ color: nodeFontColor, fontFamily: nodeFontFamily, fontWeight: isCenterNode ? 900 : 700, textAlign: isCenterNode ? 'center' : nodeAlignment }}>
                             {labelText}
                           </p>
@@ -5868,19 +5887,19 @@ const Mindmaps = () => {
                             {[activeHandleSide].map((side) => {
                               const handleClass =
                                 side === 'top'
-                                  ? 'left-1/2 -top-[24px] -translate-x-1/2'
+                                  ? 'left-1/2 top-1 -translate-x-1/2'
                                   : side === 'right'
-                                    ? 'top-1/2 -right-[24px] -translate-y-1/2'
+                                    ? 'top-1/2 right-1 -translate-y-1/2'
                                     : side === 'bottom'
-                                      ? 'left-1/2 -bottom-[24px] -translate-x-1/2'
-                                      : 'top-1/2 -left-[24px] -translate-y-1/2';
+                                      ? 'left-1/2 bottom-1 -translate-x-1/2'
+                                      : 'top-1/2 left-1 -translate-y-1/2';
 
                               return (
                                 <button
                                   key={`${node.id}_${side}`}
                                   type="button"
                                   data-node-handle="true"
-                                  className={`absolute ${handleClass} w-4 h-4 rounded-full flex items-center justify-center transition-transform hover:scale-110`}
+                                  className={`absolute ${handleClass} w-4 h-4 rounded-full flex items-center justify-center transition-transform hover:scale-110 z-20`}
                                   style={{
                                     backgroundColor: node.color,
                                     border: `1px solid ${getNodeBorderColor(node.color)}`,
