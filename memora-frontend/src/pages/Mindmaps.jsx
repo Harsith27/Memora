@@ -566,6 +566,8 @@ const createStarterMap = (title = 'Learning Mindmap', fontFamily = MINDMAP_FONT_
     title,
     linkedTopicId: null,
     linkedTopicTitle: '',
+    linkedListenerNoteId: null,
+    linkedListenerNoteTitle: '',
     createdAt: Date.now(),
     updatedAt: Date.now(),
     nodes: [root, fundamentals, practice, advanced],
@@ -648,6 +650,8 @@ const normalizeLoadedMap = (map, mapIndex = 0, paletteColors = BRIGHT_MINDMAP_CO
     title: String(map?.title || 'Untitled Mindmap'),
     linkedTopicId: map?.linkedTopicId || null,
     linkedTopicTitle: String(map?.linkedTopicTitle || ''),
+    linkedListenerNoteId: map?.linkedListenerNoteId || null,
+    linkedListenerNoteTitle: String(map?.linkedListenerNoteTitle || ''),
     createdAt: Number(map?.createdAt) || Date.now(),
     updatedAt: Number(map?.updatedAt) || Date.now(),
     nodes: normalizedNodes,
@@ -1763,6 +1767,7 @@ const Mindmaps = () => {
   const [isLabelPanelEditing, setIsLabelPanelEditing] = useState(false);
   const [spotlightMapId, setSpotlightMapId] = useState(null);
   const [isMapSpotlightActive, setIsMapSpotlightActive] = useState(false);
+  const [listenerNoteTemplateSource, setListenerNoteTemplateSource] = useState(null);
 
   const viewportRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -1818,6 +1823,11 @@ const Mindmaps = () => {
   };
 
   const isCanvasZoomContext = useCallback((event) => {
+    const target = event?.target;
+    if (target instanceof Element && target.closest('[data-map-library-modal="true"]')) {
+      return false;
+    }
+
     return isPointerOverCanvasRef.current || isEventInsideViewport(event);
   }, []);
 
@@ -2892,6 +2902,13 @@ const Mindmaps = () => {
     }
 
     setDefaultMindmapFontFamily(normalizedFontFamily);
+    updateActiveMap((map) => ({
+      ...map,
+      nodes: map.nodes.map((node) => ({
+        ...node,
+        fontFamily: normalizedFontFamily
+      }))
+    }));
     // Close any open mobile font menu after selection
     try {
       setMobileToolbarMenu(null);
@@ -3288,6 +3305,10 @@ const Mindmaps = () => {
     const handleGlobalWheel = (event) => {
       const wheelTarget = event.target;
       if (wheelTarget instanceof Element && wheelTarget.closest('[data-shadcn-select-root="true"]')) {
+        return;
+      }
+
+      if (wheelTarget instanceof Element && wheelTarget.closest('[data-map-library-modal="true"]')) {
         return;
       }
 
@@ -4034,6 +4055,10 @@ const Mindmaps = () => {
     setAiIncludeDescriptions(true);
     setAiMindmapStyle('detailed');
     setIsAIModalOpen(true);
+    setListenerNoteTemplateSource({
+      id: String(listenerNote.id || listenerNote._id || ''),
+      title
+    });
 
     const { listenerNote: _listenerNote, ...restState } = location.state || {};
     navigate(location.pathname, {
@@ -4924,6 +4949,8 @@ const Mindmaps = () => {
       title: String(generated?.title || `${topic} Mindmap`).slice(0, 100),
       linkedTopicId: null,
       linkedTopicTitle: '',
+      linkedListenerNoteId: listenerNoteTemplateSource?.id || null,
+      linkedListenerNoteTitle: listenerNoteTemplateSource?.title || '',
       createdAt: Date.now(),
       updatedAt: Date.now(),
       layoutType: 'radial',
@@ -5068,6 +5095,8 @@ const Mindmaps = () => {
         title: parsed.title || file.name.replace(/\.json$/i, ''),
         linkedTopicId: parsed.linkedTopicId || null,
         linkedTopicTitle: parsed.linkedTopicTitle || '',
+        linkedListenerNoteId: parsed.linkedListenerNoteId || null,
+        linkedListenerNoteTitle: parsed.linkedListenerNoteTitle || '',
         createdAt: Date.now(),
         updatedAt: Date.now(),
         nodes: parsed.nodes,
@@ -5121,7 +5150,7 @@ const Mindmaps = () => {
         <div className={`h-16 sm:h-20 border-b border-white/10 flex items-center ${!isPhoneViewport && isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'}`}>
           <button onClick={() => navigate('/')} className={`flex items-center hover:opacity-80 transition-opacity ${!isPhoneViewport && isSidebarCollapsed ? 'justify-center w-full' : 'gap-2 min-w-0'}`}>
             <Logo size="sm" className="text-white scale-90" />
-            {!isSidebarCollapsed && <span className="text-lg font-semibold text-white">Memora</span>}
+            {!isSidebarCollapsed && <span className="text-lg font-semibold text-white">Memy</span>}
           </button>
 
           {!isPhoneViewport && !isSidebarCollapsed && (
@@ -5417,6 +5446,10 @@ const Mindmaps = () => {
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
                 onWheelCapture={(event) => {
+                  const target = event.target;
+                  if (target instanceof Element && target.closest('[data-map-library-modal="true"]')) {
+                    return;
+                  }
                   isPointerOverCanvasRef.current = true;
                   if (event.ctrlKey || event.metaKey || event.altKey) {
                     event.preventDefault();
@@ -5605,18 +5638,19 @@ const Mindmaps = () => {
                                 stroke={edgeStroke}
                                 strokeWidth={edgeStrokeWidth + 1.6}
                                 strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    vectorEffect="non-scaling-stroke"
+                                strokeLinejoin="round"
+                                vectorEffect="non-scaling-stroke"
                                 fill="none"
                                 pointerEvents="none"
                               />
                               <path
                                 d={edgePath}
-                                stroke="rgba(2,6,23,0.95)"
+                                stroke={edgeStroke}
+                                strokeOpacity="0.18"
                                 strokeWidth={Math.max(1.2, edgeStrokeWidth - 0.9)}
                                 strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    vectorEffect="non-scaling-stroke"
+                                strokeLinejoin="round"
+                                vectorEffect="non-scaling-stroke"
                                 fill="none"
                                 pointerEvents="none"
                               />
@@ -5723,6 +5757,7 @@ const Mindmaps = () => {
                       : nodeAlignment === 'right'
                         ? 'text-right'
                         : 'text-center';
+                    const isSelectedNode = selectedNodeId === node.id || selectedNodeIds.includes(node.id);
                     const nodeFontColor = isInlineNode || isLabelNode
                       ? '#ffffff'
                       : '#000000';
@@ -5737,12 +5772,12 @@ const Mindmaps = () => {
                         key={node.id}
                         data-node="true"
                         data-node-id={node.id}
-                        className={`absolute select-none cursor-move ${
+                        className={`mindmap-font-scope absolute select-none cursor-move ${isSelectedNode ? 'z-20' : 'z-10'} ${
                           isCenterNode
-                            ? 'rounded-[24px] border shadow-xl overflow-hidden'
+                            ? 'rounded-[24px] border shadow-xl overflow-visible'
                             : isInlineNode
-                              ? `rounded-md ${isMultiSelected ? 'ring-2 ring-violet-400/60' : ''}`
-                              : `rounded-xl border shadow-lg ${isMultiSelected ? 'ring-2 ring-violet-400/60' : ''}`
+                              ? 'rounded-md border'
+                              : 'rounded-xl border shadow-lg'
                         }`}
                         style={{
                           left: nodeRenderLeft,
@@ -5751,10 +5786,14 @@ const Mindmaps = () => {
                           minHeight: nodeRenderHeight,
                           backgroundColor: isInlineNode ? 'transparent' : node.color,
                           color: nodeFontColor,
-                          borderColor: isInlineNode ? 'transparent' : getNodeBorderColor(node.color),
-                          borderWidth: isInlineNode ? 0 : (isCenterNode ? 2 : 1),
+                          borderColor: isSelectedNode ? 'rgba(167,139,250,0.98)' : (isInlineNode ? 'transparent' : getNodeBorderColor(node.color)),
+                          borderWidth: isInlineNode ? (isSelectedNode ? 2 : 0) : (isCenterNode ? (isSelectedNode ? 3 : 2) : (isSelectedNode ? 2 : 1)),
                           borderStyle: 'solid',
-                          boxShadow: isInlineNode ? 'none' : (isCenterNode ? `0 0 0 1px ${getNodeBorderColor(node.color)}, 0 10px 22px rgba(0,0,0,0.24)` : `0 0 0 0.35px ${getNodeBorderColor(node.color)}`)
+                          boxShadow: isInlineNode
+                            ? 'none'
+                            : (isCenterNode
+                              ? `0 10px 22px rgba(0,0,0,0.24)`
+                              : `0 0 0 0.35px ${getNodeBorderColor(node.color)}`)
                         }}
                         onMouseEnter={(event) => {
                           const side = getClosestHandleSide(
@@ -5905,7 +5944,7 @@ const Mindmaps = () => {
                                   key={`${node.id}_${side}`}
                                   type="button"
                                   data-node-handle="true"
-                                  className={`absolute ${handleClass} w-4 h-4 rounded-full flex items-center justify-center transition-transform hover:scale-110 z-20`}
+                                  className={`absolute ${handleClass} w-4 h-4 rounded-full flex items-center justify-center transition-transform hover:scale-110 z-20 ${isCenterNode ? 'shadow-[0_0_0_1px_rgba(12,12,16,0.85),0_0_0_2px_rgba(167,139,250,0.55)]' : ''}`}
                                   style={{
                                     backgroundColor: node.color,
                                     border: `1px solid ${getNodeBorderColor(node.color)}`,
@@ -6186,17 +6225,6 @@ const Mindmaps = () => {
                       </div>
 
                       <div>
-                        <label className="text-[10px] uppercase tracking-wide text-gray-500">Node palette</label>
-                        <ShadcnSelect
-                          value={mindmapColorPalette}
-                          onChange={applyMindmapColorPalette}
-                          options={MINDMAP_COLOR_PALETTE_OPTIONS}
-                          menuPlacement="top"
-                          className="mt-1.5"
-                        />
-                      </div>
-
-                      <div>
                         <label className="text-[10px] uppercase tracking-wide text-gray-500">Font family</label>
                         <ShadcnSelect
                           value={selectedFontFamilyValue}
@@ -6437,7 +6465,7 @@ const Mindmaps = () => {
                         className={`h-9 w-9 rounded-lg border inline-flex items-center justify-center transition-colors ${mobileToolbarMenu === 'font' ? 'border-violet-300/60 bg-violet-500/25 text-violet-100' : 'border-white/20 text-gray-200 hover:bg-violet-500/15'}`}
                         aria-label="Font family menu"
                       >
-                        <span style={{ fontFamily: selectedFontFamilyValue || defaultMindmapFontFamily }} className="text-sm font-semibold leading-none">T</span>
+                        <Type className="w-4 h-4" />
                       </button>
 
                       <button
@@ -6583,7 +6611,7 @@ const Mindmaps = () => {
             No mindmaps yet. Create your first one to see it here.
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4 items-start" data-map-library-modal="true">
             <div className="space-y-2">
               <input
                 type="text"
@@ -6601,6 +6629,10 @@ const Mindmaps = () => {
               <div
                 className="border border-white/10 rounded-lg bg-black/55 h-[384px] overflow-y-scroll overflow-x-hidden overscroll-contain scrollbar-themed"
                 style={{ scrollbarGutter: 'stable both-edges' }}
+                onWheelCapture={(event) => event.stopPropagation()}
+                onWheel={(event) => event.stopPropagation()}
+                onTouchMoveCapture={(event) => event.stopPropagation()}
+                onTouchMove={(event) => event.stopPropagation()}
               >
                 {filteredMaps.length === 0 ? (
                   <p className="px-3 py-4 text-sm text-gray-500">No mindmaps match your search.</p>

@@ -180,6 +180,38 @@ const handleValidationErrors = (req, res, next) => {
   next();
 };
 
+const normalizeLinkedTopicIds = (value) => {
+  const rawValues = Array.isArray(value)
+    ? value
+    : value === null || value === undefined || value === ''
+      ? []
+      : [value];
+
+  return Array.from(new Set(
+    rawValues
+      .map((candidate) => String(candidate || '').trim())
+      .filter((candidate) => /^[0-9a-fA-F]{24}$/.test(candidate))
+  ));
+};
+
+const populateLinkedTopics = (query) => query
+  .populate('linkedTopicId', 'title')
+  .populate('linkedTopicIds', 'title');
+
+const validateLinkedTopicOwnership = async (linkedTopicIds, userId) => {
+  if (!linkedTopicIds.length) {
+    return true;
+  }
+
+  const linkedTopics = await Topic.find({
+    _id: { $in: linkedTopicIds },
+    userId,
+    isActive: true
+  }).select('_id');
+
+  return linkedTopics.length === linkedTopicIds.length;
+};
+
 /**
  * @route   POST /api/doctags/upload
  * @desc    Upload files for DocTags
@@ -261,13 +293,12 @@ router.get('/', authenticateToken, async (req, res) => {
 
     // Apply search if provided
     if (search) {
-      docTagsQuery = DocTag.searchDocTags(userId, search, {
+      docTagsQuery = populateLinkedTopics(DocTag.searchDocTags(userId, search, {
         type,
         limit: parseInt(limit)
-      }).populate('linkedTopicId', 'title');
+      }));
     } else {
-      docTagsQuery = DocTag.find(query)
-        .populate('linkedTopicId', 'title')
+      docTagsQuery = populateLinkedTopics(DocTag.find(query))
         .sort({ type: -1, name: 1 }) // Folders first, then documents, alphabetically
         .limit(parseInt(limit))
         .skip((parseInt(page) - 1) * parseInt(limit));
@@ -404,6 +435,17 @@ router.post('/',
         return /^[0-9a-fA-F]{24}$/.test(String(value));
       })
       .withMessage('Parent ID must be a valid MongoDB ObjectId'),
+    body('linkedTopicIds')
+      .optional({ nullable: true })
+      .custom((value) => {
+        if (value === null || value === '' || value === undefined) return true;
+        if (!Array.isArray(value)) return false;
+        return value.every((candidate) => {
+          if (candidate === null || candidate === '' || candidate === undefined) return true;
+          return /^[0-9a-fA-F]{24}$/.test(String(candidate));
+        });
+      })
+      .withMessage('Linked topic IDs must be an array of valid MongoDB ObjectIds'),
     body('linkedTopicId')
       .optional({ nullable: true })
       .custom((value) => {
@@ -435,27 +477,25 @@ router.post('/',
   async (req, res) => {
     try {
       const userId = req.user.id;
+      const linkedTopicIds = normalizeLinkedTopicIds(
+        req.body.linkedTopicIds !== undefined ? req.body.linkedTopicIds : req.body.linkedTopicId
+      );
+
+      const linkedTopicsAreValid = await validateLinkedTopicOwnership(linkedTopicIds, userId);
+      if (!linkedTopicsAreValid) {
+        return res.status(400).json({
+          success: false,
+          message: 'One or more linked topics were not found for this user'
+        });
+      }
+
       const docTagData = {
         ...req.body,
         userId,
-        linkedTopicId: req.body.linkedTopicId || null,
+        linkedTopicId: linkedTopicIds[0] || null,
+        linkedTopicIds,
         parentId: req.body.parentId || null
       };
-
-      if (docTagData.linkedTopicId) {
-        const linkedTopic = await Topic.findOne({
-          _id: docTagData.linkedTopicId,
-          userId,
-          isActive: true
-        });
-
-        if (!linkedTopic) {
-          return res.status(400).json({
-            success: false,
-            message: 'Linked topic not found for this user'
-          });
-        }
-      }
 
       // If creating a document, ensure it has at least one attachment or external link
       if (req.body.type === 'document' && 
@@ -512,6 +552,17 @@ router.put('/:id',
       .optional()
       .isLength({ max: 1000 })
       .withMessage('Description cannot exceed 1000 characters'),
+    body('linkedTopicIds')
+      .optional({ nullable: true })
+      .custom((value) => {
+        if (value === null || value === '' || value === undefined) return true;
+        if (!Array.isArray(value)) return false;
+        return value.every((candidate) => {
+          if (candidate === null || candidate === '' || candidate === undefined) return true;
+          return /^[0-9a-fA-F]{24}$/.test(String(candidate));
+        });
+      })
+      .withMessage('Linked topic IDs must be an array of valid MongoDB ObjectIds'),
     body('linkedTopicId')
       .optional({ nullable: true })
       .custom((value) => {
@@ -549,29 +600,27 @@ router.put('/:id',
 
       // Update fields
       Object.keys(req.body).forEach(key => {
-        if (key === 'linkedTopicId' || key === 'parentId') return;
+        if (key === 'linkedTopicId' || key === 'linkedTopicIds' || key === 'parentId') return;
         if (req.body[key] !== undefined) {
           docTag[key] = req.body[key];
         }
       });
 
-      if (req.body.linkedTopicId !== undefined) {
-        const linkedTopicId = req.body.linkedTopicId || null;
-        if (linkedTopicId) {
-          const linkedTopic = await Topic.findOne({
-            _id: linkedTopicId,
-            userId,
-            isActive: true
-          });
+      if (req.body.linkedTopicId !== undefined || req.body.linkedTopicIds !== undefined) {
+        const linkedTopicIds = normalizeLinkedTopicIds(
+          req.body.linkedTopicIds !== undefined ? req.body.linkedTopicIds : req.body.linkedTopicId
+        );
 
-          if (!linkedTopic) {
-            return res.status(400).json({
-              success: false,
-              message: 'Linked topic not found for this user'
-            });
-          }
+        const linkedTopicsAreValid = await validateLinkedTopicOwnership(linkedTopicIds, userId);
+        if (!linkedTopicsAreValid) {
+          return res.status(400).json({
+            success: false,
+            message: 'One or more linked topics were not found for this user'
+          });
         }
-        docTag.linkedTopicId = linkedTopicId;
+
+        docTag.linkedTopicId = linkedTopicIds[0] || null;
+        docTag.linkedTopicIds = linkedTopicIds;
       }
 
       if (req.body.parentId !== undefined) {

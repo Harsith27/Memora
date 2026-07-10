@@ -119,14 +119,10 @@ export const AuthProvider = ({ children }) => {
       const refreshToken = localStorage.getItem('refreshToken');
       const cachedUser = getPersistedUser();
 
-      if (cachedUser && (token || refreshToken)) {
-        dispatch({
-          type: AUTH_ACTIONS.SET_USER,
-          payload: { user: cachedUser }
-        });
-      }
-
       if (!token && !refreshToken) {
+        if (cachedUser) {
+          clearPersistedAuth();
+        }
         dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: { isLoading: false } });
         return;
       }
@@ -180,8 +176,8 @@ export const AuthProvider = ({ children }) => {
           }
         }
 
-        // Keep cached session during transient failures.
-        if (!apiService.isAuthError(error) && cachedUser) {
+        // Keep cached session during transient failures only when the token still exists.
+        if (!apiService.isAuthError(error) && cachedUser && token) {
           dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: { isLoading: false } });
           return;
         }

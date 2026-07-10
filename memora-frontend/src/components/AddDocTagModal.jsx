@@ -1,10 +1,34 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Folder, FileText, Upload, Link as LinkIcon, Plus, Trash2, ChevronDown } from 'lucide-react';
+import { flushSync } from 'react-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { X, Folder, FileText, Upload, Link as LinkIcon, Trash2, ChevronDown, Eye, Scissors } from 'lucide-react';
 import apiService from '../services/api';
 import docTagsService from '../services/docTagsService';
 import ShadcnSelect from './ShadcnSelect';
+import { buildSectionPreviewUrl, buildSectionedPdfFile, formatPageRanges, getPdfPageCount, invertPageRanges, isPdfFile, normalizePageRanges } from '../utils/pdfSectionUtils';
 
-const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = null, initialType = 'folder' }) => {
+const normalizeTopicId = (value) => {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object' && value._id) return String(value._id);
+  return '';
+};
+
+const normalizeLinkedTopicIds = (value) => {
+  const rawValues = Array.isArray(value)
+    ? value
+    : value === null || value === undefined || value === ''
+      ? []
+      : [value];
+
+  return Array.from(new Set(
+    rawValues
+      .map((candidate) => normalizeTopicId(candidate))
+      .map((candidate) => String(candidate || '').trim())
+      .filter(Boolean)
+  ));
+};
+
+const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = null, initialType = 'folder', onOpenPdfViewer }) => {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -14,15 +38,18 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
     icon: 'folder',
     attachments: [],
     externalLinks: [],
-    linkedTopicId: ''
+    linkedTopicIds: []
   });
   const [tagInput, setTagInput] = useState('');
   const [newLink, setNewLink] = useState({ title: '', url: '', type: 'other', description: '' });
   const [topics, setTopics] = useState([]);
   const [topicsLoading, setTopicsLoading] = useState(false);
+  const [topicSearch, setTopicSearch] = useState('');
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [error, setError] = useState('');
   const formRef = useRef(null);
+  const [pdfDrafts, setPdfDrafts] = useState([]);
+  const [activePdfDraftId, setActivePdfDraftId] = useState('');
   const [availableDocTagTags, setAvailableDocTagTags] = useState([]);
   const [loadingTagSuggestions, setLoadingTagSuggestions] = useState(false);
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
@@ -66,8 +93,12 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
     setFormData(prev => ({
       ...prev,
       type: initialType,
-      icon: initialType === 'folder' ? 'folder' : 'document'
+      icon: initialType === 'folder' ? 'folder' : 'document',
+      linkedTopicIds: []
     }));
+    if (initialType === 'folder') {
+      setTopicSearch('');
+    }
   }, [isOpen, initialType]);
 
   useEffect(() => {
@@ -166,6 +197,150 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
       .slice(0, 8);
   }, [availableDocTagTags, formData.tags, tagInput]);
 
+  const selectedTopics = useMemo(() => {
+    const topicMap = new Map((topics || []).map((topic) => [String(topic._id), topic]));
+    return normalizeLinkedTopicIds(formData.linkedTopicIds)
+      .map((topicId) => topicMap.get(topicId))
+      .filter(Boolean)
+      .sort((left, right) => String(left.title || '').localeCompare(String(right.title || '')));
+  }, [topics, formData.linkedTopicIds]);
+
+  const filteredTopics = useMemo(() => {
+    const typed = topicSearch.trim().toLowerCase();
+    return [...topics]
+      .filter((topic) => {
+        const topicTitle = String(topic?.title || '').toLowerCase();
+        if (!typed) return true;
+        return topicTitle.includes(typed);
+      })
+      .sort((left, right) => String(left.title || '').localeCompare(String(right.title || '')));
+  }, [topics, topicSearch, formData.linkedTopicIds]);
+
+  const toggleLinkedTopic = useCallback((topicId) => {
+    const normalizedTopicId = String(topicId || '').trim();
+    if (!normalizedTopicId) return;
+
+    setFormData((prev) => {
+      const currentIds = normalizeLinkedTopicIds(prev.linkedTopicIds);
+      const nextIds = currentIds.includes(normalizedTopicId)
+        ? currentIds.filter((existingTopicId) => existingTopicId !== normalizedTopicId)
+        : [...currentIds, normalizedTopicId];
+
+      return {
+        ...prev,
+        linkedTopicIds: nextIds
+      };
+    });
+  }, []);
+
+  const activePdfDraft = useMemo(
+    () => pdfDrafts.find((draft) => draft.id === activePdfDraftId) || pdfDrafts[0] || null,
+    [activePdfDraftId, pdfDrafts]
+  );
+  const activeDraftDeletedRanges = Array.isArray(activePdfDraft?.deletedPageRanges)
+    ? activePdfDraft.deletedPageRanges
+    : (Array.isArray(activePdfDraft?.ranges) ? activePdfDraft.ranges : []);
+
+  const openDraftInViewer = useCallback((targetDraft) => {
+    if (!targetDraft || typeof onOpenPdfViewer !== 'function') return;
+    const draftName = String(targetDraft.name || targetDraft.file?.name || 'PDF document');
+    const resolvedUrl = targetDraft.previewUrl
+      || targetDraft.sourcePreviewUrl
+      || (targetDraft.file ? URL.createObjectURL(targetDraft.file) : '');
+
+    if (!resolvedUrl) {
+      console.warn('Opening viewer but file has no URL:', targetDraft);
+      return;
+    }
+
+    setPdfDrafts((prev) => prev.map((draft) => (
+      draft.id === targetDraft.id
+        ? { ...draft, previewUrl: resolvedUrl }
+        : draft
+    )));
+
+    const file = {
+      filename: draftName,
+      originalName: draftName,
+      title: draftName,
+      mimetype: 'application/pdf',
+      size: targetDraft.file?.size || 0,
+      url: resolvedUrl,
+      rawFile: targetDraft.file || null,
+      isSectioned: true,
+      pageCount: targetDraft.pageCount || 0,
+      deletedPageRanges: activeDraftDeletedRanges,
+      pageRanges: Array.isArray(targetDraft.pageRanges) ? targetDraft.pageRanges : []
+    };
+
+    const onSave = async ({ file: savedFile, previewUrl, pageRanges, deletedPageRanges, pageCount }) => {
+      if (!savedFile) return;
+
+      flushSync(() => {
+        setPdfDrafts((prev) => prev.map((draft) => {
+          if (draft.id !== targetDraft.id) return draft;
+
+          if (draft.previewUrl && draft.previewUrl !== draft.sourcePreviewUrl) {
+            try {
+              URL.revokeObjectURL(draft.previewUrl);
+            } catch (error) {
+              console.warn('Failed to revoke previous draft preview URL:', error);
+            }
+          }
+
+          return {
+            ...draft,
+            file: savedFile,
+            name: savedFile.name || draftName,
+            pageCount: pageCount || draft.pageCount,
+            ranges: Array.isArray(deletedPageRanges) ? deletedPageRanges : draft.ranges,
+            deletedPageRanges: Array.isArray(deletedPageRanges) ? deletedPageRanges : draft.deletedPageRanges,
+            pageRanges: Array.isArray(pageRanges) ? pageRanges : draft.pageRanges,
+            previewUrl: previewUrl || draft.previewUrl || draft.sourcePreviewUrl,
+            isSectioned: true,
+            previewLoading: false,
+            previewError: ''
+          };
+        }));
+      });
+
+      try {
+        setUploadingFiles(true);
+        const uploadedFiles = await docTagsService.uploadFiles([savedFile]);
+        const uploadedFile = uploadedFiles?.[0];
+        if (!uploadedFile) {
+          throw new Error('Failed to upload sliced file.');
+        }
+
+        flushSync(() => {
+          setPdfDrafts((prev) => prev.map((draft) => {
+            if (draft.id !== targetDraft.id) return draft;
+
+            return {
+              ...draft,
+              uploadedAttachment: {
+                ...uploadedFile,
+                sourceFileName: draft.sourceFileName || draft.name || savedFile.name,
+                sourcePageCount: pageCount || draft.pageCount,
+                pageRanges: Array.isArray(pageRanges) ? pageRanges : [],
+                deletedPageRanges: Array.isArray(deletedPageRanges) ? deletedPageRanges : [],
+                isSectioned: true,
+                sectionSummary: formatPageRanges(pageRanges || [])
+              }
+            };
+          }));
+        });
+      } catch (saveError) {
+        console.error('Failed to upload sliced draft immediately:', saveError);
+        setError(saveError.message || 'Failed to save sliced file.');
+      } finally {
+        setUploadingFiles(false);
+      }
+    };
+
+    onOpenPdfViewer({ file, files: [file], onSave });
+  }, [onOpenPdfViewer, pdfDrafts]);
+
   const scrollToErrorField = (fieldKey) => {
     window.requestAnimationFrame(() => {
       const field = formRef.current?.querySelector(`[data-error-field="${fieldKey}"]`);
@@ -180,6 +355,7 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    const hasPdfDrafts = pdfDrafts.length > 0;
 
     if (!String(formData.name || '').trim()) {
       setError('Name is required.');
@@ -187,11 +363,13 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
       return;
     }
 
-    if (formData.type === 'document' && formData.attachments.length === 0 && formData.externalLinks.length === 0) {
+    if (formData.type === 'document' && formData.attachments.length === 0 && formData.externalLinks.length === 0 && pdfDrafts.length === 0) {
       setError('Add at least one file or one link for a resource.');
       scrollToErrorField('resourceContent');
       return;
     }
+
+    // If a PDF draft has no explicit ranges, treat it as the full document during submit.
 
     try {
       const normalizedParentId =
@@ -206,22 +384,124 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
         description: String(link.description || '').trim().slice(0, 2000)
       }));
 
+      let sectionAttachments = [];
+      if (hasPdfDrafts) {
+        setUploadingFiles(true);
+        const preparedSections = await Promise.all(pdfDrafts.map(async (draft) => {
+          if (draft.uploadedAttachment) {
+            return {
+              file: draft.uploadedAttachment,
+              pageCount: draft.uploadedAttachment.sourcePageCount || draft.pageCount || 0,
+              pageRanges: Array.isArray(draft.uploadedAttachment.pageRanges) && draft.uploadedAttachment.pageRanges.length > 0
+                ? draft.uploadedAttachment.pageRanges
+                : normalizePageRanges(draft.pageRanges || [], draft.pageCount || null),
+              deletedPageRanges: Array.isArray(draft.uploadedAttachment.deletedPageRanges)
+                ? draft.uploadedAttachment.deletedPageRanges
+                : normalizePageRanges(draft.deletedPageRanges || [], draft.pageCount || null)
+            };
+          }
+
+          if (draft.isSectioned) {
+            const pageCount = draft.pageCount || (await getPdfPageCount(draft.file));
+            const normalizedRanges = normalizePageRanges(draft.pageRanges || [], pageCount || null);
+            const normalizedDeletedRanges = normalizePageRanges(draft.deletedPageRanges || [], pageCount || null);
+            return {
+              file: draft.file,
+              pageCount,
+              pageRanges: normalizedRanges.length > 0 ? normalizedRanges : [{ startPage: 1, endPage: pageCount }],
+              deletedPageRanges: normalizedDeletedRanges.length > 0
+                ? normalizedDeletedRanges
+                : invertPageRanges(normalizedRanges.length > 0 ? normalizedRanges : [{ startPage: 1, endPage: pageCount }], pageCount || null)
+            };
+          }
+
+          const rangesToUse = Array.isArray(draft.ranges) && draft.ranges.length > 0
+            ? draft.ranges
+            : [{ startPage: 1, endPage: draft.pageCount || await getPdfPageCount(draft.file) }];
+          return buildSectionedPdfFile(draft.file, rangesToUse);
+        }));
+        const filesToUpload = preparedSections
+          .filter((section) => !(section.file && section.file.filename))
+          .map((section) => section.file);
+
+        const uploadedSectionFiles = filesToUpload.length > 0
+          ? await docTagsService.uploadFiles(filesToUpload)
+          : [];
+
+        let uploadIndex = 0;
+
+        sectionAttachments = uploadedSectionFiles.map((uploadedFile, index) => ({
+          ...uploadedFile,
+          sourceFileName: pdfDrafts[index].sourceFileName || pdfDrafts[index].file.name,
+          sourcePageCount: preparedSections[index].pageCount,
+          pageRanges: preparedSections[index].pageRanges,
+          deletedPageRanges: preparedSections[index].deletedPageRanges || [],
+          isSectioned: true,
+          sectionSummary: formatPageRanges(preparedSections[index].pageRanges)
+        }));
+
+        if (filesToUpload.length === 0) {
+          sectionAttachments = preparedSections.map((section, index) => ({
+            ...section.file,
+            sourceFileName: pdfDrafts[index].sourceFileName || pdfDrafts[index].file.name,
+            sourcePageCount: section.pageCount,
+            pageRanges: section.pageRanges,
+            deletedPageRanges: section.deletedPageRanges || [],
+            isSectioned: true,
+            sectionSummary: formatPageRanges(section.pageRanges)
+          }));
+        } else {
+          sectionAttachments = preparedSections.map((section, index) => {
+            if (section.file && section.file.filename) {
+              return {
+                ...section.file,
+                sourceFileName: pdfDrafts[index].sourceFileName || pdfDrafts[index].file.name,
+                sourcePageCount: section.pageCount,
+                pageRanges: section.pageRanges,
+                deletedPageRanges: section.deletedPageRanges || [],
+                isSectioned: true,
+                sectionSummary: formatPageRanges(section.pageRanges)
+              };
+            }
+
+            const uploadedFile = uploadedSectionFiles[uploadIndex];
+            uploadIndex += 1;
+
+            return {
+              ...uploadedFile,
+              sourceFileName: pdfDrafts[index].sourceFileName || pdfDrafts[index].file.name,
+              sourcePageCount: section.pageCount,
+              pageRanges: section.pageRanges,
+              deletedPageRanges: section.deletedPageRanges || [],
+              isSectioned: true,
+              sectionSummary: formatPageRanges(section.pageRanges)
+            };
+          });
+        }
+      }
+
       const submitData = {
         ...formData,
         name: String(formData.name || '').trim().slice(0, 200),
         description: String(formData.description || '').trim().slice(0, 5000),
         parentId: normalizedParentId,
-        linkedTopicId: formData.linkedTopicId || null,
+        linkedTopicIds: formData.type === 'document' ? normalizeLinkedTopicIds(formData.linkedTopicIds) : [],
+        linkedTopicId: formData.type === 'document' ? (normalizeLinkedTopicIds(formData.linkedTopicIds)[0] || null) : null,
         tags: formData.tags
           .map((tag) => String(tag || '').trim().slice(0, 100))
           .filter((tag) => tag !== ''),
-        externalLinks: normalizedLinks
+        externalLinks: normalizedLinks,
+        attachments: [...formData.attachments, ...sectionAttachments]
       };
       await onSubmit(submitData);
       handleClose();
     } catch (error) {
       console.error('Failed to create item:', error);
       setError(error.message || 'Failed to create item. Please try again.');
+    } finally {
+      if (hasPdfDrafts) {
+        setUploadingFiles(false);
+      }
     }
   };
 
@@ -235,12 +515,25 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
       icon: 'folder',
       attachments: [],
       externalLinks: [],
-      linkedTopicId: ''
+      linkedTopicIds: []
     });
     setTagInput('');
     setNewLink({ title: '', url: '', type: 'other', description: '' });
     setError('');
     setShowTagSuggestions(false);
+    setTopicSearch('');
+    setActivePdfDraftId('');
+    setPdfDrafts((prev) => {
+      prev.forEach((draft) => {
+        if (draft.sourcePreviewUrl) {
+          URL.revokeObjectURL(draft.sourcePreviewUrl);
+        }
+        if (draft.previewUrl) {
+          URL.revokeObjectURL(draft.previewUrl);
+        }
+      });
+      return [];
+    });
     onClose();
   };
 
@@ -340,6 +633,26 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
     }));
   };
 
+  // NOTE: range previewing/editing removed — keep previewUrl as sourcePreviewUrl by default
+
+  // range editing removed
+
+  // range editing removed
+
+  const removePdfDraft = useCallback((draftId) => {
+    setPdfDrafts((prev) => {
+      const draft = prev.find((item) => item.id === draftId);
+      if (draft?.sourcePreviewUrl) {
+        URL.revokeObjectURL(draft.sourcePreviewUrl);
+      }
+      if (draft?.previewUrl) {
+        URL.revokeObjectURL(draft.previewUrl);
+      }
+      return prev.filter((item) => item.id !== draftId);
+    });
+    // pdf range inputs removed; no-op cleanup
+  }, []);
+
   const handleFileUpload = async (event) => {
     const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
@@ -347,11 +660,39 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
     setUploadingFiles(true);
     setError('');
     try {
-      const uploadedFiles = await docTagsService.uploadFiles(files);
-      setFormData(prev => ({
-        ...prev,
-        attachments: [...prev.attachments, ...uploadedFiles]
-      }));
+      const pdfFiles = files.filter((file) => isPdfFile(file));
+      const otherFiles = files.filter((file) => !isPdfFile(file));
+
+      if (otherFiles.length > 0) {
+        const uploadedFiles = await docTagsService.uploadFiles(otherFiles);
+        setFormData(prev => ({
+          ...prev,
+          attachments: [...prev.attachments, ...uploadedFiles]
+        }));
+      }
+
+      if (pdfFiles.length > 0) {
+        const pendingPdfDrafts = await Promise.all(pdfFiles.map(async (file) => {
+          const sourcePreviewUrl = URL.createObjectURL(file);
+
+          return {
+            id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${file.name}-${file.lastModified}-${Math.random().toString(16).slice(2)}`,
+            file,
+            name: file.name,
+            sourceFileName: file.name,
+            pageCount: await getPdfPageCount(file),
+            ranges: [],
+            sourcePreviewUrl,
+            previewUrl: sourcePreviewUrl,
+            isSectioned: false,
+            previewLoading: false,
+            previewError: ''
+          };
+        }));
+
+        setPdfDrafts((prev) => [...prev, ...pendingPdfDrafts]);
+        setActivePdfDraftId((currentActive) => currentActive || pendingPdfDrafts[0]?.id || '');
+      }
     } catch (uploadError) {
       console.error('File upload failed:', uploadError);
       setError(uploadError.message || 'Failed to upload files.');
@@ -386,7 +727,10 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
             <div className="flex space-x-4">
               <button
                 type="button"
-                onClick={() => setFormData(prev => ({ ...prev, type: 'folder', icon: 'folder', linkedTopicId: '' }))}
+                onClick={() => {
+                  setFormData(prev => ({ ...prev, type: 'folder', icon: 'folder', linkedTopicIds: [] }));
+                  setTopicSearch('');
+                }}
                 className={`flex items-center space-x-2 px-4 py-3 rounded-lg border transition-colors ${
                   formData.type === 'folder'
                     ? 'border-indigo-500 bg-indigo-500/20 text-indigo-400'
@@ -414,18 +758,75 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
           {/* Optional Topic Link */}
           {formData.type === 'document' && (
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Link To Existing Topic (Optional)
+              <label className="flex items-center space-x-2 text-sm font-medium text-gray-300 mb-2">
+                <LinkIcon className="w-4 h-4" />
+                <span>Link To Existing Topics (Optional)</span>
               </label>
-              <ShadcnSelect
-                value={formData.linkedTopicId}
-                onChange={(nextValue) => setFormData(prev => ({ ...prev, linkedTopicId: nextValue }))}
-                disabled={topicsLoading}
-                options={[
-                  { value: '', label: 'Tags only (no linked topic)' },
-                  ...topics.map((topic) => ({ value: topic._id, label: topic.title }))
-                ]}
+              <p className="text-xs text-gray-400 mb-3">
+                Attach one or more revision topics to this resource.
+              </p>
+
+              {selectedTopics.length > 0 && (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {selectedTopics.map((topic) => (
+                    <span
+                      key={topic._id}
+                      className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/12 px-3 py-1 text-xs text-emerald-100"
+                    >
+                      <span className="max-w-[14rem] truncate">{topic.title}</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleLinkedTopic(topic._id)}
+                        className="text-emerald-100/80 hover:text-white"
+                        aria-label={`Remove ${topic.title}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <input
+                type="text"
+                value={topicSearch}
+                onChange={(event) => setTopicSearch(event.target.value)}
+                placeholder="Search topics to link..."
+                className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-indigo-500"
               />
+
+              <div className="mt-3 max-h-60 overflow-y-auto rounded-xl border border-white/10 bg-white/[0.03] p-2 space-y-1">
+                {topicsLoading ? (
+                  <p className="px-3 py-2 text-sm text-gray-400">Loading topics...</p>
+                ) : filteredTopics.length > 0 ? (
+                  filteredTopics.map((topic) => {
+                    const isSelected = normalizeLinkedTopicIds(formData.linkedTopicIds).includes(String(topic._id));
+
+                    return (
+                      <button
+                        key={topic._id}
+                        type="button"
+                        onClick={() => toggleLinkedTopic(topic._id)}
+                        className={`w-full flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors ${
+                          isSelected
+                            ? 'border-emerald-400/35 bg-emerald-500/12 text-emerald-100'
+                            : 'border-white/10 bg-white/[0.02] text-gray-200 hover:bg-white/[0.05]'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <span className={`h-2.5 w-2.5 rounded-full ${isSelected ? 'bg-emerald-300' : 'bg-white/30'}`} />
+                          <span className="truncate">{topic.title}</span>
+                        </span>
+                        <span className="shrink-0 text-[11px] uppercase tracking-wide text-current/70">
+                          {isSelected ? 'Linked' : 'Link'}
+                        </span>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <p className="px-3 py-2 text-sm text-gray-400">No topics match this search.</p>
+                )}
+              </div>
             </div>
           )}
 
@@ -495,7 +896,7 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
 
               {/* File Upload */}
               <div className="bg-white/5 border border-white/20 rounded-lg p-4 mb-4">
-                <p className="text-sm text-gray-300 mb-3">Upload Files</p>
+                <p className="mb-3 text-sm text-gray-300">Upload Files</p>
                 <input
                   type="file"
                   id="doctag-resource-upload"
@@ -518,7 +919,10 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
                       <div key={`${attachment.filename}-${index}`} className="flex items-center justify-between bg-black border border-white/10 rounded-lg p-2">
                         <div className="min-w-0">
                           <p className="text-sm text-white truncate">{attachment.originalName || attachment.filename}</p>
-                          <p className="text-xs text-gray-400">{attachment.fileType || 'file'}</p>
+                          <p className="text-xs text-gray-400">
+                            {attachment.fileType || 'file'}
+                            {attachment.isSectioned && attachment.pageRanges?.length > 0 ? ` · Pages ${formatPageRanges(attachment.pageRanges)}` : ''}
+                          </p>
                         </div>
                         <button
                           type="button"
@@ -531,7 +935,51 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
                     ))}
                   </div>
                 )}
+
+                {pdfDrafts.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {pdfDrafts.map((draft) => {
+                      const isActive = activePdfDraftId === draft.id || (!activePdfDraftId && pdfDrafts[0]?.id === draft.id);
+                      const draftRanges = Array.isArray(draft.ranges) ? draft.ranges : [];
+
+                      return (
+                        <div key={draft.id} className={`flex items-center justify-between gap-3 rounded-lg border p-2 ${isActive ? 'border-cyan-400/45 bg-cyan-500/10' : 'border-white/10 bg-black/35'}`}>
+                          <div className="min-w-0">
+                            <p className="text-sm text-white truncate">{draft.name}</p>
+                            <p className="text-xs text-gray-400">
+                              Pending PDF
+                              {draftRanges.length > 0 ? ` · Deleting ${formatPageRanges(draftRanges)}` : ' · Ready to slice'}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActivePdfDraftId(draft.id);
+                                openDraftInViewer(draft);
+                              }}
+                              className="inline-flex items-center gap-2 rounded-lg border border-violet-400/30 bg-violet-600/12 px-3 py-2 text-xs text-violet-100 hover:bg-violet-600/20"
+                            >
+                              <Scissors className="w-3.5 h-3.5" />
+                              Slice Notes
+                            </button>
+                            {/* Edit Ranges removed per request */}
+                            <button
+                              type="button"
+                              onClick={() => removePdfDraft(draft.id)}
+                              className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-red-400"
+                              aria-label={`Remove ${draft.name}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
+              {/* Range-edit sidebar removed */}
               
               {/* Add new link */}
               <div className="bg-white/5 border border-white/20 rounded-lg p-4 mb-4">
@@ -573,7 +1021,7 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
               {formData.externalLinks.length > 0 && (
                 <div className="space-y-2">
                   {formData.externalLinks.map((link, index) => (
-                    <div key={index} className="flex items-center justify-between bg-white/5 border border-white/20 rounded-lg p-3">
+                        <div key={`${link.title || 'link'}-${link.url || 'url'}-${index}`} className="flex items-center justify-between bg-white/5 border border-white/20 rounded-lg p-3">
                       <div className="flex items-center space-x-3">
                         <LinkIcon className="w-4 h-4 text-indigo-400" />
                         <div>
@@ -660,9 +1108,9 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
                     {loadingTagSuggestions ? (
                       <div className="px-3 py-2 text-sm text-gray-400">Loading tags...</div>
                     ) : filteredExistingTags.length > 0 ? (
-                      filteredExistingTags.map((existingTag) => (
+                      filteredExistingTags.map((existingTag, index) => (
                         <button
-                          key={existingTag}
+                          key={`${existingTag}-${index}`}
                           type="button"
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => {
@@ -698,10 +1146,10 @@ const AddDocTagModal = ({ isOpen, onClose, onSubmit, loading, currentParentId = 
             </button>
             <button
               type="submit"
-              disabled={loading || !formData.name.trim()}
+              disabled={loading || uploadingFiles || !formData.name.trim()}
               className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
             >
-              {loading ? 'Creating...' : `Create ${formData.type === 'folder' ? 'Workspace' : 'Resource'}`}
+              {loading ? 'Creating...' : uploadingFiles ? 'Saving slice...' : `Create ${formData.type === 'folder' ? 'Workspace' : 'Resource'}`}
             </button>
           </div>
         </form>

@@ -54,7 +54,13 @@ if (enableRateLimit) {
     message: 'Too many requests from this IP, please try again later.'
   });
 
-  app.use(limiter);
+  app.use('/api', (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+      return next();
+    }
+
+    return limiter(req, res, next);
+  });
 }
 
 app.use(cors({

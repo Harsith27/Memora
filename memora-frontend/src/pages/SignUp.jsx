@@ -6,6 +6,7 @@ import Logo from '../components/Logo';
 import PublicNavbar from '../components/PublicNavbar';
 import PublicFooter from '../components/PublicFooter';
 import FloatingParticles from '../components/FloatingParticles';
+import ForgotPasswordModal from '../components/ForgotPasswordModal';
 import { useAuth } from '../contexts/AuthContext';
 
 const Motion = motion;
@@ -25,6 +26,7 @@ function SignUp() {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [isSuccess, setIsSuccess] = useState(false);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
 
 
   const handleChange = (e) => {
@@ -161,7 +163,7 @@ function SignUp() {
 
         <div className="relative z-10 flex items-center justify-center px-4 sm:px-6 lg:px-8 py-8 sm:py-10 min-h-[calc(100vh-7.5rem)]">
           <motion.div
-            className="max-w-[27rem] w-full"
+            className="max-w-md w-full"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: "easeOut" }}
@@ -175,220 +177,251 @@ function SignUp() {
           >
             <Link to="/" className="inline-flex items-center space-x-2 mb-4 hover:scale-105 transition-transform">
               <Logo size="sm" className="text-white" />
-              <span className="text-lg font-semibold">Memora</span>
+              <span className="text-lg font-semibold">Memy</span>
             </Link>
             <h2 className="text-[1.8rem] sm:text-[2.1rem] leading-tight font-bold mb-1.5">Create your account</h2>
             <p className="text-gray-400 text-sm sm:text-base">Start your intelligent learning journey today</p>
           </motion.div>
 
           {/* Signup Form */}
-          <motion.div
-            className="relative rounded-2xl border border-white/16 bg-[#090b13]/95 shadow-[0_18px_42px_rgba(0,0,0,0.55)]"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.6, delay: 0.4, ease: "easeOut" }}
-          >
-            <div className="rounded-2xl border border-white/10 bg-black/55 p-5 sm:p-6 backdrop-blur-md">
-              <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Username */}
-              <div>
-                <label htmlFor="username" className="block text-sm sm:text-base font-medium text-gray-300 mb-1.5">
-                  Username
-                </label>
-                <input
-                  id="username"
-                  name="username"
-                  type="text"
-                  required
-                  value={formData.username}
-                  onChange={handleChange}
-                  className={`w-full px-3 py-2.5 bg-black border rounded-lg text-white text-sm sm:text-base placeholder:text-[0.9rem] sm:placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none transition-colors ${
-                    errors.username
-                      ? 'border-red-400/50 focus:border-red-400'
-                      : 'border-white/20 focus:border-white/40'
-                  }`}
-                  placeholder="Choose a username"
-                />
-                <AnimatePresence>
-                  {errors.username && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className="flex items-center space-x-1 mt-1 text-red-400 text-xs"
-                    >
-                      <AlertCircle className="w-3 h-3" />
-                      <span>{errors.username}</span>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* Email */}
-              <div>
-                <label htmlFor="email" className="block text-sm sm:text-base font-medium text-gray-300 mb-1.5">
-                  Email address
-                </label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  required
-                  value={formData.email}
-                  onChange={handleChange}
-                  className={`w-full px-3 py-2.5 bg-black border rounded-lg text-white text-sm sm:text-base placeholder:text-[0.9rem] sm:placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none transition-colors ${
-                    errors.email
-                      ? 'border-red-400/50 focus:border-red-400'
-                      : 'border-white/20 focus:border-white/40'
-                  }`}
-                  placeholder="Enter your email"
-                />
-                <AnimatePresence>
-                  {errors.email && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className="flex items-center space-x-1 mt-1 text-red-400 text-xs"
-                    >
-                      <AlertCircle className="w-3 h-3" />
-                      <span>{errors.email}</span>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* Password */}
-              <div>
-                <label htmlFor="password" className="block text-sm sm:text-base font-medium text-gray-300 mb-1.5">
-                  Password
-                </label>
-                <div className="relative">
-                  <input
-                    id="password"
-                    name="password"
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    value={formData.password}
-                    onChange={handleChange}
-                    className="w-full px-3 py-2.5 bg-black border border-white/20 rounded-lg text-white text-sm sm:text-base placeholder:text-[0.9rem] sm:placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none focus:border-white/40 transition-colors pr-10"
-                    placeholder="Create a password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white transition-colors"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Confirm Password */}
-              <div>
-                <label htmlFor="confirmPassword" className="block text-sm sm:text-base font-medium text-gray-300 mb-1.5">
-                  Confirm Password
-                </label>
-                <div className="relative">
-                  <input
-                    id="confirmPassword"
-                    name="confirmPassword"
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    required
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
-                    className="w-full px-3 py-2.5 bg-black border border-white/20 rounded-lg text-white text-sm sm:text-base placeholder:text-[0.9rem] sm:placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none focus:border-white/40 transition-colors pr-10"
-                    placeholder="Confirm your password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white transition-colors"
-                  >
-                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Compact Password Requirements */}
-              {formData.password && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] sm:text-xs">
-                  {passwordRequirements.map((req, index) => (
-                    <div key={index} className="flex items-center">
-                      <Check className={`w-3 h-3 mr-1 ${req.met ? 'text-green-400' : 'text-gray-500'}`} />
-                      <span className={req.met ? 'text-green-400' : 'text-gray-500'}>
-                        {req.text}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Password Match Warning */}
-              {formData.confirmPassword && formData.password !== formData.confirmPassword && (
-                <p className="text-xs text-red-400">Passwords do not match</p>
-              )}
-
-
-
-              <motion.button
-                type="submit"
-                disabled={isLoading || isSuccess}
-                whileHover={{ scale: isLoading || isSuccess ? 1 : 1.02 }}
-                whileTap={{ scale: isLoading || isSuccess ? 1 : 0.98 }}
-                className={`w-full px-4 py-2.5 rounded-lg font-medium transition-all duration-300 disabled:cursor-not-allowed flex items-center justify-center ${
-                  isSuccess
-                    ? 'bg-green-500 text-white'
-                    : 'bg-white text-black hover:bg-gray-100 disabled:opacity-50'
-                }`}
+          <AnimatePresence mode="wait" initial={false}>
+            {showForgotPasswordModal ? (
+              <ForgotPasswordModal
+                key="forgot-password-inline"
+                inline
+                isOpen={showForgotPasswordModal}
+                onClose={() => setShowForgotPasswordModal(false)}
+                initialEmail={formData.email}
+                onResetSuccess={(nextEmail) => {
+                  setFormData((previous) => ({
+                    ...previous,
+                    email: nextEmail,
+                    password: '',
+                    confirmPassword: ''
+                  }));
+                  setIsSuccess(false);
+                  setShowForgotPasswordModal(false);
+                  navigate('/login');
+                }}
+              />
+            ) : (
+              <motion.div
+                key="signup-form"
+                className="relative rounded-2xl border border-white/16 bg-[#090b13]/95 shadow-[0_18px_42px_rgba(0,0,0,0.55)]"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                transition={{ duration: 0.6, delay: 0.4, ease: "easeOut" }}
               >
-                {isLoading ? (
-                  <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
-                ) : isSuccess ? (
-                  <>
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    Account Created!
-                  </>
-                ) : (
-                  <>
-                    Create Account
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </>
-                )}
-              </motion.button>
+                <div className="rounded-2xl border border-white/10 bg-black/55 p-5 sm:p-8 backdrop-blur-md">
+                  <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
+                    {/* Username */}
+                    <div>
+                      <label htmlFor="username" className="block text-sm sm:text-base font-medium text-gray-300 mb-1.5">
+                        Username
+                      </label>
+                      <input
+                        id="username"
+                        name="username"
+                        type="text"
+                        required
+                        value={formData.username}
+                        onChange={handleChange}
+                        className={`w-full px-3 py-2.5 bg-black border rounded-lg text-white text-sm sm:text-base placeholder:text-[0.9rem] sm:placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none transition-colors ${
+                          errors.username
+                            ? 'border-red-400/50 focus:border-red-400'
+                            : 'border-white/20 focus:border-white/40'
+                        }`}
+                        placeholder="Choose a username"
+                      />
+                      <AnimatePresence>
+                        {errors.username && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            className="flex items-center space-x-1 mt-1 text-red-400 text-xs"
+                          >
+                            <AlertCircle className="w-3 h-3" />
+                            <span>{errors.username}</span>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
 
-              {/* Submit Error */}
-              <AnimatePresence>
-                {errors.submit && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="flex items-center space-x-2 text-red-400 text-sm mt-2"
-                  >
-                    <AlertCircle className="w-4 h-4" />
-                    <span>{errors.submit}</span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              </form>
+                    {/* Email */}
+                    <div>
+                      <label htmlFor="email" className="block text-sm sm:text-base font-medium text-gray-300 mb-1.5">
+                        Email address
+                      </label>
+                      <input
+                        id="email"
+                        name="email"
+                        type="email"
+                        required
+                        value={formData.email}
+                        onChange={handleChange}
+                        className={`w-full px-3 py-2.5 bg-black border rounded-lg text-white text-sm sm:text-base placeholder:text-[0.9rem] sm:placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none transition-colors ${
+                          errors.email
+                            ? 'border-red-400/50 focus:border-red-400'
+                            : 'border-white/20 focus:border-white/40'
+                        }`}
+                        placeholder="Enter your email"
+                      />
+                      <AnimatePresence>
+                        {errors.email && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            className="flex items-center space-x-1 mt-1 text-red-400 text-xs"
+                          >
+                            <AlertCircle className="w-3 h-3" />
+                            <span>{errors.email}</span>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
 
-              <div className="mt-4 text-center">
-                <p className="text-gray-400 text-sm">
-                  Already have an account?{' '}
-                  <Link to="/login" className="text-blue-400 hover:text-blue-300 transition-colors">
-                    Sign in
-                  </Link>
-                </p>
-              </div>
-            </div>
-          </motion.div>
+                    {/* Password */}
+                    <div>
+                      <label htmlFor="password" className="block text-sm sm:text-base font-medium text-gray-300 mb-1.5">
+                        Password
+                      </label>
+                      <div className="relative">
+                        <input
+                          id="password"
+                          name="password"
+                          type={showPassword ? 'text' : 'password'}
+                          required
+                          value={formData.password}
+                          onChange={handleChange}
+                          className="w-full px-3 py-2.5 bg-black border border-white/20 rounded-lg text-white text-sm sm:text-base placeholder:text-[0.9rem] sm:placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none focus:border-white/40 transition-colors pr-10"
+                          placeholder="Create a password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white transition-colors"
+                        >
+                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Confirm Password */}
+                    <div>
+                      <label htmlFor="confirmPassword" className="block text-sm sm:text-base font-medium text-gray-300 mb-1.5">
+                        Confirm Password
+                      </label>
+                      <div className="relative">
+                        <input
+                          id="confirmPassword"
+                          name="confirmPassword"
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          required
+                          value={formData.confirmPassword}
+                          onChange={handleChange}
+                          className="w-full px-3 py-2.5 bg-black border border-white/20 rounded-lg text-white text-sm sm:text-base placeholder:text-[0.9rem] sm:placeholder:text-[0.95rem] placeholder:font-medium placeholder:tracking-[0.01em] placeholder:text-gray-500 focus:outline-none focus:border-white/40 transition-colors pr-10"
+                          placeholder="Confirm your password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-white transition-colors"
+                        >
+                          {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Compact Password Requirements */}
+                    {formData.password && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] sm:text-xs">
+                        {passwordRequirements.map((req, index) => (
+                          <div key={index} className="flex items-center">
+                            <Check className={`w-3 h-3 mr-1 ${req.met ? 'text-green-400' : 'text-gray-500'}`} />
+                            <span className={req.met ? 'text-green-400' : 'text-gray-500'}>
+                              {req.text}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Password Match Warning */}
+                    {formData.confirmPassword && formData.password !== formData.confirmPassword && (
+                      <p className="text-xs text-red-400">Passwords do not match</p>
+                    )}
+
+                    <motion.button
+                      type="submit"
+                      disabled={isLoading || isSuccess}
+                      whileHover={{ scale: isLoading || isSuccess ? 1 : 1.02 }}
+                      whileTap={{ scale: isLoading || isSuccess ? 1 : 0.98 }}
+                      className={`w-full px-4 py-2.5 rounded-lg font-medium transition-all duration-300 disabled:cursor-not-allowed flex items-center justify-center ${
+                        isSuccess
+                          ? 'bg-green-500 text-white'
+                          : 'bg-white text-black hover:bg-gray-100 disabled:opacity-50'
+                      }`}
+                    >
+                      {isLoading ? (
+                        <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                      ) : isSuccess ? (
+                        <>
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          Account Created!
+                        </>
+                      ) : (
+                        <>
+                          Create Account
+                          <ArrowRight className="w-4 h-4 ml-2" />
+                        </>
+                      )}
+                    </motion.button>
+
+                    {/* Submit Error */}
+                    <AnimatePresence>
+                      {errors.submit && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="flex items-center space-x-2 text-red-400 text-sm mt-2"
+                        >
+                          <AlertCircle className="w-4 h-4" />
+                          <span>{errors.submit}</span>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </form>
+
+                  <div className="mt-4 text-center">
+                    <p className="text-gray-400 text-sm">
+                      Already have an account?{' '}
+                      <Link to="/login" className="text-blue-400 hover:text-blue-300 transition-colors">
+                        Sign in
+                      </Link>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotPasswordModal(true)}
+                      className="mt-2 text-sm text-blue-400 transition-colors hover:text-blue-300"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           </motion.div>
         </div>
       </div>
 
       <PublicFooter />
+
     </div>
   );
 }

@@ -47,6 +47,39 @@ const formatDocTagDate = (value) => {
   return formatDateDDMMYYYY(parsedDate);
 };
 
+const extractLinkedTopics = (item) => {
+  const rawTopics = Array.isArray(item?.linkedTopicIds) && item.linkedTopicIds.length > 0
+    ? item.linkedTopicIds
+    : item?.linkedTopicId
+      ? [item.linkedTopicId]
+      : [];
+
+  const topicMap = new Map();
+
+  rawTopics.forEach((topic) => {
+    if (topic && typeof topic === 'object') {
+      const id = String(topic._id || topic.id || '').trim();
+      if (!id) return;
+
+      topicMap.set(id, {
+        id,
+        title: String(topic.title || '').trim() || 'Untitled topic'
+      });
+      return;
+    }
+
+    const id = String(topic || '').trim();
+    if (!id) return;
+
+    topicMap.set(id, {
+      id,
+      title: id
+    });
+  });
+
+  return Array.from(topicMap.values());
+};
+
 const DocTags = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -79,6 +112,8 @@ const DocTags = () => {
   const [currentFile, setCurrentFile] = useState(null);
   const [currentFiles, setCurrentFiles] = useState([]);
   const [fileViewerStartFullscreen, setFileViewerStartFullscreen] = useState(false);
+  const [viewerSaveHandler, setViewerSaveHandler] = useState(null);
+  const draftViewerUrlsRef = useRef([]);
   const [todayRevisionTopics, setTodayRevisionTopics] = useState([]);
   const [spotlightItemId, setSpotlightItemId] = useState(null);
   const [isItemSpotlightActive, setIsItemSpotlightActive] = useState(false);
@@ -105,7 +140,8 @@ const DocTags = () => {
     onConfirm: null,
     confirmText: 'OK',
     cancelText: 'Cancel',
-    showCancel: false
+    showCancel: false,
+    size: 'md'
   });
 
   const startItemSpotlight = (itemId) => {
@@ -217,6 +253,11 @@ const DocTags = () => {
       return;
     }
 
+    if (item.label === "Flashcards") {
+      navigate('/flashcards');
+      return;
+    }
+
     if (item.label === "Graph Mode") {
       navigate('/graph');
       return;
@@ -264,12 +305,43 @@ const DocTags = () => {
       onConfirm: options.onConfirm || null,
       confirmText: options.confirmText || 'OK',
       cancelText: options.cancelText || 'Cancel',
-      showCancel: options.showCancel || false
+      showCancel: options.showCancel || false,
+      size: options.size || 'md'
     });
   };
 
   const closeDialog = () => {
     setDialog(prev => ({ ...prev, isOpen: false }));
+  };
+
+  const openLinkedTopicsDialog = (item) => {
+    const linkedTopics = extractLinkedTopics(item);
+    if (linkedTopics.length <= 1) return;
+
+    showDialog({
+      type: 'info',
+      title: `${item?.name || 'Resource'} linked topics`,
+      size: 'lg',
+      confirmText: 'Close',
+      message: (
+        <div className="space-y-4 text-left">
+          <p className="text-sm text-gray-300">
+            This resource is connected to {linkedTopics.length} topics.
+          </p>
+          <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+            {linkedTopics.map((topic) => (
+              <div
+                key={topic.id}
+                className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2"
+              >
+                <span className="min-w-0 truncate text-sm text-white">{topic.title}</span>
+                <span className="shrink-0 text-xs text-gray-400">Linked</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    });
   };
 
   // Toggle sidebar
@@ -365,31 +437,15 @@ const DocTags = () => {
   const getDocTagPriorityIndex = (item) => {
     if (!item) return Number.POSITIVE_INFINITY;
 
-    const linkedTopic = item.linkedTopicId;
+    const linkedTopics = extractLinkedTopics(item);
 
-    if (linkedTopic && typeof linkedTopic === 'object') {
-      if (linkedTopic._id && todayRevisionTopicOrder.has(String(linkedTopic._id))) {
-        return todayRevisionTopicOrder.get(String(linkedTopic._id));
-      }
-
+    for (const linkedTopic of linkedTopics) {
       if (linkedTopic.id && todayRevisionTopicOrder.has(String(linkedTopic.id))) {
         return todayRevisionTopicOrder.get(String(linkedTopic.id));
       }
 
       if (linkedTopic.title && todayRevisionTopicOrder.has(normalizeTag(linkedTopic.title))) {
         return todayRevisionTopicOrder.get(normalizeTag(linkedTopic.title));
-      }
-    }
-
-    if (typeof linkedTopic === 'string') {
-      const linkedTopicValue = String(linkedTopic);
-      if (todayRevisionTopicOrder.has(linkedTopicValue)) {
-        return todayRevisionTopicOrder.get(linkedTopicValue);
-      }
-
-      const normalizedLinkedTopic = normalizeTag(linkedTopicValue);
-      if (todayRevisionTopicOrder.has(normalizedLinkedTopic)) {
-        return todayRevisionTopicOrder.get(normalizedLinkedTopic);
       }
     }
 
@@ -668,6 +724,51 @@ const DocTags = () => {
     }
   };
 
+  const handleOpenDraftPdfViewer = ({ file, files, onSave }) => {
+    if (!file) return;
+
+    draftViewerUrlsRef.current.forEach((url) => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.warn('Failed to revoke draft viewer URL:', error);
+      }
+    });
+    draftViewerUrlsRef.current = [];
+
+    const normalizedFiles = (Array.isArray(files) && files.length > 0 ? files : [file]).map((candidate) => {
+      if (candidate?.url) return candidate;
+
+      const rawUrl = candidate?.sourcePreviewUrl
+        || candidate?.previewUrl
+        || (candidate?.rawFile ? URL.createObjectURL(candidate.rawFile) : '');
+
+      if (rawUrl && rawUrl.startsWith('blob:')) {
+        draftViewerUrlsRef.current.push(rawUrl);
+      }
+
+      return {
+        ...candidate,
+        url: rawUrl
+      };
+    });
+
+    const normalizedFile = normalizedFiles.find((candidate) => (
+      candidate?.filename === file?.filename
+      || candidate?.title === file?.title
+      || candidate?.originalName === file?.originalName
+    )) || normalizedFiles[0] || {
+      ...file,
+      url: file?.url || file?.sourcePreviewUrl || file?.previewUrl || ''
+    };
+
+    setCurrentFiles(normalizedFiles);
+    setCurrentFile(normalizedFile);
+    setViewerSaveHandler(() => (typeof onSave === 'function' ? onSave : null));
+    setFileViewerStartFullscreen(false);
+    setShowFileViewer(true);
+  };
+
   const getIcon = (item) => {
     if (item.type === 'folder') {
       const iconMap = {
@@ -837,7 +938,7 @@ const DocTags = () => {
             className={`flex items-center hover:opacity-80 transition-opacity ${isSidebarCollapsed ? 'justify-center w-full' : 'gap-2 min-w-0'}`}
           >
             <Logo size="sm" className="text-white scale-90" />
-            {!isSidebarCollapsed && <span className="text-lg font-semibold text-white">Memora</span>}
+            {!isSidebarCollapsed && <span className="text-lg font-semibold text-white">Memy</span>}
           </button>
 
           {isDesktopViewport && !isSidebarCollapsed && (
@@ -1087,6 +1188,7 @@ const DocTags = () => {
               const isDocument = item.type === 'document';
               const attachmentCount = item.attachments?.length || 0;
               const linkCount = item.externalLinks?.length || 0;
+              const linkedTopics = extractLinkedTopics(item);
               const isDraggingThisCard = draggedItemId === item._id;
               const isFolderDropTarget = item.type === 'folder' && dragOverTargetId === item._id && draggedItemId !== item._id;
 
@@ -1162,13 +1264,27 @@ const DocTags = () => {
                     )}
                   </div>
 
-                  {item.linkedTopicId?.title && (
+                  {linkedTopics.length === 1 ? (
                     <div className="mt-2">
                       <span className="inline-flex items-center px-2 py-1 bg-emerald-500/15 text-emerald-300 text-[11px] rounded-md max-w-full truncate">
-                        Topic: {item.linkedTopicId.title}
+                        Topic: {linkedTopics[0].title}
                       </span>
                     </div>
-                  )}
+                  ) : linkedTopics.length > 1 ? (
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openLinkedTopicsDialog(item);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-violet-400/25 bg-violet-500/12 px-2 py-1 text-[11px] text-violet-100 transition-colors hover:bg-violet-500/20"
+                      >
+                        <LinkIcon className="h-3 w-3" />
+                        <span>{linkedTopics.length} linked topics</span>
+                      </button>
+                    </div>
+                  ) : null}
 
                   <div className="mt-2 border-t border-white/10 pt-2 space-y-1.5 text-[11px]">
                     <div className="flex items-center justify-between gap-2">
@@ -1221,6 +1337,7 @@ const DocTags = () => {
         loading={loading}
         initialType={createType}
         currentParentId={currentParentId}
+        onOpenPdfViewer={handleOpenDraftPdfViewer}
       />
 
       {/* Edit Modal */}
@@ -1233,6 +1350,7 @@ const DocTags = () => {
         onSubmit={handleEdit}
         item={editingItem}
         loading={loading}
+        onOpenPdfViewer={handleOpenDraftPdfViewer}
       />
 
 
@@ -1248,6 +1366,7 @@ const DocTags = () => {
         confirmText={dialog.confirmText}
         cancelText={dialog.cancelText}
         showCancel={dialog.showCancel}
+        size={dialog.size}
       />
 
       {showResourcePreview && previewResource && (
@@ -1328,10 +1447,20 @@ const DocTags = () => {
         onClose={() => {
           setShowFileViewer(false);
           setFileViewerStartFullscreen(false);
+          setViewerSaveHandler(null);
+          draftViewerUrlsRef.current.forEach((url) => {
+            try {
+              URL.revokeObjectURL(url);
+            } catch (error) {
+              console.warn('Failed to revoke draft viewer URL on close:', error);
+            }
+          });
+          draftViewerUrlsRef.current = [];
         }}
         file={currentFile}
         files={currentFiles}
         startInFullscreen={fileViewerStartFullscreen}
+        onSave={viewerSaveHandler}
       />
 
       {/* Toast Notifications */}

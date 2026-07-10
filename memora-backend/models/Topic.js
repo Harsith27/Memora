@@ -840,7 +840,13 @@ topicSchema.statics.preventCrowding = async function(userId, targetDate) {
     return { redistributed: false, message: 'No crowding detected', totalDays: dailyCounts.length };
   }
 
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayEnd = new Date(todayStart);
+  todayEnd.setHours(23, 59, 59, 999);
+
   let redistributedCount = 0;
+  const redistributedTopics = [];
 
   for (const crowdedDay of crowdedDays) {
     const thresholds = this.getCrowdingThresholds(crowdedDay.averageDifficulty);
@@ -851,11 +857,31 @@ topicSchema.statics.preventCrowding = async function(userId, targetDate) {
 
     // Prioritize moving higher difficulty topics first (they contribute more to crowding)
     const topicsToMove = crowdedDay.topics
-      .filter(topic => topic.isLearning === false) // Only move learned topics
+      .filter((topic) => {
+        const createdAt = topic?.createdAt ? new Date(topic.createdAt) : null;
+        const reviewCount = Number(topic?.reviewCount || 0);
+        const isMandatoryFirstRevision = createdAt
+          && !Number.isNaN(createdAt.getTime())
+          && createdAt >= todayStart
+          && createdAt <= todayEnd
+          && reviewCount <= 0;
+
+        if (isMandatoryFirstRevision) return false;
+
+        // Only move lower-risk items that have at least some revision history.
+        return reviewCount >= 1;
+      })
       .sort((a, b) => {
-        // Sort by difficulty (desc) then by repetitions (asc)
-        if (a.difficulty !== b.difficulty) return b.difficulty - a.difficulty;
-        return a.repetitions - b.repetitions;
+        // Move safer topics first: higher review history and lower difficulty.
+        const aReviewCount = Number(a?.reviewCount || 0);
+        const bReviewCount = Number(b?.reviewCount || 0);
+        if (aReviewCount !== bReviewCount) return bReviewCount - aReviewCount;
+
+        const aDifficulty = Number(a?.difficulty || 3);
+        const bDifficulty = Number(b?.difficulty || 3);
+        if (aDifficulty !== bDifficulty) return aDifficulty - bDifficulty;
+
+        return Number(a?.repetitions || 0) - Number(b?.repetitions || 0);
       })
       .slice(0, excessTopics);
 
@@ -873,6 +899,14 @@ topicSchema.statics.preventCrowding = async function(userId, targetDate) {
           $inc: { rescheduleCount: 1 }
         });
         redistributedCount++;
+        redistributedTopics.push({
+          id: String(topic._id),
+          title: topic.title,
+          fromDate: crowdedDay.date,
+          toDate: newDate,
+          difficulty: Number(topic?.difficulty || 3),
+          reviewCount: Number(topic?.reviewCount || 0)
+        });
       }
     }
   }
@@ -881,6 +915,7 @@ topicSchema.statics.preventCrowding = async function(userId, targetDate) {
     redistributed: redistributedCount > 0,
     count: redistributedCount,
     message: `Redistributed ${redistributedCount} topics to prevent crowding`,
+    redistributedTopics,
     details: crowdedDays.map(day => ({
       date: day.date,
       originalCount: day.count,

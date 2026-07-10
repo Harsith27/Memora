@@ -32,6 +32,10 @@ const docTagSchema = new mongoose.Schema({
     ref: 'Topic',
     default: null
   },
+  linkedTopicIds: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Topic'
+  }],
   parentId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'DocTag',
@@ -72,6 +76,34 @@ const docTagSchema = new mongoose.Schema({
       type: String,
       enum: ['pdf', 'image', 'video', 'audio', 'document', 'other'],
       default: 'other'
+    },
+    isSectioned: {
+      type: Boolean,
+      default: false
+    },
+    sourceFileName: {
+      type: String,
+      default: ''
+    },
+    sourcePageCount: {
+      type: Number,
+      default: null
+    },
+    pageRanges: [{
+      startPage: {
+        type: Number,
+        required: true,
+        min: 1
+      },
+      endPage: {
+        type: Number,
+        required: true,
+        min: 1
+      }
+    }],
+    sectionSummary: {
+      type: String,
+      default: ''
     }
   }],
   // External links (YouTube, Google Drive, etc.)
@@ -164,6 +196,7 @@ docTagSchema.index({ userId: 1, type: 1, createdAt: -1 });
 docTagSchema.index({ userId: 1, parentId: 1 });
 docTagSchema.index({ userId: 1, sourceTopicId: 1 });
 docTagSchema.index({ userId: 1, linkedTopicId: 1 });
+docTagSchema.index({ userId: 1, linkedTopicIds: 1 });
 docTagSchema.index({ userId: 1, isFavorite: 1 });
 docTagSchema.index({ tags: 1 });
 docTagSchema.index({ name: 'text', description: 'text' });

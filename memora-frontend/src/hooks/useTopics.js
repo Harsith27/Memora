@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import apiService from '../services/api';
 
-export const useTopics = () => {
+export const useTopics = (options = {}) => {
+  const autoFetchDueTopics = options.autoFetchDueTopics !== false;
   const [topics, setTopics] = useState([]);
   const [dueTopics, setDueTopics] = useState([]);
   const [upcomingTopics, setUpcomingTopics] = useState([]);
@@ -168,8 +169,10 @@ export const useTopics = () => {
 
   // Auto-fetch due topics on mount
   useEffect(() => {
+    if (!autoFetchDueTopics) return undefined;
+
     fetchDueTopics();
-  }, [fetchDueTopics]);
+  }, [autoFetchDueTopics, fetchDueTopics]);
 
   return {
     // State

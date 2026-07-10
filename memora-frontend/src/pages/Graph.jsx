@@ -120,6 +120,10 @@ const Graph = () => {
   }, [shouldHideLayoutChrome]);
 
   useEffect(() => {
+    dispatchGraphUiCommand('reset-view');
+  }, []);
+
+  useEffect(() => {
     if (!isLoading && !user) {
       navigate('/login');
     }
@@ -180,7 +184,7 @@ const Graph = () => {
             className={`flex items-center hover:opacity-80 transition-opacity ${sidebarCollapsed ? 'justify-center w-full' : 'gap-2 min-w-0'}`}
           >
             <Logo size="sm" className="text-white scale-90" />
-            {!sidebarCollapsed && <span className="text-lg font-semibold text-white">Memora</span>}
+            {!sidebarCollapsed && <span className="text-lg font-semibold text-white">Memy</span>}
           </button>
 
           {!sidebarCollapsed && (
@@ -259,7 +263,7 @@ const Graph = () => {
               className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
             >
               <Logo size="sm" className="text-white" />
-              <span className="text-lg font-semibold text-white">Memora</span>
+              <span className="text-lg font-semibold text-white">Memy</span>
             </button>
             <button
               type="button"

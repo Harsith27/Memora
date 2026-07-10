@@ -145,6 +145,8 @@ const getPatternLayer = (pattern, color, spacing = 42) => {
 
 const FOCUS_SESSION_TIMESTAMP_SKEW_MS = 15 * 60 * 1000;
 const MAX_FOCUS_SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
+const MAX_CUSTOM_FOCUS_MINUTES = 12 * 60;
+const FOCUS_TIMER_STATE_KEY = 'focusModeTimerState';
 
 const parseFocusSessionTimestamp = (...values) => {
   for (const value of values) {
@@ -161,6 +163,65 @@ const parseFocusSessionTimestamp = (...values) => {
     }
   }
   return Number.NaN;
+};
+
+const serializeDateValue = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  return value;
+};
+
+const hydrateDateValue = (value) => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const serializeSessionData = (sessionData) => {
+  if (!sessionData) return null;
+
+  return {
+    ...sessionData,
+    startTime: serializeDateValue(sessionData.startTime),
+    endTime: serializeDateValue(sessionData.endTime),
+    events: Array.isArray(sessionData.events)
+      ? sessionData.events.map((event) => ({
+          ...event,
+          timestamp: serializeDateValue(event.timestamp)
+        }))
+      : []
+  };
+};
+
+const hydrateSessionData = (sessionData) => {
+  if (!sessionData) return null;
+
+  return {
+    ...sessionData,
+    startTime: hydrateDateValue(sessionData.startTime) || new Date(),
+    endTime: hydrateDateValue(sessionData.endTime),
+    events: Array.isArray(sessionData.events)
+      ? sessionData.events.map((event) => ({
+          ...event,
+          timestamp: hydrateDateValue(event.timestamp) || new Date()
+        }))
+      : []
+  };
+};
+
+const readStoredTimerSnapshot = (storageKey) => {
+  if (!storageKey) return null;
+
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
 };
 
 const FocusMode = () => {
@@ -185,8 +246,10 @@ const FocusMode = () => {
     setInitialTime: setGlobalInitialTime,
     formatTime,
     getCurrentTime,
+    dispatch,
     clearCompleted
   } = useTimer();
+  const hydratedTimerStateRef = useRef(false);
 
   const userStorageId = (() => {
     const candidates = [user?.id, user?._id, user?.email, user?.username];
@@ -346,7 +409,7 @@ const FocusMode = () => {
     const nextTimerMode = config.timerMode === 'stopwatch' ? 'stopwatch' : 'countdown';
     const nextStudyMethod = config.studyMethod === 'continuous' ? 'continuous' : 'pomodoro';
     const nextCustomMinutes = Number.isFinite(Number(config.customMinutes))
-      ? Math.max(1, Math.min(180, Number(config.customMinutes)))
+      ? Math.max(1, Math.min(MAX_CUSTOM_FOCUS_MINUTES, Number(config.customMinutes)))
       : 25;
     const nextPomodoroSessions = Number.isFinite(Number(config.pomodoroSessions))
       ? Math.max(1, Math.min(12, Number(config.pomodoroSessions)))
@@ -371,8 +434,108 @@ const FocusMode = () => {
     }
   };
 
+  useEffect(() => {
+    const storageKey = getUserStorageKey(FOCUS_TIMER_STATE_KEY);
+    const snapshot = readStoredTimerSnapshot(storageKey);
+    if (!snapshot) return;
+
+    hydratedTimerStateRef.current = true;
+
+    const savedAt = Number(snapshot.savedAt || snapshot.updatedAt || 0);
+    const elapsedWhileAway = Number.isFinite(savedAt) && savedAt > 0
+      ? Math.max(0, Math.floor((Date.now() - savedAt) / 1000))
+      : 0;
+
+    const nextTimerMode = snapshot.timerMode === 'stopwatch' ? 'stopwatch' : 'countdown';
+    const nextStudyMethod = snapshot.studyMethod === 'continuous' ? 'continuous' : 'pomodoro';
+    const nextCustomMinutes = Number.isFinite(Number(snapshot.customMinutes))
+      ? Math.max(1, Math.min(MAX_CUSTOM_FOCUS_MINUTES, Number(snapshot.customMinutes)))
+      : 25;
+    const nextPomodoroSessions = Number.isFinite(Number(snapshot.pomodoroSessions))
+      ? Math.max(1, Math.min(12, Number(snapshot.pomodoroSessions)))
+      : 4;
+    const nextInitialTime = Number.isFinite(Number(snapshot.initialTime))
+      ? Math.max(1, Number(snapshot.initialTime))
+      : (nextStudyMethod === 'pomodoro' ? 25 * 60 : nextCustomMinutes * 60);
+    const hydratedSessionData = hydrateSessionData(snapshot.currentSessionData);
+
+    setGlobalTimerMode(nextTimerMode);
+    setGlobalStudyMethod(nextStudyMethod);
+    setCustomMinutes(nextCustomMinutes);
+    setPomodoroSessions(nextPomodoroSessions);
+    setCurrentSessionData(hydratedSessionData);
+
+    if (nextTimerMode === 'countdown') {
+      const persistedTimeLeft = Number.isFinite(Number(snapshot.timeLeft))
+        ? Math.max(0, Number(snapshot.timeLeft))
+        : nextInitialTime;
+      const restoredTimeLeft = snapshot.isRunning
+        ? Math.max(0, persistedTimeLeft - elapsedWhileAway)
+        : persistedTimeLeft;
+
+      setGlobalInitialTime(nextInitialTime);
+      dispatch({
+        type: 'HYDRATE_TIMER_STATE',
+        payload: {
+          timerMode: nextTimerMode,
+          studyMethod: nextStudyMethod,
+          timeLeft: restoredTimeLeft,
+          elapsedTime: 0,
+          initialTime: nextInitialTime,
+          isRunning: Boolean(snapshot.isRunning) && restoredTimeLeft > 0,
+          isPaused: Boolean(snapshot.isPaused) && !snapshot.isRunning,
+          isCompleted: Boolean(snapshot.isRunning) && restoredTimeLeft <= 0,
+          currentSession: Number.isFinite(Number(snapshot.currentSession)) ? Number(snapshot.currentSession) : 1,
+          totalSessions: nextPomodoroSessions
+        }
+      });
+
+      startTimeRef.current = snapshot.startedAt ? new Date(snapshot.startedAt) : null;
+      pausedTimeRef.current = snapshot.pausedAt ? new Date(snapshot.pausedAt) : null;
+      return;
+    }
+
+    const persistedElapsedTime = Number.isFinite(Number(snapshot.elapsedTime))
+      ? Math.max(0, Number(snapshot.elapsedTime))
+      : 0;
+    const restoredElapsedTime = snapshot.isRunning
+      ? persistedElapsedTime + elapsedWhileAway
+      : persistedElapsedTime;
+
+    dispatch({
+      type: 'HYDRATE_TIMER_STATE',
+      payload: {
+        timerMode: nextTimerMode,
+        studyMethod: nextStudyMethod,
+        timeLeft: 0,
+        elapsedTime: restoredElapsedTime,
+        initialTime: nextInitialTime,
+        isRunning: Boolean(snapshot.isRunning),
+        isPaused: Boolean(snapshot.isPaused) && !snapshot.isRunning,
+        isCompleted: Boolean(snapshot.isCompleted),
+        currentSession: Number.isFinite(Number(snapshot.currentSession)) ? Number(snapshot.currentSession) : 1,
+        totalSessions: nextPomodoroSessions
+      }
+    });
+
+    startTimeRef.current = snapshot.startedAt ? new Date(snapshot.startedAt) : null;
+    pausedTimeRef.current = snapshot.pausedAt ? new Date(snapshot.pausedAt) : null;
+  }, [userStorageId]);
+
   // Load settings when user changes (but don't reset running timer)
   useEffect(() => {
+    if (hydratedTimerStateRef.current) {
+      setSavedPresets(loadPresets());
+      const themeStorageKey = getUserStorageKey('focusModeTheme');
+      const savedTheme = themeStorageKey ? localStorage.getItem(themeStorageKey) : null;
+      setActiveThemeId(
+        savedTheme && focusThemes.some((theme) => theme.id === savedTheme)
+          ? savedTheme
+          : 'default'
+      );
+      return;
+    }
+
     const settings = loadSettings();
 
     // Only update settings if timer is completely stopped (not running and not paused)
@@ -589,6 +752,53 @@ const FocusMode = () => {
   const startTimeRef = useRef(null);
   const pausedTimeRef = useRef(null);
 
+  useEffect(() => {
+    const storageKey = getUserStorageKey(FOCUS_TIMER_STATE_KEY);
+    if (!storageKey) return;
+
+    if (!isRunning && !isPaused && !isCompleted && !currentSessionData) {
+      localStorage.removeItem(storageKey);
+      return;
+    }
+
+    const snapshot = {
+      version: 1,
+      savedAt: Date.now(),
+      timerMode,
+      studyMethod,
+      isRunning,
+      isPaused,
+      isCompleted,
+      initialTime,
+      timeLeft,
+      elapsedTime,
+      currentSession,
+      currentPhase,
+      customMinutes,
+      pomodoroSessions,
+      startedAt: startTimeRef.current ? startTimeRef.current.getTime() : null,
+      pausedAt: pausedTimeRef.current ? pausedTimeRef.current.getTime() : null,
+      currentSessionData: serializeSessionData(currentSessionData)
+    };
+
+    localStorage.setItem(storageKey, JSON.stringify(snapshot));
+  }, [
+    isRunning,
+    isPaused,
+    isCompleted,
+    timerMode,
+    studyMethod,
+    initialTime,
+    timeLeft,
+    elapsedTime,
+    currentSession,
+    currentPhase,
+    customMinutes,
+    pomodoroSessions,
+    currentSessionData,
+    userStorageId
+  ]);
+
   // Toast helper function
   const showToast = (message, type = 'success') => {
     setToast({ show: true, message, type });
@@ -627,6 +837,8 @@ const FocusMode = () => {
   // Session management
   const startSession = (topicContext = null) => {
     const effectiveTopic = topicContext || launchTopic;
+    startTimeRef.current = new Date();
+    pausedTimeRef.current = null;
     const sessionData = {
       id: Date.now(),
       startTime: new Date(),
@@ -679,6 +891,8 @@ const FocusMode = () => {
       }
 
       setCurrentSessionData(null);
+      startTimeRef.current = null;
+      pausedTimeRef.current = null;
     }
   };
 
@@ -768,11 +982,14 @@ const FocusMode = () => {
 
   const handlePauseTimer = () => {
     pauseTimer(); // Use global timer function
+    pausedTimeRef.current = new Date();
     addSessionEvent('paused');
   };
 
   const handleStopTimer = () => {
     stopTimer(); // Use global timer function
+    startTimeRef.current = null;
+    pausedTimeRef.current = null;
 
     // End current session
     endSession(false); // Not completed, manually stopped
@@ -1247,7 +1464,7 @@ const FocusMode = () => {
                   <input
                     type="number"
                     min="1"
-                    max="180"
+                    max={MAX_CUSTOM_FOCUS_MINUTES}
                     value={customMinutes}
                     onChange={(e) => {
                       const value = e.target.value;
@@ -1255,7 +1472,7 @@ const FocusMode = () => {
                         updateCustomTime('');
                       } else {
                         const num = parseInt(value);
-                        if (!isNaN(num) && num >= 1 && num <= 180) {
+                        if (!isNaN(num) && num >= 1 && num <= MAX_CUSTOM_FOCUS_MINUTES) {
                           updateCustomTime(num);
                         }
                       }
@@ -1671,7 +1888,7 @@ const FocusMode = () => {
 
       {/* Main Timer Display */}
       <div className={`relative z-10 flex-1 min-h-0 w-full flex flex-col items-center px-3 sm:px-6 ${
-        isFullscreen ? 'justify-center pt-8 sm:pt-16' : 'justify-center'
+        isFullscreen ? 'justify-center pt-1 sm:pt-12' : 'justify-center'
       }`}>
 
         {launchTopic?.topicTitle && (

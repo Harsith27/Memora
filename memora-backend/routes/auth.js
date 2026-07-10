@@ -1,6 +1,8 @@
 const express = require('express');
+const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
+const emailUtil = require('../utils/email');
 const { generateTokenPair, verifyRefreshToken } = require('../utils/jwt');
 const { authenticateToken } = require('../middleware/auth');
 
@@ -9,10 +11,11 @@ const router = express.Router();
 // Validation rules
 const registerValidation = [
   body('username')
+    .customSanitizer((value) => String(value || '').trim().toLowerCase())
     .isLength({ min: 3, max: 30 })
     .withMessage('Username must be between 3 and 30 characters')
-    .matches(/^[a-zA-Z0-9_]+$/)
-    .withMessage('Username can only contain letters, numbers, and underscores'),
+    .matches(/^[a-z0-9]+$/)
+    .withMessage('Username can only contain lowercase letters and numbers'),
   body('email')
     .isEmail()
     .normalizeEmail()
@@ -31,6 +34,28 @@ const loginValidation = [
   body('password')
     .notEmpty()
     .withMessage('Password is required')
+];
+
+const forgotPasswordValidation = [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email')
+];
+
+const resetPasswordValidation = [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email'),
+  body('code')
+    .matches(/^\d{6}$/)
+    .withMessage('Reset code must be a 6-digit number'),
+  body('newPassword')
+    .isLength({ min: 8 })
+    .withMessage('Password must be at least 8 characters long')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one uppercase letter, one lowercase letter, and one number')
 ];
 
 // Helper function to handle validation errors
@@ -53,7 +78,8 @@ const handleValidationErrors = (req, res, next) => {
  */
 router.post('/register', registerValidation, handleValidationErrors, async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const { email, password } = req.body;
+    const username = String(req.body.username || '').trim().toLowerCase();
 
     // Check if user already exists
     const existingUser = await User.findOne({
@@ -222,6 +248,212 @@ router.post('/login', loginValidation, handleValidationErrors, async (req, res) 
       message: 'Login failed',
       error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
+  }
+});
+
+/**
+ * @route   POST /api/auth/forgot-password
+ * @desc    Generate and issue a 6-digit reset code
+ * @access  Public
+ */
+router.post('/forgot-password', forgotPasswordValidation, handleValidationErrors, async (req, res) => {
+  try {
+    const email = String(req.body.email || '').toLowerCase();
+    const user = await User.findOne({ email }).select('+resetPasswordCodeRequestedAt');
+
+    if (!user || !user.isActive) {
+      return res.json({
+        success: true,
+        message: 'If this email exists, a 6-digit reset code has been sent.'
+      });
+    }
+
+    const now = Date.now();
+    const cooldownMs = 60 * 1000;
+    const lastRequestAt = user.resetPasswordCodeRequestedAt ? new Date(user.resetPasswordCodeRequestedAt).getTime() : 0;
+
+    if (lastRequestAt && (now - lastRequestAt) < cooldownMs) {
+      return res.status(429).json({
+        success: false,
+        message: 'Please wait at least 60 seconds before requesting another code.'
+      });
+    }
+
+    const code = String(crypto.randomInt(100000, 1000000));
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+    const expiresAt = new Date(now + (10 * 60 * 1000));
+
+    user.resetPasswordCodeHash = codeHash;
+    user.resetPasswordCodeExpiresAt = expiresAt;
+    user.resetPasswordCodeRequestedAt = new Date(now);
+    user.resetPasswordCodeAttempts = 0;
+    await user.save();
+
+    if (!emailUtil.isEmailConfigured()) {
+      console.warn('Forgot password requested but email service is not configured.');
+
+      // Only return the reset code in the API response when explicitly allowed
+      // (useful for local/dev testing). In production, do not expose the code.
+      const allowReturnCode = process.env.ALLOW_RESET_CODE_IN_RESPONSE === 'true' || process.env.NODE_ENV !== 'production';
+
+      if (allowReturnCode) {
+        return res.json({
+          success: true,
+          message: 'Email service is not configured. Use the reset code shown here to continue.',
+          resetCode: code
+        });
+      }
+
+      return res.status(503).json({
+        success: false,
+        message: 'Email service is not configured. Please contact support or try again later.'
+      });
+    }
+
+    try {
+      await emailUtil.sendResetCode(email, code, { expiresMinutes: 10 });
+    } catch (mailErr) {
+      console.error('Failed to send reset code email:', mailErr);
+      return res.status(502).json({
+        success: false,
+        message: 'Unable to send reset code right now. Please try again later.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'A 6-digit reset code has been sent to your email.'
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to process forgot password request right now.'
+    });
+  }
+});
+
+/**
+ * @route   POST /api/auth/reset-password
+ * @desc    Reset password using email + 6-digit code
+ * @access  Public
+ */
+router.post('/reset-password', resetPasswordValidation, handleValidationErrors, async (req, res) => {
+  try {
+    const email = String(req.body.email || '').toLowerCase();
+    const code = String(req.body.code || '').trim();
+    const newPassword = String(req.body.newPassword || '');
+
+    const user = await User.findOne({ email }).select('+password +resetPasswordCodeHash +resetPasswordCodeExpiresAt +resetPasswordCodeAttempts');
+
+    if (!user || !user.isActive || !user.resetPasswordCodeHash || !user.resetPasswordCodeExpiresAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset code.'
+      });
+    }
+
+    if (new Date(user.resetPasswordCodeExpiresAt).getTime() < Date.now()) {
+      user.resetPasswordCodeHash = null;
+      user.resetPasswordCodeExpiresAt = null;
+      user.resetPasswordCodeRequestedAt = null;
+      user.resetPasswordCodeAttempts = 0;
+      await user.save();
+
+      return res.status(400).json({
+        success: false,
+        message: 'Reset code expired. Please request a new one.'
+      });
+    }
+
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+    if (codeHash !== user.resetPasswordCodeHash) {
+      user.resetPasswordCodeAttempts = (user.resetPasswordCodeAttempts || 0) + 1;
+
+      if (user.resetPasswordCodeAttempts >= 5) {
+        user.resetPasswordCodeHash = null;
+        user.resetPasswordCodeExpiresAt = null;
+        user.resetPasswordCodeRequestedAt = null;
+        user.resetPasswordCodeAttempts = 0;
+      }
+
+      await user.save();
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset code.'
+      });
+    }
+
+    user.password = newPassword;
+    user.refreshTokens = [];
+    user.resetPasswordCodeHash = null;
+    user.resetPasswordCodeExpiresAt = null;
+    user.resetPasswordCodeRequestedAt = null;
+    user.resetPasswordCodeAttempts = 0;
+    await user.save();
+
+    return res.json({
+      success: true,
+      message: 'Password has been reset successfully. You can now sign in.'
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to reset password right now.'
+    });
+  }
+});
+
+/**
+ * @route   POST /api/auth/verify-reset-code
+ * @desc    Verify that a reset code is valid for an email (no password change)
+ * @access  Public
+ */
+router.post('/verify-reset-code', [
+  body('email').isEmail().normalizeEmail(),
+  body('code').matches(/^\d{6}$/)
+], handleValidationErrors, async (req, res) => {
+  try {
+    const email = String(req.body.email || '').toLowerCase();
+    const code = String(req.body.code || '').trim();
+
+    const user = await User.findOne({ email }).select('+resetPasswordCodeHash +resetPasswordCodeExpiresAt +resetPasswordCodeAttempts');
+
+    if (!user || !user.isActive || !user.resetPasswordCodeHash || !user.resetPasswordCodeExpiresAt) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired reset code.' });
+    }
+
+    if (new Date(user.resetPasswordCodeExpiresAt).getTime() < Date.now()) {
+      user.resetPasswordCodeHash = null;
+      user.resetPasswordCodeExpiresAt = null;
+      user.resetPasswordCodeRequestedAt = null;
+      user.resetPasswordCodeAttempts = 0;
+      await user.save();
+
+      return res.status(400).json({ success: false, message: 'Reset code expired. Please request a new one.' });
+    }
+
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+    if (codeHash !== user.resetPasswordCodeHash) {
+      user.resetPasswordCodeAttempts = (user.resetPasswordCodeAttempts || 0) + 1;
+
+      if (user.resetPasswordCodeAttempts >= 5) {
+        user.resetPasswordCodeHash = null;
+        user.resetPasswordCodeExpiresAt = null;
+        user.resetPasswordCodeRequestedAt = null;
+        user.resetPasswordCodeAttempts = 0;
+      }
+
+      await user.save();
+      return res.status(400).json({ success: false, message: 'Invalid or expired reset code.' });
+    }
+
+    // Valid code (do not clear it here - allow single use during reset)
+    return res.json({ success: true, message: 'Reset code valid.' });
+  } catch (error) {
+    console.error('Verify reset code error:', error);
+    return res.status(500).json({ success: false, message: 'Unable to verify reset code right now.' });
   }
 });
 

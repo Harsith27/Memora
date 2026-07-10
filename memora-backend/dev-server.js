@@ -15,7 +15,13 @@ const limiter = rateLimit({
   max: 100, // limit each IP to 100 requests per windowMs
   message: 'Too many requests from this IP, please try again later.'
 });
-app.use(limiter);
+app.use('/api', (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    return next();
+  }
+
+  return limiter(req, res, next);
+});
 
 // CORS configuration
 app.use(cors({
@@ -81,7 +87,8 @@ app.post('/api/auth/register', (req, res) => {
       preferences: {
         colorTheme: 'monochrome',
         defaultDifficulty: 3,
-        retentionSpeed: 'medium'
+        retentionSpeed: 'medium',
+        dailyResetTime: '04:00'
       }
     },
     tokens: {
@@ -119,7 +126,8 @@ app.post('/api/auth/login', (req, res) => {
       preferences: {
         colorTheme: 'monochrome',
         defaultDifficulty: 3,
-        retentionSpeed: 'medium'
+        retentionSpeed: 'medium',
+        dailyResetTime: '04:00'
       },
       lastLogin: new Date().toISOString()
     },
@@ -166,7 +174,8 @@ app.get('/api/auth/verify', (req, res) => {
       preferences: {
         colorTheme: 'monochrome',
         defaultDifficulty: 3,
-        retentionSpeed: 'medium'
+        retentionSpeed: 'medium',
+        dailyResetTime: '04:00'
       }
     }
   });

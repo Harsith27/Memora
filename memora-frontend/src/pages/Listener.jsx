@@ -152,6 +152,9 @@ const Listener = () => {
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
   const [deletingNoteId, setDeletingNoteId] = useState('');
+  const [topicLinkSearch, setTopicLinkSearch] = useState('');
+  const [topicLinkDraftId, setTopicLinkDraftId] = useState(topicFromState);
+  const [noteLinkTargetId, setNoteLinkTargetId] = useState('');
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     try {
@@ -206,23 +209,103 @@ const Listener = () => {
     return filteredNotes.find((note) => note.id === panelNoteId) || filteredNotes[0] || null;
   }, [filteredNotes, panelNoteId]);
 
+  const normalizeListenerNote = useCallback((note) => {
+    if (!note || typeof note !== 'object') return note;
+    const normalizedTopic = note.topicId || note.topic || null;
+    return {
+      ...note,
+      topicId: normalizedTopic,
+      topic: normalizedTopic
+    };
+  }, []);
+
+  const topicTitleById = useMemo(
+    () => new Map(topics.map((topic) => [String(topic?._id || ''), String(topic?.title || '')])),
+    [topics]
+  );
+
+  const getLinkedTopicTitle = useCallback((note) => {
+    const linkedTopic = note?.topicId || note?.topic || null;
+    if (!linkedTopic) return '';
+    if (typeof linkedTopic === 'object') {
+      return String(linkedTopic?.title || linkedTopic?.name || linkedTopic?.label || '');
+    }
+    return topicTitleById.get(String(linkedTopic)) || '';
+  }, [topicTitleById]);
+
+  const getLinkedTopicId = useCallback((note) => {
+    const linkedTopic = note?.topicId || note?.topic || null;
+    if (!linkedTopic) return '';
+    if (typeof linkedTopic === 'object') {
+      return String(linkedTopic?._id || linkedTopic?.id || '');
+    }
+    return String(linkedTopic);
+  }, []);
+
   const quickActions = useMemo(
     () => [
-      {
-        icon: Settings2,
-        label: 'Session Settings',
-        action: () => setActiveModal('settings'),
-        primary: true
-      },
-      { icon: Sparkles, label: 'Latest Output', action: () => setActiveModal('output'), primary: false },
-      { icon: NotebookText, label: `Notes (${notes.length})`, action: () => setActiveModal('notes'), primary: false }
+      { icon: NotebookText, label: `Notes (${notes.length})`, action: () => setActiveModal('notes'), primary: true },
+      { icon: Sparkles, label: 'Latest Output', action: () => setActiveModal('output'), primary: false }
     ],
     [notes.length]
   );
 
+  const topicLinkCurrentLabel = useMemo(() => {
+    if (noteLinkTargetId) {
+      const targetNote = notes.find((note) => note.id === noteLinkTargetId) || selectedPanelNote;
+      return getLinkedTopicTitle(targetNote) || 'notes not links';
+    }
+
+    return selectedTopicTitle;
+  }, [getLinkedTopicTitle, noteLinkTargetId, notes, selectedPanelNote, selectedTopicTitle]);
+
+  const topicLinkSuggestions = useMemo(() => {
+    const query = String(topicLinkSearch || '').trim().toLowerCase();
+    return [...topics]
+      .filter((topic) => {
+        const title = String(topic?.title || '').toLowerCase();
+        if (!query) return true;
+        return title.includes(query);
+      })
+      .sort((left, right) => String(left?.title || '').localeCompare(String(right?.title || '')))
+      .slice(0, 5);
+  }, [topics, topicLinkSearch]);
+
   const showToast = useCallback((message, type = 'success') => {
     setToast({ show: true, message, type });
   }, []);
+
+  const saveTopicLinkSelection = useCallback(() => {
+    const normalizedQuery = String(topicLinkSearch || '').trim().toLowerCase();
+    const exactMatch = topics.find((topic) => String(topic?.title || '').trim().toLowerCase() === normalizedQuery);
+    const fallbackMatch = topicLinkSuggestions[0] || null;
+    const nextTopicId = topicLinkDraftId || exactMatch?._id || fallbackMatch?._id || '';
+
+    // If a specific note requested the link, update that note only.
+    if (noteLinkTargetId) {
+      const noteId = noteLinkTargetId;
+      setNoteLinkTargetId('');
+      setActiveModal('');
+      (async () => {
+        try {
+          const response = await apiService.updateListenerNote(noteId, { topicId: nextTopicId || '' });
+          if (!response?.success || !response?.note) throw new Error(response?.message || 'Failed to link note');
+          const updatedNote = normalizeListenerNote(response.note);
+          setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, ...updatedNote } : n)));
+          showToast(nextTopicId ? 'Note linked to topic.' : 'Note unlinked (General note).', 'success');
+        } catch (error) {
+          console.error('Failed to link note via modal:', error);
+          showToast(getListenerErrorMessage(error, 'Failed to link note to topic'), 'error');
+        }
+      })();
+      return;
+    }
+
+    // Otherwise, set session-level selected topic.
+    setSelectedTopicId(nextTopicId);
+    setActiveModal('');
+    showToast(nextTopicId ? 'Topic linked.' : 'General note selected.', 'success');
+  }, [showToast, topicLinkDraftId, topicLinkSearch, topicLinkSuggestions, topics]);
 
   const getListenerErrorMessage = useCallback((error, fallbackMessage) => {
     if (apiService.isAuthError(error)) {
@@ -373,7 +456,7 @@ const Listener = () => {
       }
 
       if (notesResponse?.success) {
-        const loadedNotes = Array.isArray(notesResponse.notes) ? notesResponse.notes : [];
+        const loadedNotes = Array.isArray(notesResponse.notes) ? notesResponse.notes.map(normalizeListenerNote) : [];
         setNotes(loadedNotes);
       }
     } catch (error) {
@@ -423,7 +506,7 @@ const Listener = () => {
           throw new Error(response?.message || 'Unable to create listener note');
         }
 
-        const newNote = response.note;
+        const newNote = normalizeListenerNote(response.note);
         setLatestTranscript(newNote.transcript || '');
         setLatestSummary(newNote.summary || '');
         setLatestNoteId(newNote.id || '');
@@ -670,7 +753,7 @@ const Listener = () => {
             className={`flex items-center hover:opacity-80 transition-opacity ${isSidebarCollapsed ? 'justify-center w-full' : 'gap-2 min-w-0'}`}
           >
             <Logo size="sm" className="text-white scale-90" />
-            {!isSidebarCollapsed && <span className="text-lg font-semibold text-white truncate">Memora</span>}
+            {!isSidebarCollapsed && <span className="text-lg font-semibold text-white truncate">Memy</span>}
           </button>
 
           {!isSidebarCollapsed && (
@@ -755,7 +838,7 @@ const Listener = () => {
             className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
           >
             <Logo size="sm" className="text-white" />
-            <span className="text-lg font-semibold text-white">Memora</span>
+            <span className="text-lg font-semibold text-white">Memy</span>
           </button>
         </div>
 
@@ -943,24 +1026,86 @@ const Listener = () => {
         <DashboardFooter className="mt-3 border-t border-white/10 py-4 sm:py-5" />
       </div>
 
-      <Modal isOpen={activeModal === 'settings'} onClose={() => setActiveModal('')} title="Session Settings" size="lg">
-        <div className="space-y-5">
-          <div className="space-y-2">
-            <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Link to topic</p>
-            <select
-              value={selectedTopicId}
-              onChange={(event) => setSelectedTopicId(event.target.value)}
-              className="w-full rounded-md border border-white/15 bg-black px-3 py-2 text-sm text-white outline-none focus:border-pink-400/45"
-            >
-              <option value="">No topic (general note)</option>
-              {topics.map((topic) => (
-                <option key={topic._id} value={topic._id}>
-                  {topic.title}
-                </option>
-              ))}
-            </select>
+      <Modal isOpen={activeModal === 'topic-link'} onClose={() => { setActiveModal(''); setNoteLinkTargetId(''); }} title="Link to a Topic" size="xl">
+        <div className="space-y-5 max-h-[65vh] overflow-y-auto pr-1">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Current topic</p>
+            <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-pink-300/35 bg-pink-500/16 px-3 py-1.5 text-sm text-pink-50">
+              <Star className="h-4 w-4 text-pink-200" />
+              <span className="truncate">{topicLinkCurrentLabel}</span>
+            </div>
           </div>
 
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Search topics</p>
+            <input
+              type="text"
+              value={topicLinkSearch}
+              onChange={(event) => setTopicLinkSearch(event.target.value)}
+              data-autofocus="true"
+              placeholder="Type to search topics..."
+              className="w-full rounded-md border border-white/15 bg-black px-3 py-2 text-sm text-white outline-none focus:border-pink-400/45"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Suggestions</p>
+              <p className="text-xs text-gray-500">Showing up to 5</p>
+            </div>
+
+            <div className="max-h-[280px] overflow-y-auto rounded-xl border border-white/10 bg-black/55 scrollbar-themed">
+              {topicLinkSuggestions.length === 0 ? (
+                <p className="px-4 py-5 text-sm text-gray-500">No topics match that search.</p>
+              ) : (
+                topicLinkSuggestions.map((topic) => {
+                  const isSelected = topicLinkDraftId === topic._id;
+
+                  return (
+                    <button
+                      key={topic._id}
+                      type="button"
+                      onClick={() => {
+                        setTopicLinkDraftId(topic._id);
+                        setTopicLinkSearch(topic.title || '');
+                      }}
+                      className={`flex w-full items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-left transition-colors last:border-b-0 ${
+                        isSelected ? 'bg-pink-500/18' : 'hover:bg-pink-500/8'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-white">{topic.title || 'Untitled topic'}</p>
+                        <p className="mt-1 text-xs text-gray-500 truncate">Click to choose this topic</p>
+                      </div>
+                      <div className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] ${isSelected ? 'border-pink-300/55 bg-pink-500/22 text-pink-50' : 'border-white/15 bg-white/5 text-gray-300'}`}>
+                        {isSelected ? 'Selected' : 'Pick'}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setTopicLinkDraftId('');
+                setTopicLinkSearch('');
+              }}
+              className="rounded-lg border border-white/15 bg-white/[0.04] px-4 py-2 text-sm text-gray-200 transition-colors hover:bg-white/[0.08]"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={saveTopicLinkSelection}
+              className="inline-flex items-center gap-2 rounded-lg border border-pink-300/55 bg-pink-500/22 px-4 py-2 text-sm font-medium text-pink-50 transition-colors hover:bg-pink-500/30"
+            >
+              <GitBranch className="h-4 w-4" /> Link to this topic
+            </button>
+          </div>
         </div>
       </Modal>
 
@@ -1042,6 +1187,13 @@ const Listener = () => {
                   </p>
                 </div>
 
+                <div>
+                  <p className="mb-1 text-xs uppercase tracking-[0.13em] text-gray-500">Current topic</p>
+                  <p className="text-sm text-gray-200">
+                    {getLinkedTopicTitle(selectedPanelNote) || 'No Linked Topic'}
+                  </p>
+                </div>
+
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -1056,6 +1208,18 @@ const Listener = () => {
                     className="inline-flex items-center gap-1 rounded-md border border-violet-300/55 bg-violet-500/22 px-3 py-2 text-xs text-violet-50 transition-colors hover:bg-violet-500/30"
                   >
                     <GitBranch className="h-3.5 w-3.5" /> Export to mindmap
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNoteLinkTargetId(selectedPanelNote.id);
+                      setTopicLinkDraftId(getLinkedTopicId(selectedPanelNote));
+                      setTopicLinkSearch(getLinkedTopicTitle(selectedPanelNote));
+                      setActiveModal('topic-link');
+                    }}
+                    className="inline-flex items-center gap-1 rounded-md border border-amber-300/55 bg-amber-500/18 px-3 py-2 text-xs text-amber-50 transition-colors hover:bg-amber-500/28"
+                  >
+                    <GitBranch className="h-3.5 w-3.5" /> Link topic
                   </button>
                   <button
                     type="button"

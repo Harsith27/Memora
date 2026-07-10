@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, User, Mail, Calendar, Trophy, Flame, Target } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import ProfileSphereAvatar from './ProfileSphereAvatar';
 import { formatDateDDMMYYYY } from '../utils/dateFormat';
 
 const ProfileModal = ({ isOpen, onClose }) => {
@@ -96,11 +97,13 @@ const ProfileModal = ({ isOpen, onClose }) => {
             <div className="p-6">
               {/* Avatar Section */}
               <div className="text-center mb-6">
-                <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <span className="text-white text-2xl font-bold">
-                    {user.username?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || 'U'}
-                  </span>
-                </div>
+                <ProfileSphereAvatar
+                  iconId={user.profileIconId || 'sphere-1'}
+                  username={user.username || user.email?.split('@')[0] || 'u'}
+                  size="xl"
+                  className="mx-auto mb-3"
+                  title={user.username || user.email?.split('@')[0] || 'User'}
+                />
                 <h3 className="text-lg font-semibold text-white">
                   {user.username || user.email?.split('@')[0] || 'User'}
                 </h3>

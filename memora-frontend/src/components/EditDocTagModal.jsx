@@ -1,17 +1,34 @@
+import { flushSync } from 'react-dom';
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { X, Upload, Link as LinkIcon, Trash2, ChevronDown } from 'lucide-react';
+import { X, Upload, Link as LinkIcon, Trash2, ChevronDown, Scissors } from 'lucide-react';
 import apiService from '../services/api';
 import docTagsService from '../services/docTagsService';
 import ShadcnSelect from './ShadcnSelect';
+import { formatPageRanges, getPdfPageCount, invertPageRanges, normalizePageRanges } from '../utils/pdfSectionUtils';
 
-const normalizeLinkedTopicId = (value) => {
+const normalizeTopicId = (value) => {
   if (!value) return '';
   if (typeof value === 'string') return value;
-  if (typeof value === 'object' && value._id) return value._id;
+  if (typeof value === 'object' && value._id) return String(value._id);
   return '';
 };
 
-const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
+const normalizeLinkedTopicIds = (value) => {
+  const rawValues = Array.isArray(value)
+    ? value
+    : value === null || value === undefined || value === ''
+      ? []
+      : [value];
+
+  return Array.from(new Set(
+    rawValues
+      .map((candidate) => normalizeTopicId(candidate))
+      .map((candidate) => String(candidate || '').trim())
+      .filter(Boolean)
+  ));
+};
+
+const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading, onOpenPdfViewer }) => {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -20,12 +37,13 @@ const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
     icon: 'folder',
     attachments: [],
     externalLinks: [],
-    linkedTopicId: ''
+    linkedTopicIds: []
   });
   const [tagInput, setTagInput] = useState('');
   const [newLink, setNewLink] = useState({ title: '', url: '', type: 'other', description: '' });
   const [topics, setTopics] = useState([]);
   const [topicsLoading, setTopicsLoading] = useState(false);
+  const [topicSearch, setTopicSearch] = useState('');
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [error, setError] = useState('');
   const formRef = useRef(null);
@@ -77,13 +95,14 @@ const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
       icon: item.icon || 'folder',
       attachments: Array.isArray(item.attachments) ? item.attachments : [],
       externalLinks: Array.isArray(item.externalLinks) ? item.externalLinks : [],
-      linkedTopicId: normalizeLinkedTopicId(item.linkedTopicId)
+      linkedTopicIds: normalizeLinkedTopicIds(item.linkedTopicIds && item.linkedTopicIds.length > 0 ? item.linkedTopicIds : item.linkedTopicId)
     });
 
     setTagInput('');
     setNewLink({ title: '', url: '', type: 'other', description: '' });
     setError('');
     setShowTagSuggestions(false);
+    setTopicSearch('');
   }, [isOpen, item]);
 
   useEffect(() => {
@@ -182,6 +201,42 @@ const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
       .slice(0, 8);
   }, [availableDocTagTags, formData.tags, tagInput]);
 
+  const selectedTopics = useMemo(() => {
+    const topicMap = new Map((topics || []).map((topic) => [String(topic._id), topic]));
+    return normalizeLinkedTopicIds(formData.linkedTopicIds)
+      .map((topicId) => topicMap.get(topicId))
+      .filter(Boolean)
+      .sort((left, right) => String(left.title || '').localeCompare(String(right.title || '')));
+  }, [topics, formData.linkedTopicIds]);
+
+  const filteredTopics = useMemo(() => {
+    const typed = topicSearch.trim().toLowerCase();
+    return [...topics]
+      .filter((topic) => {
+        const topicTitle = String(topic?.title || '').toLowerCase();
+        if (!typed) return true;
+        return topicTitle.includes(typed);
+      })
+      .sort((left, right) => String(left.title || '').localeCompare(String(right.title || '')));
+  }, [topics, topicSearch]);
+
+  const toggleLinkedTopic = useCallback((topicId) => {
+    const normalizedTopicId = String(topicId || '').trim();
+    if (!normalizedTopicId) return;
+
+    setFormData((prev) => {
+      const currentIds = normalizeLinkedTopicIds(prev.linkedTopicIds);
+      const nextIds = currentIds.includes(normalizedTopicId)
+        ? currentIds.filter((existingTopicId) => existingTopicId !== normalizedTopicId)
+        : [...currentIds, normalizedTopicId];
+
+      return {
+        ...prev,
+        linkedTopicIds: nextIds
+      };
+    });
+  }, []);
+
   const scrollToErrorField = (fieldKey) => {
     window.requestAnimationFrame(() => {
       const field = formRef.current?.querySelector(`[data-error-field="${fieldKey}"]`);
@@ -198,6 +253,7 @@ const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
     setNewLink({ title: '', url: '', type: 'other', description: '' });
     setError('');
     setShowTagSuggestions(false);
+    setTopicSearch('');
     onClose();
   }, [onClose]);
 
@@ -297,6 +353,104 @@ const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
     }));
   };
 
+  const resolveAttachmentUrl = (attachment) => {
+    const url = String(attachment?.url || attachment?.previewUrl || '').trim();
+    if (!url) return '';
+
+    if (url.startsWith('blob:') || url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+
+    if (url.startsWith('/')) {
+      return `${window.location.origin}${url}`;
+    }
+
+    return `${window.location.origin}/${url}`;
+  };
+
+  const openAttachmentInViewer = useCallback(async (attachment, index) => {
+    if (!attachment || typeof onOpenPdfViewer !== 'function') return;
+
+    const resolvedUrl = resolveAttachmentUrl(attachment);
+    if (!resolvedUrl) {
+      setError('Unable to open preview for this file.');
+      return;
+    }
+
+    try {
+      const response = await fetch(resolvedUrl);
+      if (!response.ok) {
+        throw new Error('Failed to load the PDF for slicing.');
+      }
+
+      const blob = await response.blob();
+      const fileName = String(attachment.originalName || attachment.filename || attachment.title || 'document.pdf');
+      const rawFile = new File([blob], fileName, { type: blob.type || 'application/pdf' });
+      const computedPageCount = await getPdfPageCount(rawFile);
+      const pageCount = attachment.sourcePageCount || attachment.pageCount || computedPageCount || 0;
+      const normalizedPageRanges = normalizePageRanges(Array.isArray(attachment.pageRanges) ? attachment.pageRanges : [], pageCount || null);
+      const normalizedDeletedRanges = normalizePageRanges(Array.isArray(attachment.deletedPageRanges) ? attachment.deletedPageRanges : [], pageCount || null);
+      const isSectioned = Boolean(attachment.isSectioned) || normalizedPageRanges.length > 0 || normalizedDeletedRanges.length > 0;
+      const file = {
+        filename: fileName,
+        originalName: fileName,
+        title: fileName,
+        mimetype: blob.type || attachment.mimetype || 'application/pdf',
+        size: blob.size || attachment.size || 0,
+        url: resolvedUrl,
+        rawFile,
+        isSectioned,
+        pageCount,
+        deletedPageRanges: normalizedDeletedRanges.length > 0
+          ? normalizedDeletedRanges
+          : (isSectioned ? invertPageRanges(normalizedPageRanges, pageCount || null) : []),
+        pageRanges: normalizedPageRanges
+      };
+
+      const onSave = async ({ file: savedFile, pageRanges, deletedPageRanges, pageCount }) => {
+        if (!savedFile) return;
+
+        try {
+          setUploadingFiles(true);
+          const uploadedFiles = await docTagsService.uploadFiles([savedFile]);
+          const uploadedFile = uploadedFiles?.[0];
+          if (!uploadedFile) {
+            throw new Error('Failed to upload sliced file.');
+          }
+
+          flushSync(() => {
+            setFormData((prev) => ({
+              ...prev,
+              attachments: prev.attachments.map((currentAttachment, currentIndex) => {
+                if (currentIndex !== index) return currentAttachment;
+
+                return {
+                  ...uploadedFile,
+                  sourceFileName: attachment.originalName || attachment.filename || attachment.title || savedFile.name,
+                  sourcePageCount: pageCount || attachment.sourcePageCount || attachment.pageCount || 0,
+                  pageRanges: Array.isArray(pageRanges) ? pageRanges : [],
+                  deletedPageRanges: Array.isArray(deletedPageRanges) ? deletedPageRanges : [],
+                  isSectioned: true,
+                  sectionSummary: formatPageRanges(pageRanges || [])
+                };
+              })
+            }));
+          });
+        } catch (saveError) {
+          console.error('Failed to save sliced attachment:', saveError);
+          setError(saveError.message || 'Failed to save sliced attachment.');
+        } finally {
+          setUploadingFiles(false);
+        }
+      };
+
+      onOpenPdfViewer({ file, files: [file], onSave });
+    } catch (previewError) {
+      console.error('Failed to open attachment in viewer:', previewError);
+      setError(previewError.message || 'Failed to open file preview.');
+    }
+  }, [onOpenPdfViewer]);
+
   const handleFileUpload = async (event) => {
     const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
@@ -339,7 +493,8 @@ const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
         ...formData,
         name: String(formData.name || '').trim().slice(0, 200),
         description: String(formData.description || '').trim().slice(0, 1000),
-        linkedTopicId: item.type === 'document' ? (formData.linkedTopicId || null) : null,
+        linkedTopicIds: item.type === 'document' ? normalizeLinkedTopicIds(formData.linkedTopicIds) : [],
+        linkedTopicId: item.type === 'document' ? (normalizeLinkedTopicIds(formData.linkedTopicIds)[0] || null) : null,
         tags: formData.tags
           .map((tag) => String(tag || '').trim().slice(0, 100))
           .filter((tag) => tag !== ''),
@@ -379,18 +534,75 @@ const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
           {item.type === 'document' && (
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Link To Existing Topic (Optional)
+              <label className="flex items-center space-x-2 text-sm font-medium text-gray-300 mb-2">
+                <LinkIcon className="w-4 h-4" />
+                <span>Link To Existing Topics (Optional)</span>
               </label>
-              <ShadcnSelect
-                value={formData.linkedTopicId}
-                onChange={(nextValue) => setFormData((prev) => ({ ...prev, linkedTopicId: nextValue }))}
-                disabled={topicsLoading}
-                options={[
-                  { value: '', label: 'Tags only (no linked topic)' },
-                  ...topics.map((topic) => ({ value: topic._id, label: topic.title }))
-                ]}
+              <p className="text-xs text-gray-400 mb-3">
+                Attach one or more revision topics to this resource.
+              </p>
+
+              {selectedTopics.length > 0 && (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {selectedTopics.map((topic) => (
+                    <span
+                      key={topic._id}
+                      className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/12 px-3 py-1 text-xs text-emerald-100"
+                    >
+                      <span className="max-w-[14rem] truncate">{topic.title}</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleLinkedTopic(topic._id)}
+                        className="text-emerald-100/80 hover:text-white"
+                        aria-label={`Remove ${topic.title}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <input
+                type="text"
+                value={topicSearch}
+                onChange={(event) => setTopicSearch(event.target.value)}
+                placeholder="Search topics to link..."
+                className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-indigo-500"
               />
+
+              <div className="mt-3 max-h-60 overflow-y-auto rounded-xl border border-white/10 bg-white/[0.03] p-2 space-y-1">
+                {topicsLoading ? (
+                  <p className="px-3 py-2 text-sm text-gray-400">Loading topics...</p>
+                ) : filteredTopics.length > 0 ? (
+                  filteredTopics.map((topic) => {
+                    const isSelected = normalizeLinkedTopicIds(formData.linkedTopicIds).includes(String(topic._id));
+
+                    return (
+                      <button
+                        key={topic._id}
+                        type="button"
+                        onClick={() => toggleLinkedTopic(topic._id)}
+                        className={`w-full flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors ${
+                          isSelected
+                            ? 'border-emerald-400/35 bg-emerald-500/12 text-emerald-100'
+                            : 'border-white/10 bg-white/[0.02] text-gray-200 hover:bg-white/[0.05]'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <span className={`h-2.5 w-2.5 rounded-full ${isSelected ? 'bg-emerald-300' : 'bg-white/30'}`} />
+                          <span className="truncate">{topic.title}</span>
+                        </span>
+                        <span className="shrink-0 text-[11px] uppercase tracking-wide text-current/70">
+                          {isSelected ? 'Linked' : 'Link'}
+                        </span>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <p className="px-3 py-2 text-sm text-gray-400">No topics match this search.</p>
+                )}
+              </div>
             </div>
           )}
 
@@ -478,15 +690,30 @@ const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
                       <div key={`${attachment.filename || attachment.originalName}-${index}`} className="flex items-center justify-between bg-black border border-white/10 rounded-lg p-2">
                         <div className="min-w-0">
                           <p className="text-sm text-white truncate">{attachment.originalName || attachment.filename}</p>
-                          <p className="text-xs text-gray-400">{attachment.fileType || 'file'}</p>
+                          <p className="text-xs text-gray-400">
+                            {attachment.fileType || 'file'}
+                            {attachment.isSectioned && attachment.pageRanges?.length > 0 ? ` · Pages ${formatPageRanges(attachment.pageRanges)}` : ''}
+                          </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => removeAttachment(index)}
-                          className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-red-400"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          {(attachment.fileType === 'pdf' || attachment.mimetype === 'application/pdf' || attachment.extension === 'pdf') && (
+                            <button
+                              type="button"
+                              onClick={() => openAttachmentInViewer(attachment, index)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-violet-400/30 bg-violet-600/12 px-2 py-1 text-[11px] text-violet-100 hover:bg-violet-600/20"
+                            >
+                              <Scissors className="w-3 h-3" />
+                              <span>Slice Notes</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => removeAttachment(index)}
+                            className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-red-400"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -654,10 +881,10 @@ const EditDocTagModal = ({ isOpen, onClose, onSubmit, item, loading }) => {
             </button>
             <button
               type="submit"
-              disabled={loading || !formData.name.trim()}
+              disabled={loading || uploadingFiles || !formData.name.trim()}
               className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
             >
-              {loading ? 'Updating...' : `Update ${item.type === 'folder' ? 'Workspace' : 'Resource'}`}
+              {loading ? 'Updating...' : uploadingFiles ? 'Saving slice...' : `Update ${item.type === 'folder' ? 'Workspace' : 'Resource'}`}
             </button>
           </div>
         </form>

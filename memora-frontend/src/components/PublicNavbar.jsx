@@ -10,7 +10,7 @@ function PublicNavbar({ mode = 'login' }) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between">
         <Link to="/" className="inline-flex items-center gap-2 text-white hover:opacity-90 transition-opacity">
           <Logo size="sm" className="text-white" />
-          <span className="font-semibold text-base sm:text-lg tracking-tight">Memora</span>
+          <span className="font-semibold text-base sm:text-lg tracking-tight">Memy</span>
         </Link>
 
         <div className="flex items-center gap-3 sm:gap-5">

@@ -10,6 +10,8 @@ class ApiService {
   constructor() {
     this.baseURL = API_BASE_URL;
     this.token = localStorage.getItem('accessToken');
+    this.refreshPromise = null;
+    this.refreshFailed = false;
 
     if (IS_DEV) {
       console.log('API Base URL:', this.baseURL);
@@ -35,11 +37,29 @@ class ApiService {
   }
 
   async tryRefreshAuthSession() {
+    if (this.refreshFailed) {
+      return false;
+    }
+
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.refreshPromise = (async () => {
     try {
       const response = await this.refreshToken();
       return Boolean(response?.success);
     } catch {
+      this.clearAuthSession();
+      this.refreshFailed = true;
       return false;
+    }
+    })();
+
+    try {
+      return await this.refreshPromise;
+    } finally {
+      this.refreshPromise = null;
     }
   }
 
@@ -47,10 +67,17 @@ class ApiService {
   setToken(token) {
     this.token = token;
     if (token) {
+      this.refreshFailed = false;
       localStorage.setItem('accessToken', token);
     } else {
       localStorage.removeItem('accessToken');
     }
+  }
+
+  clearAuthSession() {
+    this.setToken(null);
+    localStorage.removeItem('refreshToken');
+    this.refreshFailed = true;
   }
 
   // Get authentication headers
@@ -136,6 +163,8 @@ class ApiService {
           if (refreshed) {
             return this.request(endpoint, { ...requestOptions, _retryAuth: true });
           }
+
+          this.clearAuthSession();
         }
 
         throw httpError;
@@ -213,6 +242,18 @@ class ApiService {
     return response;
   }
 
+  async requestPasswordReset(email) {
+    return this.post('/auth/forgot-password', { email });
+  }
+
+  async resetPasswordWithCode(payload) {
+    return this.post('/auth/reset-password', payload);
+  }
+
+  async verifyResetCode(payload) {
+    return this.post('/auth/verify-reset-code', payload);
+  }
+
   async logout() {
     const refreshToken = localStorage.getItem('refreshToken');
     try {
@@ -232,20 +273,31 @@ class ApiService {
   // Clear user-specific localStorage data
   clearUserSpecificData() {
     const keysToRemove = [];
+    const userKeyPrefixes = [
+      'focusModeSettings_',
+      'focusModePresets_',
+      'focusModeQuickConfig_',
+      'focusModeTheme_',
+      'focus_sessions_',
+      'study_streak_',
+      'userPreferences_',
+      'userSettings_',
+      'journalSettings_',
+      'journal_',
+      'activities_',
+      'memora_tasks_',
+      'memora_tasks_deleted_',
+      'memora_daily_usage_',
+      'memora_achievements_state_',
+      'memora_achievements_leaderboard_sync_',
+      'memora_achievements_notifier_seen_',
+      'memora_navigation_tour_seen_'
+    ];
 
     // Find all localStorage keys that might be user-specific
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && (
-        key.includes('focusModeSettings_') ||
-        key.includes('focusModePresets_') ||
-        key.includes('focusModeQuickConfig_') ||
-        key.includes('focusModeTheme_') ||
-        key.includes('focus_sessions_') ||
-        key.includes('study_streak_') ||
-        key.includes('userPreferences_') ||
-        key.includes('userSettings_')
-      )) {
+      if (key && userKeyPrefixes.some((prefix) => key.includes(prefix))) {
         keysToRemove.push(key);
       }
     }
@@ -282,8 +334,7 @@ class ApiService {
     } catch (error) {
       // Only clear tokens when refresh token is truly invalid/expired.
       if (this.isAuthError(error)) {
-        this.setToken(null);
-        localStorage.removeItem('refreshToken');
+        this.clearAuthSession();
       }
       throw error;
     }

@@ -63,6 +63,14 @@ const sanitizeFilename = (value = 'listener-recording') => {
     .slice(0, 120);
 };
 
+const normalizeGroqApiKey = (value) => {
+  return String(value || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/^['"]+|['"]+$/g, '')
+    .replace(/\s+/g, '')
+    .trim();
+};
+
 const storage = multer.diskStorage({
   destination: async (_req, _file, callback) => {
     try {
@@ -100,7 +108,7 @@ const upload = multer({
 });
 
 const callGroqTranscription = async ({ filePath, mimeType, fileName, language }) => {
-  const apiKey = String(process.env.GROQ_API_KEY || '').trim();
+  const apiKey = normalizeGroqApiKey(process.env.GROQ_API_KEY);
   if (!apiKey) {
     throw new Error('GROQ_API_KEY is missing in backend environment variables');
   }
@@ -146,12 +154,12 @@ const callGroqTranscription = async ({ filePath, mimeType, fileName, language })
 };
 
 const callGroqSummarization = async (transcript) => {
-  const apiKey = String(process.env.GROQ_API_KEY || '').trim();
+  const apiKey = normalizeGroqApiKey(process.env.GROQ_API_KEY);
   if (!apiKey) {
     throw new Error('GROQ_API_KEY is missing in backend environment variables');
   }
 
-  const summaryModel = process.env.GROQ_MODEL || process.env.GROQ_SUMMARY_MODEL || 'llama-3.1-8b-instant';
+  const summaryModel = process.env.GROQ_MODEL || process.env.GROQ_SUMMARY_MODEL || 'llama-3.3-70b-versatile';
 
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',

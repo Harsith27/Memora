@@ -3,6 +3,7 @@ import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, f
 import { Search, ZoomIn, ZoomOut, RotateCcw, Plus, Link as LinkIcon, Circle, Sparkles, SlidersHorizontal, LocateFixed, X } from 'lucide-react';
 import ShadcnSelect from './ShadcnSelect';
 import { useAuth } from '../contexts/AuthContext';
+import apiService from '../services/api';
 import docTagsService from '../services/docTagsService';
 import { formatDateDDMMYYYY } from '../utils/dateFormat';
 
@@ -15,7 +16,8 @@ const getGraphNodeSearchScore = (node, query) => {
   const title = normalizeText(node?.title);
   const category = normalizeText(node?.category);
   const tags = Array.isArray(node?.tags) ? node.tags.map((tag) => normalizeText(tag)).join(' ') : '';
-  const haystack = `${title} ${category} ${tags}`.trim();
+  const summary = normalizeText(node?.summary);
+  const haystack = `${title} ${category} ${tags} ${summary}`.trim();
 
   let score = 0;
   if (title === normalizedQuery) score += 180;
@@ -24,6 +26,8 @@ const getGraphNodeSearchScore = (node, query) => {
   if (category === normalizedQuery) score += 60;
   if (category.includes(normalizedQuery)) score += 40;
   if (tags.includes(normalizedQuery)) score += 34;
+  if (summary === normalizedQuery) score += 48;
+  if (summary.includes(normalizedQuery)) score += 24;
   if (haystack.includes(normalizedQuery)) score += 12;
 
   return score;
@@ -40,6 +44,12 @@ const MAX_TOPIC_LINKS_PER_NODE = 4;
 const LABEL_CHAR_WIDTH = 6.2;
 const LABEL_HEIGHT = 11;
 const LABEL_GAP = 5;
+const LISTENER_NOTE_NODE_COLOR = 'rgba(251, 191, 36, 0.95)';
+const LISTENER_NOTE_NODE_STROKE = 'rgba(254, 240, 138, 0.98)';
+const FILE_LINK_COLOR = 'rgba(139, 92, 246, 0.46)';
+const MINDMAP_LINK_COLOR = 'rgba(126, 34, 206, 0.62)';
+const LISTENER_LINK_COLOR = 'rgba(88, 17, 17, 0.95)';
+const DEFAULT_LINK_COLOR = 'rgba(148, 163, 184, 0.31)';
 
 const isGraphLinkTag = (value) => {
   const tag = normalizeText(value);
@@ -112,6 +122,7 @@ const getVisibleNodeTitle = (node) => {
 const getNodeSymbolHalfSize = (node) => {
   const radius = Number(node?.radius) || 5;
   if (node?.nodeType === 'topic') return { halfWidth: radius, halfHeight: radius };
+  if (node?.nodeType === 'listenerNote') return { halfWidth: radius * 1.55, halfHeight: radius * 1.55 };
 
   const shapeSize = node?.nodeType === 'file' ? radius * 2.2 : radius * 2.2;
   const half = shapeSize / 2;
@@ -247,10 +258,37 @@ const resolveLinkedTopicId = (value) => {
   return String(value);
 };
 
-const buildGraph = (topics, files = [], mindmaps = [], linkMode = 'hybrid') => {
+const resolveListenerNoteTopicId = (note) => {
+  return resolveLinkedTopicId(note?.topicId) || resolveLinkedTopicId(note?.topic);
+};
+
+const resolveLinkedListenerNoteId = (value) => {
+  return resolveLinkedTopicId(value);
+};
+
+const getListenerNoteStarPoints = (node, halfSize) => {
+  const centerX = Number(node?.x) || 0;
+  const centerY = Number(node?.y) || 0;
+  const outer = halfSize;
+  const inner = Math.max(halfSize * 0.42, 2.2);
+
+  return [
+    [centerX, centerY - outer],
+    [centerX + inner, centerY - inner],
+    [centerX + outer, centerY],
+    [centerX + inner, centerY + inner],
+    [centerX, centerY + outer],
+    [centerX - inner, centerY + inner],
+    [centerX - outer, centerY],
+    [centerX - inner, centerY - inner]
+  ].map(([x, y]) => `${x},${y}`).join(' ');
+};
+
+const buildGraph = (topics, files = [], mindmaps = [], listenerNotes = [], linkMode = 'hybrid') => {
   const safeTopics = Array.isArray(topics) ? topics : [];
   const safeFiles = Array.isArray(files) ? files : [];
   const safeMindmaps = Array.isArray(mindmaps) ? mindmaps : [];
+  const safeListenerNotes = Array.isArray(listenerNotes) ? listenerNotes : [];
 
   const normalizedTopicTags = safeTopics.map((topic) => (
     (Array.isArray(topic.tags) ? topic.tags : [])
@@ -317,10 +355,35 @@ const buildGraph = (topics, files = [], mindmaps = [], linkMode = 'hybrid') => {
     tagSet: new Set(),
     dayKey: toDayKey(map?.createdAt),
     linkedTopicId: resolveLinkedTopicId(map?.linkedTopicId),
-    linkedTopicTitle: map?.linkedTopicTitle || ''
+    linkedTopicTitle: map?.linkedTopicTitle || '',
+    linkedListenerNoteId: resolveLinkedListenerNoteId(map?.linkedListenerNoteId),
+    linkedListenerNoteTitle: map?.linkedListenerNoteTitle || ''
   }));
 
-  const nodes = [...topicNodes, ...fileNodes, ...mindmapNodes];
+  const listenerNoteNodes = safeListenerNotes.map((note, index) => ({
+    id: `listener_note_${String(note?._id || note?.id || index)}`,
+    title: note?.title || 'Listener note',
+    summary: note?.summary || '',
+    transcript: note?.transcript || '',
+    nodeType: 'listenerNote',
+    category: 'listener notes',
+    difficulty: 3,
+    reviewCount: 0,
+    nextReviewDate: null,
+    createdAt: note?.createdAt,
+    tags: [],
+    tagSet: new Set(),
+    dayKey: toDayKey(note?.createdAt),
+    topicId: resolveListenerNoteTopicId(note),
+    topicTitle: typeof note?.topicId === 'object'
+      ? String(note.topicId?.title || '')
+      : typeof note?.topic === 'object'
+        ? String(note.topic?.title || '')
+        : '',
+    visualizerStyle: note?.visualizerStyle || 'sparkle'
+  }));
+
+  const nodes = [...topicNodes, ...fileNodes, ...mindmapNodes, ...listenerNoteNodes];
   const topicById = new Map(topicNodes.map((node) => [node.id, node]));
 
   const topicCandidateLinks = [];
@@ -381,6 +444,7 @@ const buildGraph = (topics, files = [], mindmaps = [], linkMode = 'hybrid') => {
       target: node.linkedTopicId,
       weight: 1.8,
       reason: 'Linked file to topic',
+      linkKind: 'file-topic'
     });
   });
 
@@ -391,6 +455,29 @@ const buildGraph = (topics, files = [], mindmaps = [], linkMode = 'hybrid') => {
       target: node.linkedTopicId,
       weight: 2,
       reason: 'Linked mindmap to topic',
+      linkKind: 'mindmap-topic'
+    });
+
+    if (!node.linkedListenerNoteId) return;
+    const listenerNodeId = `listener_note_${node.linkedListenerNoteId}`;
+    if (!nodes.some((graphNode) => graphNode.id === listenerNodeId)) return;
+    links.push({
+      source: node.id,
+      target: listenerNodeId,
+      weight: 1.9,
+      reason: 'Linked mindmap to listener note',
+      linkKind: 'mindmap-listener'
+    });
+  });
+
+  listenerNoteNodes.forEach((node) => {
+    if (!node.topicId || !topicById.has(node.topicId)) return;
+    links.push({
+      source: node.id,
+      target: node.topicId,
+      weight: 1.7,
+      reason: 'Linked listener note to topic',
+      linkKind: 'listener-topic'
     });
   });
 
@@ -459,6 +546,7 @@ const GraphModeView = ({
   const [timeLapsePositions, setTimeLapsePositions] = useState({});
   const [docFiles, setDocFiles] = useState([]);
   const [mindmaps, setMindmaps] = useState([]);
+  const [listenerNotes, setListenerNotes] = useState([]);
   const [isMaximizedView, setIsMaximizedView] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.innerWidth < 1024;
@@ -469,9 +557,14 @@ const GraphModeView = ({
   const positionOverridesRef = useRef({});
   const timeLapseIntervalRef = useRef(null);
   const pinchGestureRef = useRef(null);
+  const linkCanvasRef = useRef(null);
+  const linkCanvasFrameRef = useRef(null);
   const searchBlurTimerRef = useRef(null);
   const lastGraphUiCommandTokenRef = useRef(null);
   const processedExternalSearchRequestRef = useRef(null);
+  const lastGraphAutoFocusSignatureRef = useRef('');
+  const pendingGraphEntryFitRef = useRef(false);
+  const suppressPostSimulationFitRef = useRef(false);
 
   const containerRef = useRef(null);
   const graphWrapperRef = useRef(null);
@@ -501,6 +594,7 @@ const GraphModeView = ({
       if (!user) {
         setDocFiles([]);
         setMindmaps([]);
+        setListenerNotes([]);
         return;
       }
 
@@ -513,13 +607,21 @@ const GraphModeView = ({
         setDocFiles([]);
       }
 
+      try {
+        const response = await apiService.getListenerNotes({ limit: 1000 });
+        setListenerNotes(Array.isArray(response?.notes) ? response.notes : []);
+      } catch (error) {
+        console.warn('Failed to load listener notes for graph mode:', error);
+        setListenerNotes([]);
+      }
+
       loadMindmaps();
     };
 
     loadSupplementalData();
 
     const refreshOnFocus = () => {
-      loadMindmaps();
+      loadSupplementalData();
     };
 
     window.addEventListener('focus', refreshOnFocus);
@@ -595,7 +697,7 @@ const GraphModeView = ({
     return () => observer.disconnect();
   }, [stopAutoArrange]);
 
-  const graph = useMemo(() => buildGraph(topics, docFiles, mindmaps, linkMode), [topics, docFiles, mindmaps, linkMode]);
+  const graph = useMemo(() => buildGraph(topics, docFiles, mindmaps, listenerNotes, linkMode), [topics, docFiles, mindmaps, listenerNotes, linkMode]);
 
   useEffect(() => {
     return () => {
@@ -706,10 +808,35 @@ const GraphModeView = ({
     const queryValue = normalizeText(query);
 
     let nodes = graph.nodes;
+    const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
     if (selectedCategory === 'files') {
       nodes = nodes.filter((node) => node.nodeType === 'file');
     } else if (selectedCategory === 'mindmaps') {
       nodes = nodes.filter((node) => node.nodeType === 'mindmap');
+    } else if (selectedCategory === 'listenerNotes') {
+      const listenerNoteIds = new Set();
+      const linkedTopicIds = new Set();
+
+      graph.nodes.forEach((node) => {
+        if (node.nodeType === 'listenerNote') {
+          listenerNoteIds.add(node.id);
+        }
+      });
+
+      graph.links.forEach((link) => {
+        const sourceNode = nodeById.get(link.source);
+        const targetNode = nodeById.get(link.target);
+        if (!sourceNode || !targetNode) return;
+
+        if (sourceNode.nodeType === 'listenerNote' && targetNode.nodeType === 'topic') {
+          linkedTopicIds.add(targetNode.id);
+        }
+        if (targetNode.nodeType === 'listenerNote' && sourceNode.nodeType === 'topic') {
+          linkedTopicIds.add(sourceNode.id);
+        }
+      });
+
+      nodes = nodes.filter((node) => node.nodeType === 'listenerNote' || linkedTopicIds.has(node.id));
     }
 
     if (queryValue) {
@@ -723,6 +850,16 @@ const GraphModeView = ({
           .toLowerCase();
         return haystack.includes(queryValue);
       });
+
+      const matchingNodeIds = new Set(nodes.map((node) => node.id));
+      const expandedNodeIds = new Set(matchingNodeIds);
+
+      graph.links.forEach((link) => {
+        if (matchingNodeIds.has(link.source)) expandedNodeIds.add(link.target);
+        if (matchingNodeIds.has(link.target)) expandedNodeIds.add(link.source);
+      });
+
+      nodes = graph.nodes.filter((node) => expandedNodeIds.has(node.id));
     }
 
     if (difficultyFilter !== 'all') {
@@ -862,6 +999,8 @@ const GraphModeView = ({
     return map;
   }, [displayedNodes]);
 
+  const [fitAfterSimulation, setFitAfterSimulation] = useState(false);
+
   const focusNodeId = draggingNodeId || hoveredNodeId || selectedNodeId || null;
 
   const relatedNodeIds = useMemo(() => {
@@ -884,11 +1023,13 @@ const GraphModeView = ({
       return daysUntil !== null && daysUntil >= 0 && daysUntil <= 3;
     }).length;
     const hardTopics = filtered.nodes.filter((node) => node.nodeType === 'topic' && Number(node.difficulty) >= 4).length;
+    const listenerNotes = filtered.nodes.filter((node) => node.nodeType === 'listenerNote').length;
 
     return {
       avgDegree,
       dueSoon,
       hardTopics,
+      listenerNotes,
     };
   }, [filtered.nodes, filtered.links.length]);
 
@@ -897,6 +1038,70 @@ const GraphModeView = ({
       setSelectedNodeId(null);
     }
   }, [filtered.nodes, selectedNodeId]);
+
+  function centerGraphToNodes(nodesToCenter = filtered.nodes, options = {}) {
+    const fitToFrame = Boolean(options?.fitToFrame);
+    const preferredZoom = Number.isFinite(Number(options?.preferredZoom))
+      ? clampZoom(Number(options.preferredZoom))
+      : null;
+    const fitPadding = Number.isFinite(Number(options?.fitPadding))
+      ? Math.max(0, Number(options.fitPadding))
+      : 160;
+    const fitZoomScale = Number.isFinite(Number(options?.fitZoomScale))
+      ? Math.max(0.4, Math.min(1, Number(options.fitZoomScale)))
+      : 1;
+    const maxZoom = Number.isFinite(Number(options?.maxZoom))
+      ? clampZoom(Number(options.maxZoom))
+      : null;
+
+    if (!Array.isArray(nodesToCenter) || nodesToCenter.length === 0) {
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+
+    nodesToCenter.forEach((node) => {
+      const override = positionOverridesRef.current[node.id];
+      const x = Number.isFinite(override?.x) ? Number(override.x) : Number(node.x);
+      const y = Number.isFinite(override?.y) ? Number(override.y) : Number(node.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    });
+
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    let nextZoom = preferredZoom ?? zoom;
+    if (fitToFrame) {
+      const graphWidth = Math.max(1, maxX - minX);
+      const graphHeight = Math.max(1, maxY - minY);
+      const viewWidth = Math.max(80, viewport.width - fitPadding);
+      const viewHeight = Math.max(80, viewport.height - fitPadding);
+      const fitZoom = Math.min(viewWidth / graphWidth, viewHeight / graphHeight) * fitZoomScale;
+      nextZoom = preferredZoom ?? clampZoom(fitZoom);
+      if (maxZoom !== null) {
+        nextZoom = Math.min(nextZoom, maxZoom);
+      }
+      setZoom(nextZoom);
+    } else if (preferredZoom !== null && Math.abs(zoom - preferredZoom) > 0.0001) {
+      setZoom(preferredZoom);
+    }
+
+    setPan({ x: -centerX * nextZoom, y: -centerY * nextZoom });
+  }
 
   useEffect(() => {
     if (isTimeLapsePlaying || filtered.nodes.length === 0) {
@@ -951,8 +1156,8 @@ const GraphModeView = ({
     if (simulationLinks.length > 0) {
       simulation.force('link', forceLink(simulationLinks)
         .id((node) => node.id)
-        .distance((link) => 92 + Math.max(0, 14 - (Number(link.weight) || 1) * 4))
-        .strength(() => 0.032)
+        .distance((link) => 54 + Math.max(0, 8 - (Number(link.weight) || 1) * 2.8))
+        .strength(() => 0.045)
       );
     }
 
@@ -992,6 +1197,12 @@ const GraphModeView = ({
         simulation.stop();
         if (simulationRef.current === simulation) {
           simulationRef.current = null;
+        }
+        // Request a fit once simulation has settled so we center on final positions
+        try {
+          setFitAfterSimulation(true);
+        } catch (err) {
+          // ignore
         }
       }
     });
@@ -1130,8 +1341,30 @@ const GraphModeView = ({
 
     if (type === 'toggle-filters') {
       setShowFilterPanel((prev) => !prev);
+      return;
     }
-  }, [graphUiCommand, isTimeLapsePlaying, startTimeLapse, stopTimeLapse]);
+
+    if (type === 'reset-view') {
+      pendingGraphEntryFitRef.current = true;
+      lastGraphAutoFocusSignatureRef.current = '';
+      suppressPostSimulationFitRef.current = true;
+      setSelectedNodeId(null);
+      setHoveredNodeId(null);
+      setDraggingNodeId(null);
+      setQuery('');
+      setIsSearchFocused(false);
+      setIsSearchDropdownOpen(false);
+      if (filtered.nodes.length > 0) {
+        centerGraphToNodes(filtered.nodes, {
+          fitToFrame: true,
+          fitPadding: Math.max(300, Math.min(420, viewport.width * 0.24)),
+          fitZoomScale: 0.58,
+          maxZoom: 0.68
+        });
+        pendingGraphEntryFitRef.current = false;
+      }
+    }
+  }, [graphUiCommand, filtered.nodes, centerGraphToNodes, viewport.width, isTimeLapsePlaying, startTimeLapse, stopTimeLapse]);
 
   useEffect(() => {
     if (typeof onGraphUiStateChange !== 'function') return;
@@ -1398,58 +1631,141 @@ const GraphModeView = ({
 
   const getNodeById = (id) => displayedNodeMap.get(id);
 
-  const centerGraphToNodes = useCallback((nodesToCenter = filtered.nodes, options = {}) => {
-    const fitToFrame = Boolean(options?.fitToFrame);
-    const preferredZoom = Number.isFinite(Number(options?.preferredZoom))
-      ? clampZoom(Number(options.preferredZoom))
-      : null;
+  useEffect(() => {
+    const canvas = linkCanvasRef.current;
+    if (!canvas || loading || filtered.nodes.length === 0) return;
 
-    if (!Array.isArray(nodesToCenter) || nodesToCenter.length === 0) {
-      setPan({ x: 0, y: 0 });
-      return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const width = Math.max(1, Math.floor(viewport.width || 1));
+    const height = Math.max(1, Math.floor(viewport.height || 1));
+
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    if (linkCanvasFrameRef.current) {
+      cancelAnimationFrame(linkCanvasFrameRef.current);
     }
 
-    let minX = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    let minY = Number.POSITIVE_INFINITY;
-    let maxY = Number.NEGATIVE_INFINITY;
+    linkCanvasFrameRef.current = requestAnimationFrame(() => {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      ctx.save();
+      ctx.translate(width / 2 + pan.x, height / 2 + pan.y);
+      ctx.scale(zoom, zoom);
 
-    nodesToCenter.forEach((node) => {
-      const override = positionOverridesRef.current[node.id];
-      const x = Number.isFinite(override?.x) ? Number(override.x) : Number(node.x);
-      const y = Number.isFinite(override?.y) ? Number(override.y) : Number(node.y);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      const viewportMax = Math.max(width, height);
+      const zoomTarget = 0.85;
+      const zoomOpacityMultiplier = zoom < zoomTarget
+        ? Math.min(1, Math.pow(Math.max(0.02, zoom / zoomTarget), 1.7))
+        : 1;
+      const distCutoff = Math.max(220, viewportMax * 0.55);
+      const hardPruneThreshold = viewportMax * 1.5;
 
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
-      minY = Math.min(minY, y);
-      maxY = Math.max(maxY, y);
+      displayedLinks.forEach((link) => {
+        const source = getNodeById(link.source);
+        const target = getNodeById(link.target);
+        if (!source || !target) return;
+
+        const connectedToFocus = Boolean(
+          focusNodeId && (link.source === focusNodeId || link.target === focusNodeId)
+        );
+        const darken = Boolean(focusNodeId && !connectedToFocus);
+        const isListenerTopicLink = link.linkKind === 'listener-topic';
+        const isMindmapListenerLink = link.linkKind === 'mindmap-listener';
+        const isMindmapTopicLink = link.linkKind === 'mindmap-topic';
+        const isFileTopicLink = link.linkKind === 'file-topic';
+        const isListenerLink = isListenerTopicLink || isMindmapListenerLink;
+        const isMindmapLink = isMindmapTopicLink;
+        const isFileLink = isFileTopicLink;
+
+        const dx = (target.x || 0) - (source.x || 0);
+        const dy = (target.y || 0) - (source.y || 0);
+        const dist = Math.hypot(dx, dy);
+        const worldDistPx = dist * Math.max(zoom, 0.01);
+
+        if (!connectedToFocus && worldDistPx > hardPruneThreshold && zoom < 0.85) {
+          return;
+        }
+
+        let lineOpacity = darken
+          ? 0.17
+          : connectedToFocus
+            ? 0.69
+            : 0.55;
+
+        let distanceMultiplier = 1;
+        if (worldDistPx > distCutoff) {
+          const excess = Math.min(worldDistPx - distCutoff, viewportMax * 1.2);
+          distanceMultiplier = Math.max(0.12, 1 - (excess / (viewportMax * 1.2)));
+        }
+
+        lineOpacity = Math.min(1, Math.max(0, lineOpacity * zoomOpacityMultiplier * distanceMultiplier));
+        if (connectedToFocus) {
+          lineOpacity = Math.max(0.45, lineOpacity);
+        }
+
+        const strokeColor = isListenerLink
+          ? (connectedToFocus ? 'rgba(88,17,17,0.99)' : LISTENER_LINK_COLOR)
+          : isMindmapLink
+            ? (connectedToFocus ? 'rgba(168,85,247,0.95)' : MINDMAP_LINK_COLOR)
+            : isFileLink
+              ? (connectedToFocus ? 'rgba(167,139,250,0.84)' : FILE_LINK_COLOR)
+              : connectedToFocus
+                ? 'rgba(148,163,184,0.52)'
+                : DEFAULT_LINK_COLOR;
+
+        const strokeWidth = (Math.max(0.9, Math.min(1.7, link.weight * 0.82)) + (connectedToFocus ? 0.3 : 0)) * (0.6 + 0.4 * distanceMultiplier);
+
+        ctx.beginPath();
+        ctx.globalAlpha = lineOpacity;
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = Math.max(0.45, strokeWidth / Math.max(zoom, 0.01));
+        ctx.setLineDash(isMindmapListenerLink ? [6, 4] : isMindmapLink ? [2, 5] : []);
+        ctx.moveTo(source.x || 0, source.y || 0);
+        ctx.lineTo(target.x || 0, target.y || 0);
+        ctx.stroke();
+      });
+
+      ctx.restore();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
     });
 
-    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
-      setPan({ x: 0, y: 0 });
+    return () => {
+      if (linkCanvasFrameRef.current) {
+        cancelAnimationFrame(linkCanvasFrameRef.current);
+        linkCanvasFrameRef.current = null;
+      }
+    };
+  }, [displayedLinks, displayedNodeMap, focusNodeId, loading, pan.x, pan.y, viewport.height, viewport.width, zoom]);
+
+  useEffect(() => {
+    if (!fitAfterSimulation) return;
+    if (simulationRef.current) return;
+    if (suppressPostSimulationFitRef.current) {
+      suppressPostSimulationFitRef.current = false;
+      setFitAfterSimulation(false);
+      return;
+    }
+    if (filtered.nodes.length === 0) {
+      setFitAfterSimulation(false);
       return;
     }
 
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
-
-    let nextZoom = preferredZoom ?? zoom;
-    if (fitToFrame) {
-      const graphWidth = Math.max(1, maxX - minX);
-      const graphHeight = Math.max(1, maxY - minY);
-      const fitPadding = 160;
-      const viewWidth = Math.max(80, viewport.width - fitPadding);
-      const viewHeight = Math.max(80, viewport.height - fitPadding);
-      const fitZoom = Math.min(viewWidth / graphWidth, viewHeight / graphHeight);
-      nextZoom = preferredZoom ?? clampZoom(fitZoom);
-      setZoom(nextZoom);
-    } else if (preferredZoom !== null && Math.abs(zoom - preferredZoom) > 0.0001) {
-      setZoom(preferredZoom);
-    }
-
-    setPan({ x: -centerX * nextZoom, y: -centerY * nextZoom });
-  }, [filtered.nodes, zoom, viewport.width, viewport.height]);
+    // Center and fit to frame after initial layout settles
+    centerGraphToNodes(filtered.nodes, {
+      fitToFrame: true,
+      fitPadding: Math.max(240, Math.min(360, viewport.width * 0.2)),
+      fitZoomScale: 0.72,
+      maxZoom: 0.86
+    });
+    setFitAfterSimulation(false);
+  }, [fitAfterSimulation, filtered.nodes, centerGraphToNodes, viewport.width]);
 
   const focusNodeFromSearch = useCallback((node, options = {}) => {
     if (!node) return;
@@ -1468,10 +1784,25 @@ const GraphModeView = ({
     }
 
     setSelectedNodeId(node.id);
-    setTimeout(() => {
-      centerGraphToNodes([node]);
-    }, 40);
-  }, [centerGraphToNodes, isTimeLapsePlaying]);
+    suppressPostSimulationFitRef.current = true;
+    requestAnimationFrame(() => {
+      const relatedNodes = [node];
+      const directNeighbors = neighborMap.get(node.id);
+      if (directNeighbors) {
+        directNeighbors.forEach((neighborId) => {
+          const neighborNode = graph.nodes.find((candidate) => candidate.id === neighborId);
+          if (neighborNode) relatedNodes.push(neighborNode);
+        });
+      }
+
+      centerGraphToNodes(relatedNodes, {
+        fitToFrame: true,
+        fitPadding: Math.max(260, Math.min(360, viewport.width * 0.22)),
+        fitZoomScale: 0.72,
+        maxZoom: 0.82
+      });
+    });
+  }, [centerGraphToNodes, graph.nodes, neighborMap, viewport.width, isTimeLapsePlaying]);
 
   const searchSuggestions = useMemo(() => {
     const queryValue = normalizeText(query);
@@ -1532,8 +1863,22 @@ const GraphModeView = ({
 
   useEffect(() => {
     if (isTimeLapsePlaying) return;
-    centerGraphToNodes(filtered.nodes);
-  }, [query, selectedCategory, mode, linkMode, difficultyFilter, dueFilter, minReviewsFilter, filtered.nodes, isTimeLapsePlaying, centerGraphToNodes]);
+    if (filtered.nodes.length === 0) return;
+    if (query.trim().length > 0 || selectedNodeId) return;
+
+    const graphSignature = [mode, filtered.nodes.length, filtered.links.length, viewport.width, viewport.height].join(':');
+    if (!pendingGraphEntryFitRef.current && lastGraphAutoFocusSignatureRef.current === graphSignature) return;
+    lastGraphAutoFocusSignatureRef.current = graphSignature;
+    pendingGraphEntryFitRef.current = false;
+
+    suppressPostSimulationFitRef.current = true;
+    centerGraphToNodes(filtered.nodes, {
+      fitToFrame: true,
+      fitPadding: Math.max(300, Math.min(440, viewport.width * 0.26)),
+      fitZoomScale: 0.56,
+      maxZoom: 0.66
+    });
+  }, [filtered.nodes, filtered.links.length, isTimeLapsePlaying, mode, query, selectedNodeId, centerGraphToNodes, viewport.width, viewport.height]);
 
   return (
     <div ref={containerRef} className={`h-full grid grid-cols-1 gap-5 ${isMaximizedView ? '' : 'xl:grid-cols-12'}`}>
@@ -1629,7 +1974,8 @@ const GraphModeView = ({
                 options={[
                   { value: 'all', label: 'All categories' },
                   { value: 'files', label: 'Files' },
-                  { value: 'mindmaps', label: 'Mindmaps' }
+                  { value: 'mindmaps', label: 'Mindmaps' },
+                  { value: 'listenerNotes', label: 'Listener notes' }
                 ]}
                 className="flex-1 lg:w-[190px] shrink-0"
               />
@@ -1821,6 +2167,11 @@ const GraphModeView = ({
             </div>
           ) : (
             <>
+              <canvas
+                ref={linkCanvasRef}
+                className="absolute inset-0 w-full h-full pointer-events-none"
+                aria-hidden="true"
+              />
             <svg
               className={`w-full h-full ${draggingNodeId ? 'cursor-grabbing' : 'cursor-grab active:cursor-grabbing'}`}
               onMouseDown={onMouseDownBackground}
@@ -1834,41 +2185,6 @@ const GraphModeView = ({
               </defs>
 
               <g transform={`translate(${viewport.width / 2 + pan.x}, ${viewport.height / 2 + pan.y}) scale(${zoom})`}>
-                {displayedLinks.map((link) => {
-                  const source = getNodeById(link.source);
-                  const target = getNodeById(link.target);
-                  if (!source || !target) return null;
-
-                  const connectedToFocus = Boolean(
-                    focusNodeId && (link.source === focusNodeId || link.target === focusNodeId)
-                  );
-                  const darken = Boolean(focusNodeId && !connectedToFocus);
-                  const strokeColor = connectedToFocus
-                    ? 'rgba(148,163,184,0.52)'
-                    : 'rgba(148,163,184,0.31)';
-                  const lineOpacity = darken
-                    ? 0.17
-                    : connectedToFocus
-                      ? 0.69
-                      : 0.55;
-
-                  return (
-                    <line
-                      key={`${link.source}-${link.target}`}
-                      x1={source.x}
-                      y1={source.y}
-                      x2={target.x}
-                      y2={target.y}
-                      stroke={strokeColor}
-                      opacity={lineOpacity}
-                      strokeWidth={Math.max(0.9, Math.min(1.7, link.weight * 0.82)) + (connectedToFocus ? 0.3 : 0)}
-                      vectorEffect="non-scaling-stroke"
-                    >
-                      {isPhoneViewport ? <title>{link.reason}</title> : null}
-                    </line>
-                  );
-                })}
-
                 {displayedNodes.map((node) => {
                   const isSelected = selectedNodeId === node.id;
                   const isFocused = focusNodeId === node.id;
@@ -1878,23 +2194,32 @@ const GraphModeView = ({
                     ? timeLapseNodeOrder[Math.min(timeLapseCount - 1, timeLapseNodeOrder.length - 1)]
                     : null;
                   const isNewestTimeLapseNode = newestNodeId === node.id;
+                  const isListenerNote = node.nodeType === 'listenerNote';
                   const baseFill = node.nodeType === 'file'
                     ? FILE_NODE_COLOR
                     : node.nodeType === 'mindmap'
                       ? MINDMAP_NODE_COLOR
+                      : isListenerNote
+                        ? LISTENER_NOTE_NODE_COLOR
                       : getDifficultyNodeColor(node.difficulty);
                   const fill = isSelected
                     ? 'rgba(168, 85, 247, 0.95)'
                     : baseFill;
                   const isCompletedTopic = node.nodeType === 'topic' && node.isCompleted;
                   const topicFill = isCompletedTopic ? 'transparent' : fill;
-                  const topicStroke = isFocused
-                    ? 'rgba(216,180,254,0.98)'
-                    : isSelected
-                      ? 'rgba(255,255,255,0.95)'
-                      : isCompletedTopic
-                        ? baseFill
-                        : 'rgba(255,255,255,0.28)';
+                  const topicStroke = isListenerNote
+                    ? (isFocused
+                      ? LISTENER_NOTE_NODE_STROKE
+                      : isSelected
+                        ? 'rgba(255,255,255,0.95)'
+                        : 'rgba(255,255,255,0.28)')
+                    : isFocused
+                      ? 'rgba(216,180,254,0.98)'
+                      : isSelected
+                        ? 'rgba(255,255,255,0.95)'
+                        : isCompletedTopic
+                          ? baseFill
+                          : 'rgba(255,255,255,0.28)';
                   const topicStrokeWidth = isFocused
                     ? 2.2
                     : isSelected
@@ -1902,9 +2227,13 @@ const GraphModeView = ({
                       : isCompletedTopic
                         ? 1.8
                         : 1;
-                  const shapeSize = node.nodeType === 'topic' ? node.radius * 2 : node.radius * 2.2;
+                  const shapeSize = node.nodeType === 'topic'
+                    ? node.radius * 2
+                    : isListenerNote
+                      ? node.radius * 2.75
+                      : node.radius * 2.2;
                   const halfSize = shapeSize / 2;
-                  const symbolHalfHeight = node.nodeType === 'topic' ? node.radius : halfSize;
+                  const symbolHalfHeight = node.nodeType === 'topic' ? node.radius : isListenerNote ? halfSize * 0.95 : halfSize;
                   const nodeLabel = getVisibleNodeTitle(node);
 
                   return (
@@ -1969,6 +2298,23 @@ const GraphModeView = ({
                         >
                           {isPhoneViewport ? <title>{node.title}</title> : null}
                         </rect>
+                      ) : isListenerNote ? (
+                        <polygon
+                          data-node="true"
+                          data-node-id={node.id}
+                          points={getListenerNoteStarPoints(node, halfSize)}
+                          fill={fill}
+                          opacity={shouldDim ? 0.24 : 1}
+                          stroke={topicStroke}
+                          strokeWidth={topicStrokeWidth}
+                          filter={isFocused || isSelected ? 'url(#nodeGlow)' : undefined}
+                          onMouseDown={(event) => onMouseDownNode(event, node.id)}
+                          onMouseEnter={() => setHoveredNodeId(node.id)}
+                          onMouseLeave={() => setHoveredNodeId(null)}
+                          onClick={() => setSelectedNodeId(node.id)}
+                        >
+                          {isPhoneViewport ? <title>{node.title}</title> : null}
+                        </polygon>
                       ) : (
                         <polygon
                           data-node="true"
@@ -2020,7 +2366,9 @@ const GraphModeView = ({
                         ? `${selectedNode.category} • ${getDifficultyLabel(selectedNode.difficulty)}`
                         : selectedNode.nodeType === 'file'
                           ? 'File node'
-                          : 'Mindmap node'}
+                          : selectedNode.nodeType === 'listenerNote'
+                            ? 'Listener note'
+                            : 'Mindmap node'}
                     </p>
                   </div>
                   <button
@@ -2079,6 +2427,10 @@ const GraphModeView = ({
               <span>Hard + Very Hard</span>
               <span className="text-white font-medium">{graphInsights.hardTopics}</span>
             </div>
+            <div className="flex items-center justify-between text-gray-300">
+              <span>Listener notes</span>
+              <span className="text-white font-medium">{graphInsights.listenerNotes}</span>
+            </div>
           </div>
 
           <button
@@ -2106,7 +2458,9 @@ const GraphModeView = ({
                     ? `${selectedNode.category} • ${getDifficultyLabel(selectedNode.difficulty)} (${selectedNode.difficulty}/5)`
                     : selectedNode.nodeType === 'file'
                       ? 'File node'
-                      : 'Mindmap node'}
+                      : selectedNode.nodeType === 'listenerNote'
+                        ? 'Listener note'
+                        : 'Mindmap node'}
                 </p>
               </div>
 
@@ -2115,6 +2469,16 @@ const GraphModeView = ({
                   <p>Reviews: <span className="text-white">{selectedNode.reviewCount || 0}</span></p>
                   <p>Connections: <span className="text-white">{selectedNode.degree}</span></p>
                   <p>Next review: <span className="text-white">{selectedNode.nextReviewDate ? formatDateDDMMYYYY(selectedNode.nextReviewDate) : 'N/A'}</span></p>
+                </div>
+              ) : selectedNode.nodeType === 'listenerNote' ? (
+                <div className="text-xs text-gray-300 space-y-1.5">
+                  <p>Connections: <span className="text-white">{selectedNode.degree}</span></p>
+                  <p>
+                    Linked topic: <span className="text-white">{selectedNode.topicTitle || neighbors.find((node) => node.nodeType === 'topic')?.title || 'Not linked'}</span>
+                  </p>
+                  <p>
+                    Recorded: <span className="text-white">{selectedNode.createdAt ? formatDateDDMMYYYY(selectedNode.createdAt) : 'N/A'}</span>
+                  </p>
                 </div>
               ) : (
                 <div className="text-xs text-gray-300">
@@ -2133,6 +2497,13 @@ const GraphModeView = ({
                       <span key={tag} className="text-[11px] px-2 py-0.5 rounded-full border border-white/15 text-gray-300">#{tag}</span>
                     )) : <span className="text-xs text-gray-500">No tags</span>}
                   </div>
+                </div>
+              ) : selectedNode.nodeType === 'listenerNote' ? (
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500 mb-1.5">Summary</p>
+                  <p className="text-xs leading-relaxed text-gray-300 max-h-24 overflow-y-auto pr-1">
+                    {selectedNode.summary || selectedNode.transcript?.slice(0, 220) || 'No summary available.'}
+                  </p>
                 </div>
               ) : null}
 
@@ -2159,6 +2530,7 @@ const GraphModeView = ({
           <div className="space-y-2 text-xs text-gray-300">
             <div className="flex items-center gap-2"><span className="w-3 h-3 bg-rose-400" />Files (square)</div>
             <div className="flex items-center gap-2"><span className="w-3 h-3 bg-violet-500 rotate-45" />Mindmaps (rhombus)</div>
+            <div className="flex items-center gap-2"><span className="inline-flex h-3.5 w-3.5 items-center justify-center text-amber-300">✦</span>Listener notes (four-corner star)</div>
             <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-green-400" />Very Easy (difficulty 1)</div>
             <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-blue-400" />Easy (difficulty 2)</div>
             <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-yellow-400" />Medium (difficulty 3)</div>

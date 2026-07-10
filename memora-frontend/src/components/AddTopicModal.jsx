@@ -6,11 +6,15 @@ import journalService from '../services/journalService';
 import ResourceBrowser from './ResourceBrowser';
 import ShadcnSelect from './ShadcnSelect';
 import apiService from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import { formatDateDDMMYYYY, getTodayIsoDateKey, parseDateInputToIso } from '../utils/dateFormat';
+import { getEffectiveRevisionMode, getRevisionModeDifficultyOptions, normalizeDifficultyForRevisionMode } from '../utils/revisionModes';
 
 const formatDateForUi = (value) => formatDateDDMMYYYY(value);
+const getDefaultEstimatedMinutes = (revisionMode) => (revisionMode === 'engineering' ? 10 : 15);
 
 const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
+  const { user } = useAuth();
   const [formData, setFormData] = useState({
     title: '',
     content: '',
@@ -19,9 +23,10 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
     revisionMode: 'inherit',
     deadlineDate: '',
     deadlineType: 'soft',
-    estimatedMinutes: 30,
+    estimatedMinutes: 15,
     externalLinks: [], // Will store all resources (links, files, etc.)
   });
+  const [estimatedMinutesTouched, setEstimatedMinutesTouched] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const [errors, setErrors] = useState({});
   const [showResourceBrowser, setShowResourceBrowser] = useState(false);
@@ -40,14 +45,12 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
     return new Date(year, month - 1, day);
   }, [formData.deadlineDate]);
 
-
-  const difficultyLabels = {
-    1: 'Very Easy',
-    2: 'Easy', 
-    3: 'Medium',
-    4: 'Hard',
-    5: 'Very Hard'
-  };
+  const userRevisionMode = user?.preferences?.revisionMode || 'competitive';
+  const effectiveRevisionMode = getEffectiveRevisionMode(formData.revisionMode, userRevisionMode);
+  const difficultyOptions = useMemo(
+    () => getRevisionModeDifficultyOptions(effectiveRevisionMode),
+    [effectiveRevisionMode]
+  );
 
   const difficultyColors = {
     1: 'text-green-400 bg-green-400/10 border-green-400/20',
@@ -117,6 +120,24 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
       isMounted = false;
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const normalizedDifficulty = normalizeDifficultyForRevisionMode(formData.difficulty, effectiveRevisionMode);
+    if (normalizedDifficulty !== formData.difficulty) {
+      setFormData((prev) => ({ ...prev, difficulty: normalizedDifficulty }));
+    }
+  }, [effectiveRevisionMode, formData.difficulty, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || estimatedMinutesTouched) return;
+
+    const nextDefaultMinutes = getDefaultEstimatedMinutes(effectiveRevisionMode);
+    if (Number(formData.estimatedMinutes) !== nextDefaultMinutes) {
+      setFormData((prev) => ({ ...prev, estimatedMinutes: nextDefaultMinutes }));
+    }
+  }, [effectiveRevisionMode, estimatedMinutesTouched, formData.estimatedMinutes, isOpen]);
 
   const filteredExistingTags = useMemo(() => {
     const typed = tagInput.trim().toLowerCase();
@@ -225,6 +246,7 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
   };
 
   const handleClose = () => {
+    const defaultMinutes = getDefaultEstimatedMinutes(getEffectiveRevisionMode('inherit', userRevisionMode));
     setFormData({
       title: '',
       content: '',
@@ -233,9 +255,10 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
       revisionMode: 'inherit',
       deadlineDate: '',
       deadlineType: 'soft',
-      estimatedMinutes: 30,
+      estimatedMinutes: defaultMinutes,
       externalLinks: [],
     });
+    setEstimatedMinutesTouched(false);
     setTagInput('');
     setErrors({});
     setShowTagSuggestions(false);
@@ -431,24 +454,25 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
             <span>Difficulty</span>
           </label>
           <div className="space-y-2">
-            <div className="flex space-x-2">
-              {[1, 2, 3, 4, 5].map(level => (
+            <div className={`grid gap-2 ${effectiveRevisionMode === 'engineering' ? 'grid-cols-3' : 'grid-cols-5'}`}>
+              {difficultyOptions.map((option) => (
                 <button
-                  key={level}
+                  key={option.value}
                   type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, difficulty: level }))}
+                  onClick={() => setFormData(prev => ({ ...prev, difficulty: option.value }))}
                   className={`flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-all ${
-                    formData.difficulty === level
-                      ? difficultyColors[level]
+                    formData.difficulty === option.value
+                      ? difficultyColors[option.value]
                       : 'text-gray-400 bg-black border-white/10 hover:border-white/20'
                   }`}
                 >
-                  {level}
+                  {effectiveRevisionMode === 'engineering' ? option.label : option.value}
                 </button>
               ))}
             </div>
             <p className="text-sm text-gray-400 text-center">
-              {difficultyLabels[formData.difficulty]}
+              {difficultyOptions.find((option) => option.value === formData.difficulty)?.label || 'Medium'}
+              {effectiveRevisionMode === 'engineering' ? ' · Learning Mode uses Easy / Medium / Hard.' : ' · Relentless Study Mode uses five difficulty levels.'}
             </p>
           </div>
         </div>
@@ -464,12 +488,12 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
             onChange={(value) => setFormData(prev => ({ ...prev, revisionMode: value }))}
             options={[
               { value: 'inherit', label: 'Inherit from settings' },
-              { value: 'competitive', label: 'Competitive Exams Mode' },
-              { value: 'engineering', label: 'Engineering Mode' }
+              { value: 'competitive', label: 'Relentless Study Mode' },
+              { value: 'engineering', label: 'Learning Mode' }
             ]}
           />
           <p className="text-xs text-gray-400 mt-1">
-            In hybrid mode, you can still override individual topics here.
+            You can still override individual topics here.
           </p>
         </div>
 
@@ -550,7 +574,10 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
             max="480"
             step="5"
             value={formData.estimatedMinutes}
-            onChange={(e) => setFormData(prev => ({ ...prev, estimatedMinutes: e.target.value }))}
+            onChange={(e) => {
+              setEstimatedMinutesTouched(true);
+              setFormData(prev => ({ ...prev, estimatedMinutes: e.target.value }));
+            }}
             className="w-full px-3 py-2 bg-black border border-white/10 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors"
           />
           {errors.estimatedMinutes && (
@@ -582,7 +609,7 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
             <button
               type="button"
               onClick={() => setShowResourceBrowser(true)}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-rose-500/12 border border-rose-400/35 hover:bg-rose-500/20 rounded-lg text-rose-100 transition-colors text-sm"
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-cyan-500/12 border border-cyan-400/30 hover:bg-cyan-500/20 rounded-lg text-cyan-100 transition-colors text-sm"
             >
               <FolderOpen className="w-4 h-4" />
               <span>Browse Existing Resources</span>
@@ -742,7 +769,7 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
           <button
             type="submit"
             disabled={loading}
-            className="flex-1 px-4 py-3 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-600/50 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+            className="flex-1 px-4 py-3 bg-cyan-500/12 border border-cyan-400/30 hover:bg-cyan-500/20 disabled:bg-cyan-500/8 disabled:border-cyan-400/20 text-cyan-100 rounded-lg transition-colors flex items-center justify-center space-x-2"
           >
             {loading ? (
               <>

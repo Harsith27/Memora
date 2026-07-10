@@ -32,6 +32,16 @@ const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const STREAK_CONTRIBUTION_TOTAL_DAYS = 365;
 const HABIT_EXTENSION_WEEKS = 12;
+const STREAK_VIEW_OPTIONS = [
+  { id: 'year', label: 'Year', caption: 'Last 12 months' }
+];
+const STREAK_LEVEL_CLASS_MAP = {
+  0: 'bg-white/[0.04] border border-white/[0.06]',
+  1: 'bg-cyan-900/70',
+  2: 'bg-cyan-700/80',
+  3: 'bg-cyan-500/85',
+  4: 'bg-cyan-300/95'
+};
 
 const toIsoDateKey = (value) => {
   if (!value) return '';
@@ -140,7 +150,52 @@ const formatLongDateWithOrdinal = (dayKey) => {
   return `${monthLabel} ${day}${getOrdinalSuffix(day)}`;
 };
 
-const buildStreakContributionGrid = (rows = []) => {
+const formatCompactDateLabel = (dayKey) => {
+  const parts = String(dayKey || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!parts) return String(dayKey || '');
+
+  const year = Number(parts[1]);
+  const month = Number(parts[2]);
+  const day = Number(parts[3]);
+  const parsed = new Date(year, month - 1, day);
+  if (Number.isNaN(parsed.getTime())) return String(dayKey || '');
+
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+const getStreakLevelClass = (level) => STREAK_LEVEL_CLASS_MAP[level] || STREAK_LEVEL_CLASS_MAP[0];
+
+const getStartOfWeek = (date) => {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  const mondayOffset = (result.getDay() + 6) % 7;
+  result.setDate(result.getDate() - mondayOffset);
+  return result;
+};
+
+const getEndOfWeek = (date) => {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  const sundayOffset = 6 - ((result.getDay() + 6) % 7);
+  result.setDate(result.getDate() + sundayOffset);
+  return result;
+};
+
+const getStartOfMonth = (date) => {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  result.setDate(1);
+  return result;
+};
+
+const getEndOfMonth = (date) => {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  result.setMonth(result.getMonth() + 1, 0);
+  return result;
+};
+
+const buildStreakContributionGrid = (rows = [], rangeMode = 'year') => {
   const countsByDay = new Map();
 
   if (Array.isArray(rows)) {
@@ -155,15 +210,41 @@ const buildStreakContributionGrid = (rows = []) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const start = new Date(today);
-  start.setDate(today.getDate() - (STREAK_CONTRIBUTION_TOTAL_DAYS - 1));
+  const focusStart = new Date(today);
+  const focusEnd = new Date(today);
+  let rangeStart = new Date(today);
+  let rangeEnd = new Date(today);
 
-  const mondayOffset = (start.getDay() + 6) % 7;
-  const gridStart = new Date(start);
-  gridStart.setDate(start.getDate() - mondayOffset);
+  if (rangeMode === 'month') {
+    const currentMonthStart = getStartOfMonth(today);
+    focusStart.setTime(currentMonthStart.getTime());
+    focusEnd.setTime(today.getTime());
+    rangeStart = getStartOfMonth(new Date(today.getFullYear(), today.getMonth() - 3, 1));
+    rangeEnd = new Date(today);
+  } else if (rangeMode === 'week') {
+    const startOfWeek = getStartOfWeek(today);
+    focusStart.setTime(startOfWeek.getTime());
+    focusEnd.setTime(today.getTime());
+    rangeStart = new Date(startOfWeek);
+    rangeStart.setDate(rangeStart.getDate() - 21);
+    rangeEnd = new Date(today);
+  } else {
+    rangeStart = getStartOfMonth(new Date(today.getFullYear(), today.getMonth() - 11, 1));
+    rangeEnd = new Date(today);
+    focusStart.setTime(rangeStart.getTime());
+    focusEnd.setTime(rangeEnd.getTime());
+  }
 
-  const totalCalendarDays = Math.floor((today - gridStart) / (24 * 60 * 60 * 1000)) + 1;
+  const gridStart = getStartOfWeek(rangeStart);
+  const gridEnd = getEndOfWeek(rangeEnd);
+
+  const totalCalendarDays = Math.floor((gridEnd - gridStart) / (24 * 60 * 60 * 1000)) + 1;
   const totalCells = Math.ceil(totalCalendarDays / 7) * 7;
+  const visibleStartKey = toIsoDateKey(rangeStart);
+  const visibleEndKey = toIsoDateKey(rangeEnd);
+  const focusStartKey = toIsoDateKey(focusStart);
+  const focusEndKey = toIsoDateKey(focusEnd);
+  const todayKey = toIsoDateKey(today);
 
   const rawCells = [];
   for (let index = 0; index < totalCells; index += 1) {
@@ -171,13 +252,17 @@ const buildStreakContributionGrid = (rows = []) => {
     date.setDate(gridStart.getDate() + index);
 
     const dayKey = toIsoDateKey(date);
-    const inRange = dayKey >= toIsoDateKey(start) && dayKey <= toIsoDateKey(today);
-    const count = inRange ? (countsByDay.get(dayKey) || 0) : 0;
+    const isVisible = dayKey >= visibleStartKey && dayKey <= visibleEndKey;
+    const isFocus = dayKey >= focusStartKey && dayKey <= focusEndKey && dayKey <= todayKey;
+    const isFuture = dayKey > todayKey;
+    const count = isVisible ? (countsByDay.get(dayKey) || 0) : 0;
 
     rawCells.push({
       dayKey,
       count,
-      inRange,
+      isVisible,
+      isFocus,
+      isFuture,
       label: formatDateDDMMYYYY(dayKey),
       dayIndex: (date.getDay() + 6) % 7,
       month: date.getMonth(),
@@ -189,7 +274,7 @@ const buildStreakContributionGrid = (rows = []) => {
 
   const cells = rawCells.map((cell) => {
     let level = 0;
-    if (cell.inRange && cell.count > 0) {
+    if (cell.isVisible && cell.count > 0) {
       if (maxCount <= 1) {
         level = 4;
       } else {
@@ -215,20 +300,20 @@ const buildStreakContributionGrid = (rows = []) => {
   const monthLabels = [];
   let previousMonthKey = null;
   weeks.forEach((week, weekIndex) => {
-    const firstInRangeCell = week.find((cell) => cell.inRange);
-    if (!firstInRangeCell) return;
+    const firstVisibleCell = week.find((cell) => cell.isVisible);
+    if (!firstVisibleCell) return;
 
-    const monthKey = `${firstInRangeCell.year}-${firstInRangeCell.month}`;
+    const monthKey = `${firstVisibleCell.year}-${firstVisibleCell.month}`;
     if (monthKey === previousMonthKey) return;
     previousMonthKey = monthKey;
     monthLabels.push({
       weekIndex,
-      label: MONTH_SHORT[firstInRangeCell.month]
+      label: MONTH_SHORT[firstVisibleCell.month]
     });
   });
 
-  const activeDays = cells.filter((cell) => cell.inRange && cell.count > 0).length;
-  const totalRevisions = cells.reduce((sum, cell) => sum + (cell.inRange ? cell.count : 0), 0);
+  const activeDays = cells.filter((cell) => cell.isFocus && cell.count > 0).length;
+  const totalRevisions = cells.reduce((sum, cell) => sum + (cell.isFocus ? cell.count : 0), 0);
 
   return {
     weeks,
@@ -236,15 +321,128 @@ const buildStreakContributionGrid = (rows = []) => {
     activeDays,
     totalRevisions,
     maxCount,
-    totalDays: STREAK_CONTRIBUTION_TOTAL_DAYS
+    totalDays: Math.max(1, Math.floor((rangeEnd - rangeStart) / (24 * 60 * 60 * 1000)) + 1),
+    rangeMode,
+    focusStartKey,
+    focusEndKey
   };
+};
+
+const StreakActivityDialogContent = ({ rows = [], currentStreak = 0 }) => {
+  const contribution = useMemo(() => buildStreakContributionGrid(rows, 'year'), [rows]);
+  const viewLabel = STREAK_VIEW_OPTIONS[0];
+  const dayLabels = ['Mon', '', 'Wed', '', 'Fri', '', ''];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm text-gray-300">Your contribution-style study activity.</p>
+          <p className="mt-1 text-xs text-gray-500">Showing the last 12 months in the same heat style.</p>
+        </div>
+
+        <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-cyan-100">
+          {viewLabel.label}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/15 bg-black p-4 sm:p-6 overflow-hidden">
+        <div className="w-full space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[11px] uppercase tracking-[0.2em] text-cyan-100/70">{viewLabel.label}</div>
+            <div className="text-[11px] text-gray-500">{viewLabel.caption}</div>
+          </div>
+
+          <div className="ml-8 grid gap-1">
+            <div
+              className="grid gap-1"
+              style={{ gridTemplateColumns: `repeat(${contribution.weeks.length}, minmax(0, 1fr))` }}
+            >
+              {contribution.monthLabels.map((monthLabel) => (
+                <span
+                  key={`${monthLabel.label}-${monthLabel.weekIndex}`}
+                  className="text-[10px] text-cyan-100/80"
+                  style={{ gridColumnStart: monthLabel.weekIndex + 1 }}
+                >
+                  {monthLabel.label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2">
+            <div className="pt-0.5 grid grid-rows-7 gap-1 text-[10px] text-cyan-100/60">
+              {dayLabels.map((dayLabel, index) => (
+                <span key={`${dayLabel}-${index}`} className="h-3.5 leading-[14px]">
+                  {dayLabel}
+                </span>
+              ))}
+            </div>
+
+            <div
+              className="min-w-0 flex-1 grid gap-1"
+              style={{ gridTemplateColumns: `repeat(${contribution.weeks.length}, minmax(0, 1fr))` }}
+            >
+              {contribution.weeks.map((week, weekIndex) => (
+                <div key={`week-${weekIndex}`} className="grid grid-rows-7 gap-1 min-w-0">
+                  {week.map((cell) => {
+                    const tooltipText = `${cell.count} topic${cell.count === 1 ? '' : 's'} revised on ${formatLongDateWithOrdinal(cell.dayKey)}`;
+                    const isNearRightEdge = weekIndex >= contribution.weeks.length - 6;
+                    const isNearLeftEdge = weekIndex <= 2;
+                    const tooltipPositionClass = isNearRightEdge
+                      ? 'right-0 translate-x-0'
+                      : isNearLeftEdge
+                        ? 'left-0 translate-x-0'
+                        : 'left-1/2 -translate-x-1/2';
+                    const isContextCell = !cell.isFocus;
+
+                    return (
+                      <button
+                        key={cell.dayKey}
+                        type="button"
+                        className={`group relative h-3.5 w-full rounded-[3px] transition-opacity ${isContextCell ? 'opacity-35' : ''} ${cell.isVisible ? (STREAK_LEVEL_CLASS_MAP[cell.level] || STREAK_LEVEL_CLASS_MAP[0]) : 'bg-transparent'}`}
+                        title={cell.isVisible ? tooltipText : ''}
+                        disabled={!cell.isVisible}
+                      >
+                        {cell.isVisible ? (
+                          <span className={`pointer-events-none absolute top-[-1.8rem] z-20 rounded border border-white/20 bg-black/95 px-1.5 py-0.5 text-[10px] text-gray-100 opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 whitespace-nowrap ${tooltipPositionClass}`}>
+                            {tooltipText}
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-300">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span>Active days: {contribution.activeDays}/{contribution.totalDays}</span>
+          <span>Topics revised: {contribution.totalRevisions}</span>
+          <span>Current streak: {currentStreak}</span>
+        </div>
+
+        <div className="ml-auto flex items-center justify-end gap-2 whitespace-nowrap">
+          <span className="inline-flex items-center gap-1"><span>None</span><span className="h-2.5 w-2.5 rounded-[2px] bg-white/[0.08] border border-white/[0.1]" /></span>
+          <span className="inline-flex items-center gap-1"><span>Low</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-900/70" /></span>
+          <span className="inline-flex items-center gap-1"><span>Medium</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-700/80" /></span>
+          <span className="inline-flex items-center gap-1"><span>High</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-500/85" /></span>
+          <span className="inline-flex items-center gap-1"><span>Peak</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-300/95" /></span>
+        </div>
+      </div>
+    </div>
+    </div>
+  );
 };
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, isLoading, updateUser } = useAuth();
-  const { topics, loading: topicsLoading, createTopic, updateTopic, fetchTopics } = useTopics();
+  const { topics, loading: topicsLoading, createTopic, updateTopic, fetchTopics } = useTopics({ autoFetchDueTopics: false });
 
   // Difficulty color mapping
   const getDifficultyColor = (difficulty) => {
@@ -427,10 +625,27 @@ const Dashboard = () => {
     isMaximizedView: false,
     isTimeLapsePlaying: false
   });
+  const [redistributionDetails, setRedistributionDetails] = useState(null);
 
   const topicCardRefs = useRef(new Map());
   const topicSpotlightTimerRef = useRef(null);
   const taskSpotlightTimerRef = useRef(null);
+  const lastAutoRescheduleToastSignatureRef = useRef('');
+
+  const recordRedistributionDetails = (event) => {
+    if (!event || !event.count || event.count <= 0) return;
+
+    setRedistributionDetails({
+      source: event.source || 'Redistribution',
+      count: Number(event.count) || 0,
+      movedTopics: Array.isArray(event.movedTopics) ? event.movedTopics : [],
+      unresolvedCount: Number(event.unresolvedCount) || 0,
+      unresolvedTopicIds: Array.isArray(event.unresolvedTopicIds) ? event.unresolvedTopicIds : [],
+      preservedCount: Number(event.preservedCount) || 0,
+      timestamp: new Date().toISOString(),
+      note: event.note || ''
+    });
+  };
 
   // Dialog state
   const [dialog, setDialog] = useState({
@@ -544,13 +759,43 @@ const Dashboard = () => {
   };
 
   // Fetch due topics for today's revision
-  const fetchDueTopics = async () => {
+  const fetchDueTopics = async (options = {}) => {
+    const { recordRedistributionDetails: shouldRecordRedistributionDetails = true } = options;
     setLoadingDue(true);
     try {
       const response = await apiService.getDueTopics(10);
       if (response.success) {
         const filteredTopics = filterLearningTopics(response.topics);
         setDueTopics(filteredTopics);
+
+        const autoReschedule = response.autoRescheduledDeferred;
+        if (shouldRecordRedistributionDetails && autoReschedule?.moved > 0) {
+          const movedIds = Array.isArray(autoReschedule.movedTopics)
+            ? autoReschedule.movedTopics.map((item) => item?.id).filter(Boolean)
+            : [];
+          const signature = `${autoReschedule.moved}:${movedIds.join('|')}`;
+
+          if (signature && lastAutoRescheduleToastSignatureRef.current !== signature) {
+            lastAutoRescheduleToastSignatureRef.current = signature;
+            const names = (autoReschedule.movedTopics || [])
+              .map((item) => item?.title)
+              .filter(Boolean)
+              .slice(0, 2)
+              .join(', ');
+            const suffix = names ? ` (${names}${autoReschedule.moved > 2 ? ', ...' : ''})` : '';
+            showToast(`${autoReschedule.moved} due topic${autoReschedule.moved === 1 ? '' : 's'} auto-redistributed${suffix}`, 'info');
+            recordRedistributionDetails({
+              source: 'Auto redistribution after due refresh',
+              count: autoReschedule.moved,
+              movedTopics: autoReschedule.movedTopics,
+              unresolvedCount: autoReschedule.unresolved,
+              unresolvedTopicIds: autoReschedule.unresolvedTopicIds,
+              preservedCount: autoReschedule.skippedMandatoryTopicIds?.length || 0,
+              note: 'These topics were moved so today stays within capacity.'
+            });
+          }
+        }
+
         // Store the due topics for later calculation
         return filteredTopics;
       }
@@ -596,10 +841,11 @@ const Dashboard = () => {
   };
 
   // Fetch both due and upcoming topics, then calculate 7-day view
-  const fetchAllTopicsAndCalculate = async () => {
+  const fetchAllTopicsAndCalculate = async (options = {}) => {
+    const { recordRedistributionDetails: shouldRecordRedistributionDetails = true } = options;
     try {
       const [dueTopicsData, upcomingTopicsData, workloadData] = await Promise.all([
-        fetchDueTopics(),
+        fetchDueTopics({ recordRedistributionDetails: shouldRecordRedistributionDetails }),
         fetchUpcomingTopics(),
         fetchWorkloadData()
       ]);
@@ -739,7 +985,21 @@ const Dashboard = () => {
       const response = await apiService.preventCrowding(targetDate);
 
       if (response.success && response.redistributed) {
-        showToast(`${response.count} topics redistributed based on difficulty levels`, 'success');
+        const names = (response.redistributedTopics || [])
+          .map((item) => item?.title)
+          .filter(Boolean)
+          .slice(0, 2)
+          .join(', ');
+        const suffix = names ? ` (${names}${response.count > 2 ? ', ...' : ''})` : '';
+        showToast(`${response.count} topics redistributed${suffix}`, 'success');
+        recordRedistributionDetails({
+          source: 'Crowding prevention',
+          count: response.count,
+          movedTopics: response.redistributedTopics,
+          unresolvedCount: response.unresolvedCount,
+          unresolvedTopicIds: response.unresolvedTopicIds,
+          note: 'Crowding prevention moved topics to balance the day.'
+        });
         // Refresh data to show updated distribution
         await fetchAllTopicsAndCalculate();
       } else {
@@ -760,6 +1020,14 @@ const Dashboard = () => {
 
       if (response.success && response.moved > 0) {
         if (!silent) showToast(`${response.moved} overdue topics moved to today`, 'success');
+        recordRedistributionDetails({
+          source: 'Move overdue topics',
+          count: response.moved,
+          movedTopics: response.movedTopics,
+          unresolvedCount: response.unresolved || 0,
+          unresolvedTopicIds: response.unresolvedTopicIds,
+          note: 'Overdue topics were shifted into the next feasible slots.'
+        });
         // Refresh data to show updated distribution only if not silent
         if (!silent) await fetchAllTopicsAndCalculate();
       } else {
@@ -791,9 +1059,24 @@ const Dashboard = () => {
               const unresolvedText = response.unresolved > 0
                 ? ` (${response.unresolved} unresolved)`
                 : '';
-              showToast(`Moved ${response.moved} topic${response.moved === 1 ? '' : 's'}${unresolvedText}`, 'success');
+              const preservedText = response.preservedMandatory > 0
+                ? ` · kept ${response.preservedMandatory} new topic${response.preservedMandatory === 1 ? '' : 's'} for mandatory first revision today`
+                : '';
+              showToast(`Moved ${response.moved} topic${response.moved === 1 ? '' : 's'}${unresolvedText}${preservedText}`, 'success');
+              recordRedistributionDetails({
+                source: 'Hard skip today',
+                count: response.moved,
+                movedTopics: response.movedTopics,
+                unresolvedCount: response.unresolved || 0,
+                unresolvedTopicIds: response.unresolvedTopicIds,
+                preservedCount: response.preservedMandatory || 0,
+                note: 'Today was rebalanced to the next best days.'
+              });
             } else {
-              showToast('No topics scheduled for today', 'info');
+              const preservedText = response.preservedMandatory > 0
+                ? `Kept ${response.preservedMandatory} newly added topic${response.preservedMandatory === 1 ? '' : 's'} for mandatory first revision today`
+                : 'No topics scheduled for today';
+              showToast(preservedText, 'info');
             }
           } else {
             showToast(response.message || 'Failed to skip today topics', 'error');
@@ -817,6 +1100,9 @@ const Dashboard = () => {
       const response = await apiService.reviewTopic(topicId, quality);
 
       if (response && response.success) {
+        setRedistributionDetails(null);
+        setDueTopics((prev) => prev.filter((topic) => topic._id !== topicId));
+
         // Find the topic from current topics list
         const reviewedTopic = dueTopics.find(t => t._id === topicId) ||
                              upcomingTopics.find(t => t._id === topicId) ||
@@ -832,7 +1118,7 @@ const Dashboard = () => {
         await recordStudySession();
 
         // Refresh due and upcoming topics (this will also update Next 7 Days)
-        await fetchAllTopicsAndCalculate();
+        await fetchAllTopicsAndCalculate({ recordRedistributionDetails: false });
 
         setToast({
           show: true,
@@ -1078,8 +1364,8 @@ const Dashboard = () => {
         basePeriodDaysByDifficulty: { 1: 15, 2: 30, 3: 45, 4: 60, 5: 75 }
       },
       engineering: {
-        baseRevisionCountByDifficulty: { 1: 2, 2: 3, 3: 3, 4: 4, 5: 4 },
-        basePeriodDaysByDifficulty: { 1: 20, 2: 35, 3: 50, 4: 70, 5: 90 }
+        baseRevisionCountByDifficulty: { 1: 1, 2: 1, 3: 2, 4: 2, 5: 3 },
+        basePeriodDaysByDifficulty: { 1: 8, 2: 12, 3: 18, 4: 26, 5: 36 }
       }
     };
 
@@ -1090,9 +1376,6 @@ const Dashboard = () => {
 
     if (topicMode && topicMode !== 'inherit') {
       effectiveMode = topicMode; // use topic override
-    } else if (userMode === 'hybrid') {
-      // In hybrid mode, harder topics use competitive; lighter use engineering
-      effectiveMode = difficulty >= 4 ? 'competitive' : 'engineering';
     } else if (userMode === 'engineering') {
       effectiveMode = 'engineering';
     } else {
@@ -1134,7 +1417,7 @@ const Dashboard = () => {
 
     plannedRevisionCount = clampValue(plannedRevisionCount, minimumRevisionCount, targetRevisionCount);
 
-    const previewSteps = Math.max(1, Math.min(5, plannedRevisionCount));
+    const previewSteps = Math.max(1, plannedRevisionCount);
 
     const previewDates = [];
     let cursor = topic?.nextReviewDate ? new Date(topic.nextReviewDate) : new Date();
@@ -1149,25 +1432,13 @@ const Dashboard = () => {
       hardDeadline.setHours(8, 0, 0, 0);
     }
 
-    const seenDayKeys = new Set();
-
-    const pushPreviewDate = (date) => {
-      const dayKey = toLocalDateKey(date);
-      if (!dayKey || seenDayKeys.has(dayKey)) {
-        return;
-      }
-
-      seenDayKeys.add(dayKey);
-      previewDates.push(new Date(date));
-    };
-
     for (let i = 0; i < previewSteps; i += 1) {
       const normalized = new Date(cursor);
       const previewDate = hardDeadline && normalized > hardDeadline
         ? new Date(hardDeadline)
         : normalized;
 
-      pushPreviewDate(previewDate);
+      previewDates.push(new Date(previewDate));
 
       intervalDays = Math.max(intervalDays + 1, Math.round(intervalDays * 1.8));
       cursor = new Date(cursor.getTime() + intervalDays * 24 * 60 * 60 * 1000);
@@ -1204,6 +1475,11 @@ const Dashboard = () => {
       .slice()
       .sort((left, right) => new Date(left.completedAt) - new Date(right.completedAt));
 
+    const revisionModeLabel = {
+      competitive: 'Relentless Study Mode',
+      engineering: 'Learning Mode'
+    }[preview.revisionMode] || 'Relentless Study Mode';
+
     const timelineRows = preview.previewDates.map((date, index) => {
       const historyEntry = completedEntries[index] || null;
       const daysAway = Math.ceil((date - currentDate) / (1000 * 60 * 60 * 24));
@@ -1234,6 +1510,9 @@ const Dashboard = () => {
             <p className="text-sm font-semibold text-white leading-snug">{topic.title}</p>
             <p className="mt-1 text-xs text-gray-300">
               {getDifficultyLabel(topic.difficulty)} ({topic.difficulty}/5) • {preview.plannedRevisionCount}/{preview.targetRevisionCount} planned • {preview.effectivePeriodDays} day window
+            </p>
+            <p className="mt-1 text-xs text-gray-400">
+              Mode: {revisionModeLabel}
             </p>
           </div>
 
@@ -1382,110 +1661,11 @@ const Dashboard = () => {
       console.warn('Failed to load streak contribution stats:', error?.message || error);
     }
 
-    const contribution = buildStreakContributionGrid(statsRows);
-    const levelClassMap = {
-      0: 'bg-white/[0.04] border border-white/[0.06]',
-      1: 'bg-cyan-900/70',
-      2: 'bg-cyan-700/80',
-      3: 'bg-cyan-500/85',
-      4: 'bg-cyan-300/95'
-    };
-    const dayLabels = ['Mon', '', 'Wed', '', 'Fri', '', ''];
-
     showDialog({
       type: 'info',
       title: 'Streak Activity',
-      size: 'lg',
-      message: (
-        <div className="space-y-3">
-          <p className="text-sm text-gray-300">
-            Your contribution-style study activity for the last year.
-          </p>
-
-          <div className="rounded-xl border border-white/15 bg-black p-3 overflow-hidden">
-            <div className="min-w-0 flex-1 space-y-2">
-              <div
-                className="ml-8 grid gap-0.5"
-                style={{ gridTemplateColumns: `repeat(${contribution.weeks.length}, minmax(0, 1fr))` }}
-              >
-                {contribution.monthLabels.map((monthLabel) => (
-                  <span
-                    key={`${monthLabel.label}-${monthLabel.weekIndex}`}
-                    className="text-[10px] text-cyan-100/80"
-                    style={{ gridColumnStart: monthLabel.weekIndex + 1 }}
-                  >
-                    {monthLabel.label}
-                  </span>
-                ))}
-              </div>
-
-              <div className="flex items-start gap-2">
-                <div className="pt-0.5 grid grid-rows-7 gap-0.5 text-[10px] text-cyan-100/60">
-                  {dayLabels.map((dayLabel, index) => (
-                    <span key={`${dayLabel}-${index}`} className="h-2.5 leading-[10px]">
-                      {dayLabel}
-                    </span>
-                  ))}
-                </div>
-
-                <div
-                  className="min-w-0 flex-1 grid gap-0.5"
-                  style={{ gridTemplateColumns: `repeat(${contribution.weeks.length}, minmax(0, 1fr))` }}
-                >
-                  {contribution.weeks.map((week, weekIndex) => (
-                    <div key={`week-${weekIndex}`} className="grid grid-rows-7 gap-0.5 min-w-0">
-                      {week.map((cell) => {
-                        const tooltipText = `${cell.count} topic${cell.count === 1 ? '' : 's'} revised on ${formatLongDateWithOrdinal(cell.dayKey)}`;
-                        const isNearRightEdge = weekIndex >= contribution.weeks.length - 6;
-                        const isNearLeftEdge = weekIndex <= 2;
-                        const tooltipPositionClass = isNearRightEdge
-                          ? 'right-0 translate-x-0'
-                          : isNearLeftEdge
-                            ? 'left-0 translate-x-0'
-                            : 'left-1/2 -translate-x-1/2';
-
-                        return (
-                          <button
-                            key={cell.dayKey}
-                            type="button"
-                            className={`group relative h-2.5 w-full rounded-[2px] ${
-                              cell.inRange ? (levelClassMap[cell.level] || levelClassMap[0]) : 'bg-transparent'
-                            }`}
-                            title={cell.inRange ? tooltipText : ''}
-                            disabled={!cell.inRange}
-                          >
-                            {cell.inRange ? (
-                              <span className={`pointer-events-none absolute top-[-1.8rem] z-20 rounded border border-white/20 bg-black/95 px-1.5 py-0.5 text-[10px] text-gray-100 opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100 group-active:opacity-100 whitespace-nowrap ${tooltipPositionClass}`}>
-                                {tooltipText}
-                              </span>
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-300">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <span>Active days: {contribution.activeDays}/{contribution.totalDays}</span>
-                <span>Topics revised: {contribution.totalRevisions}</span>
-                <span>Current streak: {user?.currentStreak || 0}</span>
-              </div>
-
-              <div className="ml-auto flex items-center justify-end gap-2 whitespace-nowrap">
-                <span className="inline-flex items-center gap-1"><span>None</span><span className="h-2.5 w-2.5 rounded-[2px] bg-white/[0.08] border border-white/[0.1]" /></span>
-                <span className="inline-flex items-center gap-1"><span>Low</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-900/70" /></span>
-                <span className="inline-flex items-center gap-1"><span>Medium</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-700/80" /></span>
-                <span className="inline-flex items-center gap-1"><span>High</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-500/85" /></span>
-                <span className="inline-flex items-center gap-1"><span>Peak</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-300/95" /></span>
-              </div>
-            </div>
-          </div>
-        </div>
-      ),
+      size: 'xl',
+      message: <StreakActivityDialogContent rows={statsRows} currentStreak={user?.currentStreak || 0} />,
       confirmText: 'Close'
     });
   };
@@ -1603,6 +1783,13 @@ const Dashboard = () => {
     });
   }, [location, navigate]);
 
+  const isGraphMode = location.pathname === '/graph';
+
+  useEffect(() => {
+    if (!isGraphMode) return;
+    dispatchGraphUiCommand('reset-view');
+  }, [isGraphMode]);
+
   // Show loading while checking authentication
   if (isLoading) {
     return (
@@ -1622,7 +1809,6 @@ const Dashboard = () => {
 
   // Sidebar navigation items
   const sidebarItems = getSidebarNavItems(location.pathname);
-  const isGraphMode = location.pathname === '/graph';
 
   const quickActions = [
     ...(!isGraphMode ? [{ icon: Plus, label: "Add Topic", action: () => setShowAddTopicModal(true), primary: true }] : []),
@@ -1675,6 +1861,12 @@ const Dashboard = () => {
       return;
     }
 
+    if (item.label === "Flashcards") {
+      navigate('/flashcards');
+      setIsMobileSidebarOpen(false);
+      return;
+    }
+
     if (item.label === "Graph Mode") {
       navigate('/graph');
       setIsMobileSidebarOpen(false);
@@ -1698,7 +1890,7 @@ const Dashboard = () => {
 
   const handleAddTopic = async (topicData) => {
     try {
-      await createTopic(topicData);
+      const createResponse = await createTopic(topicData);
       setShowAddTopicModal(false);
 
       // Log to journal
@@ -1712,6 +1904,27 @@ const Dashboard = () => {
         message: '✅ Topic added successfully!',
         type: 'success'
       });
+
+      if (createResponse?.crowdingPrevention?.redistributed) {
+        const movedCount = Number(createResponse.crowdingPrevention.count || 0);
+        if (movedCount > 0) {
+          const movedNames = (createResponse.crowdingPrevention.redistributedTopics || [])
+            .map((item) => item?.title)
+            .filter(Boolean)
+            .slice(0, 2)
+            .join(', ');
+          const suffix = movedNames ? ` (${movedNames}${movedCount > 2 ? ', ...' : ''})` : '';
+          showToast(`${movedCount} topic${movedCount === 1 ? '' : 's'} redistributed after add${suffix}`, 'info');
+          recordRedistributionDetails({
+            source: 'Topic add crowding prevention',
+            count: movedCount,
+            movedTopics: createResponse.crowdingPrevention.redistributedTopics,
+            unresolvedCount: createResponse.crowdingPrevention.unresolvedCount,
+            unresolvedTopicIds: createResponse.crowdingPrevention.unresolvedTopicIds,
+            note: 'A new topic triggered a rebalance of the schedule.'
+          });
+        }
+      }
     } catch (error) {
       console.error('Failed to create topic:', error);
       setToast({
@@ -2135,13 +2348,15 @@ const Dashboard = () => {
   const handleEditTask = async (taskData) => {
     if (!editingTaskEntry?.id) return;
 
-    const nextTaskType = String(taskData?.taskType || '').toLowerCase() === 'one-time'
+    const wantsRecurring = String(taskData?.taskType || '').toLowerCase() !== 'one-time';
+    const nextTaskType = !wantsRecurring
       ? 'one-time'
       : ['recurring', 'custom-recurring'].includes(String(editingTaskEntry.taskType || '').toLowerCase())
         ? String(editingTaskEntry.taskType).toLowerCase()
         : 'custom-recurring';
+    const providedCustomDates = Array.isArray(taskData?.customDates) ? taskData.customDates : [];
 
-    if (nextTaskType === 'one-time') {
+    if (!wantsRecurring) {
       taskService.updateTask(userTaskStorageKey, editingTaskEntry.id, {
         title: taskData.title,
         description: taskData.description,
@@ -2152,7 +2367,6 @@ const Dashboard = () => {
     } else {
       const existingSeriesId = editingTaskEntry.seriesId;
       const hasSeries = Boolean(existingSeriesId);
-      const providedCustomDates = Array.isArray(taskData?.customDates) ? taskData.customDates : [];
 
       if (hasSeries && providedCustomDates.length > 0) {
         const seriesTasks = tasks
@@ -2168,6 +2382,15 @@ const Dashboard = () => {
           taskService.deleteTasks(userTaskStorageKey, idsToReplace);
         }
 
+        taskService.addTask(userTaskStorageKey, {
+          title: taskData.title,
+          description: taskData.description,
+          date: taskData.date,
+          taskType: 'custom-recurring',
+          customDates: providedCustomDates
+        });
+      } else if (providedCustomDates.length > 0) {
+        taskService.deleteTask(userTaskStorageKey, editingTaskEntry.id);
         taskService.addTask(userTaskStorageKey, {
           title: taskData.title,
           description: taskData.description,
@@ -2429,11 +2652,11 @@ const Dashboard = () => {
     });
 
     const bars = [
-      { label: 'V.Easy', value: buckets.veryEasy, color: 'bg-green-500' },
-      { label: 'Easy', value: buckets.easy, color: 'bg-emerald-500' },
-      { label: 'Medium', value: buckets.medium, color: 'bg-yellow-500' },
-      { label: 'Hard', value: buckets.hard, color: 'bg-orange-500' },
-      { label: 'V.Hard', value: buckets.veryHard, color: 'bg-red-500' }
+      { label: 'V.Easy', value: buckets.veryEasy, color: 'bg-gradient-to-t from-cyan-900 via-cyan-700 to-cyan-400' },
+      { label: 'Easy', value: buckets.easy, color: 'bg-gradient-to-t from-cyan-900 via-cyan-700 to-cyan-400' },
+      { label: 'Medium', value: buckets.medium, color: 'bg-gradient-to-t from-cyan-900 via-cyan-700 to-cyan-400' },
+      { label: 'Hard', value: buckets.hard, color: 'bg-gradient-to-t from-cyan-900 via-cyan-700 to-cyan-400' },
+      { label: 'V.Hard', value: buckets.veryHard, color: 'bg-gradient-to-t from-cyan-900 via-cyan-700 to-cyan-400' }
     ];
 
     return {
@@ -2454,7 +2677,7 @@ const Dashboard = () => {
             className={`flex items-center hover:opacity-80 transition-opacity ${sidebarCollapsed ? 'justify-center w-full' : 'gap-2 min-w-0'}`}
           >
             <Logo size="sm" className="text-white scale-90" />
-            {!sidebarCollapsed && <span className="text-lg font-semibold text-white">Memora</span>}
+            {!sidebarCollapsed && <span className="text-lg font-semibold text-white">Memy</span>}
           </button>
 
           {!sidebarCollapsed && (
@@ -2539,7 +2762,7 @@ const Dashboard = () => {
             className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
           >
             <Logo size="sm" className="text-white" />
-            <span className="text-lg font-semibold text-white">Memora</span>
+            <span className="text-lg font-semibold text-white">Memy</span>
           </button>
         </div>
 
@@ -2744,6 +2967,56 @@ const Dashboard = () => {
                     {dueTopics.length} due today
                   </div>
                 </div>
+
+                {redistributionDetails ? (
+                  <div className="mb-3 rounded-xl border border-cyan-400/15 bg-white/[0.03] p-3 sm:p-4 text-sm text-cyan-50/90 shadow-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-400/12 text-cyan-100">
+                          <GitBranch className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-cyan-50 leading-tight">Redistribution</p>
+                          <p className="text-xs text-cyan-100/65 truncate">{redistributionDetails.source}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setRedistributionDetails(null)}
+                        className="rounded-full p-1 text-cyan-100/60 hover:bg-white/5 hover:text-cyan-50 transition-colors"
+                        title="Clear redistribution details"
+                        aria-label="Clear redistribution details"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-4 gap-2 text-[11px]">
+                      <div className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-2 text-center">
+                        <span className="block text-cyan-100/55">Moved</span>
+                        <span className="block mt-0.5 text-cyan-50 font-semibold text-sm">{redistributionDetails.count}</span>
+                      </div>
+                      <div className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-2 text-center">
+                        <span className="block text-cyan-100/55">Unresolved</span>
+                        <span className="block mt-0.5 text-cyan-50 font-semibold text-sm">{redistributionDetails.unresolvedCount}</span>
+                      </div>
+                      <div className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-2 text-center">
+                        <span className="block text-cyan-100/55">Kept</span>
+                        <span className="block mt-0.5 text-cyan-50 font-semibold text-sm">{redistributionDetails.preservedCount}</span>
+                      </div>
+                      <div className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-2 text-center">
+                        <span className="block text-cyan-100/55">When</span>
+                        <span className="block mt-0.5 text-cyan-50 font-semibold text-sm">{formatDateDDMMYYYY(redistributionDetails.timestamp)}</span>
+                      </div>
+                    </div>
+
+                    {Array.isArray(redistributionDetails.movedTopics) && redistributionDetails.movedTopics.length > 0 ? (
+                      <p className="mt-2.5 text-xs text-cyan-100/60 line-clamp-2">
+                        {redistributionDetails.movedTopics.slice(0, 3).map((item) => item?.title).filter(Boolean).join(' • ')}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {/* Due Topics List */}
                 <div
@@ -3315,7 +3588,7 @@ const Dashboard = () => {
                       <div key={bar.label} className="flex flex-col items-center">
                         <div className="h-20 w-full max-w-[30px] rounded-md bg-white/5 border border-white/10 flex items-end overflow-hidden">
                           <div
-                            className={`w-full ${bar.color}`}
+                            className={`w-full ${bar.color} shadow-[0_0_18px_rgba(34,211,238,0.12)]`}
                             style={{ height: `${(bar.value / todayTopicMix.max) * 100}%` }}
                             title={`${bar.label}: ${bar.value}`}
                           />
@@ -3344,18 +3617,18 @@ const Dashboard = () => {
               <div className="flex items-center space-x-3">
                 <img
                   src={logoImg}
-                  alt="Memora Logo"
+                  alt="Memy Logo"
                   className="w-8 h-8 rounded-lg"
                 />
                 <div>
-                  <div className="text-base sm:text-lg font-bold text-white">Memora</div>
+                  <div className="text-base sm:text-lg font-bold text-white">Memy</div>
                   <div className="text-[11px] sm:text-xs text-gray-400">Sets your memory in motion</div>
                 </div>
               </div>
 
               <div className="flex items-center space-x-3">
                 <a
-                  href="https://linkedin.com/company/memora"
+                  href="https://linkedin.com/company/memyapp"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 hover:border-blue-400/20 transition-all"
@@ -3364,7 +3637,7 @@ const Dashboard = () => {
                   <Linkedin className="w-4 h-4" />
                 </a>
                 <a
-                  href="https://twitter.com/memoraapp"
+                  href="https://twitter.com/memyapp"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-blue-400 hover:bg-blue-400/10 hover:border-blue-400/20 transition-all"
@@ -3373,7 +3646,7 @@ const Dashboard = () => {
                   <Twitter className="w-4 h-4" />
                 </a>
                 <a
-                  href="https://instagram.com/memoraapp"
+                  href="https://instagram.com/memyapp"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-pink-400 hover:bg-pink-400/10 hover:border-pink-400/20 transition-all"

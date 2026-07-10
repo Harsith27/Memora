@@ -12,7 +12,87 @@ const TIMER_ACTIONS = {
   SET_INITIAL_TIME: 'SET_INITIAL_TIME',
   SET_TIMER_MODE: 'SET_TIMER_MODE',
   SET_STUDY_METHOD: 'SET_STUDY_METHOD',
+  HYDRATE_TIMER_STATE: 'HYDRATE_TIMER_STATE',
   COMPLETE_SESSION: 'COMPLETE_SESSION'
+};
+
+const FOCUS_TIMER_STATE_KEY = 'focusModeTimerState';
+
+const readCurrentUserStorageId = () => {
+  try {
+    const raw = localStorage.getItem('currentUser');
+    if (!raw) return null;
+
+    const user = JSON.parse(raw);
+    const candidates = [user?.id, user?._id, user?.email, user?.username];
+    for (const candidate of candidates) {
+      const normalized = String(candidate || '').trim();
+      if (!normalized || normalized === 'undefined' || normalized === 'null') continue;
+      return normalized;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
+const getFocusTimerStorageKey = () => {
+  const userStorageId = readCurrentUserStorageId();
+  if (!userStorageId) return null;
+  return `${FOCUS_TIMER_STATE_KEY}_${userStorageId}`;
+};
+
+const deserializeDateValue = (value) => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const hydrateTimerSessionData = (sessionData) => {
+  if (!sessionData) return null;
+
+  return {
+    ...sessionData,
+    startTime: deserializeDateValue(sessionData.startTime) || new Date(),
+    endTime: deserializeDateValue(sessionData.endTime),
+    events: Array.isArray(sessionData.events)
+      ? sessionData.events.map((event) => ({
+          ...event,
+          timestamp: deserializeDateValue(event.timestamp) || new Date()
+        }))
+      : []
+  };
+};
+
+const getSessionReferenceElapsedSeconds = (snapshot) => {
+  const startedAt = deserializeDateValue(snapshot?.startedAt);
+  if (startedAt) {
+    return Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
+  }
+
+  const savedAt = Number(snapshot?.savedAt || snapshot?.updatedAt || 0);
+  if (Number.isFinite(savedAt) && savedAt > 0) {
+    return Math.max(0, Math.floor((Date.now() - savedAt) / 1000));
+  }
+
+  return 0;
+};
+
+const serializeTimerSessionData = (sessionData) => {
+  if (!sessionData) return null;
+
+  return {
+    ...sessionData,
+    startTime: sessionData.startTime instanceof Date ? sessionData.startTime.toISOString() : sessionData.startTime,
+    endTime: sessionData.endTime instanceof Date ? sessionData.endTime.toISOString() : sessionData.endTime,
+    events: Array.isArray(sessionData.events)
+      ? sessionData.events.map((event) => ({
+          ...event,
+          timestamp: event.timestamp instanceof Date ? event.timestamp.toISOString() : event.timestamp
+        }))
+      : []
+  };
 };
 
 // Initial state
@@ -101,6 +181,12 @@ const timerReducer = (state, action) => {
         studyMethod: action.payload
       };
 
+    case TIMER_ACTIONS.HYDRATE_TIMER_STATE:
+      return {
+        ...state,
+        ...action.payload
+      };
+
     case TIMER_ACTIONS.COMPLETE_SESSION:
       return {
         ...state,
@@ -123,6 +209,125 @@ const timerReducer = (state, action) => {
 // Timer Provider Component
 export const TimerProvider = ({ children }) => {
   const [state, dispatch] = useReducer(timerReducer, initialState);
+
+  useEffect(() => {
+    const storageKey = getFocusTimerStorageKey();
+    if (!storageKey) return;
+
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return;
+
+      const snapshot = JSON.parse(raw);
+      if (!snapshot || typeof snapshot !== 'object') return;
+
+      const nextTimerMode = snapshot.timerMode === 'stopwatch' ? 'stopwatch' : 'countdown';
+      const nextStudyMethod = snapshot.studyMethod === 'continuous' ? 'continuous' : 'pomodoro';
+      const nextInitialTime = Number.isFinite(Number(snapshot.initialTime))
+        ? Math.max(1, Number(snapshot.initialTime))
+        : (nextStudyMethod === 'pomodoro' ? 25 * 60 : 25 * 60);
+      const elapsedWhileAway = getSessionReferenceElapsedSeconds(snapshot);
+
+      if (nextTimerMode === 'countdown') {
+        const baseTimeLeft = Number.isFinite(Number(snapshot.timeLeft))
+          ? Math.max(0, Number(snapshot.timeLeft))
+          : nextInitialTime;
+        const anchoredTimeLeft = snapshot.isRunning
+          ? Math.max(0, nextInitialTime - elapsedWhileAway)
+          : baseTimeLeft;
+        const restoredTimeLeft = snapshot.isRunning
+          ? anchoredTimeLeft
+          : baseTimeLeft;
+
+        dispatch({
+          type: TIMER_ACTIONS.HYDRATE_TIMER_STATE,
+          payload: {
+            timerMode: nextTimerMode,
+            studyMethod: nextStudyMethod,
+            initialTime: nextInitialTime,
+            timeLeft: restoredTimeLeft,
+            elapsedTime: 0,
+            isRunning: Boolean(snapshot.isRunning) && restoredTimeLeft > 0,
+            isPaused: Boolean(snapshot.isPaused) && !snapshot.isRunning,
+            isCompleted: Boolean(snapshot.isRunning) && restoredTimeLeft <= 0,
+            currentSession: Number.isFinite(Number(snapshot.currentSession)) ? Number(snapshot.currentSession) : 1,
+            totalSessions: Number.isFinite(Number(snapshot.pomodoroSessions)) ? Number(snapshot.pomodoroSessions) : 4,
+            sessionHistory: Array.isArray(snapshot.sessionHistory) ? snapshot.sessionHistory : [],
+            currentPhase: snapshot.currentPhase || 'study',
+            currentSessionData: hydrateTimerSessionData(snapshot.currentSessionData)
+          }
+        });
+        return;
+      }
+
+      const persistedElapsedTime = Number.isFinite(Number(snapshot.elapsedTime))
+        ? Math.max(0, Number(snapshot.elapsedTime))
+        : 0;
+      const restoredElapsedTime = snapshot.isRunning
+        ? Math.max(persistedElapsedTime, elapsedWhileAway)
+        : persistedElapsedTime;
+
+      dispatch({
+        type: TIMER_ACTIONS.HYDRATE_TIMER_STATE,
+        payload: {
+          timerMode: nextTimerMode,
+          studyMethod: nextStudyMethod,
+          initialTime: nextInitialTime,
+          timeLeft: 0,
+          elapsedTime: restoredElapsedTime,
+          isRunning: Boolean(snapshot.isRunning),
+          isPaused: Boolean(snapshot.isPaused) && !snapshot.isRunning,
+          isCompleted: Boolean(snapshot.isCompleted),
+          currentSession: Number.isFinite(Number(snapshot.currentSession)) ? Number(snapshot.currentSession) : 1,
+          totalSessions: Number.isFinite(Number(snapshot.pomodoroSessions)) ? Number(snapshot.pomodoroSessions) : 4,
+          sessionHistory: Array.isArray(snapshot.sessionHistory) ? snapshot.sessionHistory : [],
+          currentPhase: snapshot.currentPhase || 'study',
+          currentSessionData: hydrateTimerSessionData(snapshot.currentSessionData)
+        }
+      });
+    } catch {
+      // Ignore corrupt snapshots and fall back to defaults.
+    }
+  }, []);
+
+  useEffect(() => {
+    const storageKey = getFocusTimerStorageKey();
+    if (!storageKey) return;
+
+    if (!state.isRunning && !state.isPaused && !state.isCompleted) {
+      localStorage.removeItem(storageKey);
+      return;
+    }
+
+    let existingSnapshot = null;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      existingSnapshot = raw ? JSON.parse(raw) : null;
+    } catch {
+      existingSnapshot = null;
+    }
+
+    const snapshot = {
+      ...(existingSnapshot && typeof existingSnapshot === 'object' ? existingSnapshot : {}),
+      version: 1,
+      savedAt: Date.now(),
+      timerMode: state.timerMode,
+      studyMethod: state.studyMethod,
+      isRunning: state.isRunning,
+      isPaused: state.isPaused,
+      isCompleted: state.isCompleted,
+      initialTime: state.initialTime,
+      timeLeft: state.timeLeft,
+      elapsedTime: state.elapsedTime,
+      currentSession: state.currentSession,
+      totalSessions: state.totalSessions,
+      sessionHistory: state.sessionHistory,
+      currentPhase: state.currentPhase || existingSnapshot?.currentPhase || 'study',
+      currentSessionData: serializeTimerSessionData(state.currentSessionData) || existingSnapshot?.currentSessionData || null
+    };
+
+    localStorage.setItem(storageKey, JSON.stringify(snapshot));
+  }, [state]);
 
   // Timer effect - runs every second when timer is active
   useEffect(() => {

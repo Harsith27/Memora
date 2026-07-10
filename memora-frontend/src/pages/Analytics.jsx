@@ -1414,7 +1414,7 @@ const Analytics = () => {
     const memScoreDelta = memScoreTrendEnd - memScoreTrendStart;
 
     const lines = [
-      'MEMORA ANALYTICS REPORT',
+      'MEMY ANALYTICS REPORT',
       `Generated: ${generatedAt}`,
       `Time Range: ${selectedRangeLabel}`,
       '',
@@ -1560,7 +1560,7 @@ const Analytics = () => {
         minute: '2-digit'
       });
 
-      writeText('Memora Analytics Report', {
+      writeText('Memy Analytics Report', {
         size: 18,
         style: 'bold',
         color: [2, 6, 23],
@@ -2226,7 +2226,7 @@ const Analytics = () => {
             className={`flex items-center hover:opacity-80 transition-opacity ${isSidebarCollapsed ? 'justify-center w-full' : 'gap-2 min-w-0'}`}
           >
             <Logo size="sm" className="text-white scale-90" />
-            {!isSidebarCollapsed && <span className="text-lg font-semibold text-white">Memora</span>}
+            {!isSidebarCollapsed && <span className="text-lg font-semibold text-white">Memy</span>}
           </button>
 
           {isDesktopViewport && !isSidebarCollapsed && (
@@ -2361,10 +2361,10 @@ const Analytics = () => {
         {/* Analytics Content */}
         <div className="flex-1 p-3 sm:p-4 overflow-auto scrollbar-hide">
           {loading ? (
-            <div className="text-center py-12">
-              <div className="inline-flex items-center space-x-2">
+            <div className="flex min-h-[calc(100vh-10rem)] items-center justify-center">
+              <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-black/55 px-4 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.28)]">
                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
-                <p className="text-gray-400">Loading analytics data...</p>
+                <p className="text-gray-300">Loading analytics data...</p>
               </div>
             </div>
           ) : (

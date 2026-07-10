@@ -11,7 +11,8 @@ const userSchema = new mongoose.Schema({
     trim: true,
     minlength: [3, 'Username must be at least 3 characters long'],
     maxlength: [30, 'Username cannot exceed 30 characters'],
-    match: [/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores']
+    lowercase: true,
+    match: [/^[a-z0-9]+$/, 'Username can only contain lowercase letters and numbers']
   },
   email: {
     type: String,
@@ -118,6 +119,33 @@ const userSchema = new mongoose.Schema({
       default: 30, // days
       min: 1,
       max: 365
+    },
+    dailyResetTime: {
+      type: String,
+      default: '04:00',
+      match: [/^(?:[01]\d|2[0-3]):[0-5]\d$/, 'Daily reset time must be in HH:MM format']
+    },
+    studyBoostDates: {
+      type: [String],
+      default: []
+    },
+    studyBoostTopicBonus: {
+      type: Number,
+      default: 2,
+      min: 0,
+      max: 10
+    },
+    studyBoostDifficultyBonus: {
+      type: Number,
+      default: 4,
+      min: 0,
+      max: 20
+    },
+    studyBoostMinutesBonus: {
+      type: Number,
+      default: 30,
+      min: 0,
+      max: 180
     }
   },
   hasCompletedEvaluation: {
@@ -136,6 +164,28 @@ const userSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now },
     expiresAt: Date
   }],
+  resetPasswordCodeHash: {
+    type: String,
+    default: null,
+    select: false
+  },
+  resetPasswordCodeExpiresAt: {
+    type: Date,
+    default: null,
+    select: false
+  },
+  resetPasswordCodeRequestedAt: {
+    type: Date,
+    default: null,
+    select: false
+  },
+  resetPasswordCodeAttempts: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 10,
+    select: false
+  },
   lastLogin: {
     type: Date,
     default: Date.now

@@ -1,5 +1,7 @@
 const ISO_DATE_KEY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DMY_DATE_PATTERN = /^(\d{2})[/-](\d{2})[/-](\d{4})$/;
+const DAILY_RESET_TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+export const DEFAULT_DAILY_RESET_TIME = '04:00';
 
 const isValidDateParts = (year, month, day) => {
   const numericYear = Number(year);
@@ -46,6 +48,30 @@ export const parseDateInputToIso = (value) => {
 
 export const getTodayIsoDateKey = () => {
   const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const normalizeDailyResetTime = (value) => {
+  const normalized = String(value || '').trim();
+  if (DAILY_RESET_TIME_PATTERN.test(normalized)) {
+    return normalized;
+  }
+
+  return DEFAULT_DAILY_RESET_TIME;
+};
+
+export const getTrackingDayKey = (value = new Date(), resetTime = DEFAULT_DAILY_RESET_TIME) => {
+  const date = value instanceof Date ? new Date(value) : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const normalizedResetTime = normalizeDailyResetTime(resetTime);
+  const [hours, minutes] = normalizedResetTime.split(':').map((part) => Number(part));
+  const shiftMinutes = (Number.isFinite(hours) ? hours : 0) * 60 + (Number.isFinite(minutes) ? minutes : 0);
+  date.setMinutes(date.getMinutes() - shiftMinutes);
+
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');

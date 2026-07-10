@@ -54,7 +54,7 @@ const navGroups = [
     title: 'Getting started',
     items: [
       { id: 'overview', label: 'Overview' },
-      { id: 'workflow', label: 'How Memora works' },
+      { id: 'workflow', label: 'How Memy works' },
       { id: 'memscore', label: 'MemScore' },
       { id: 'tips', label: 'Usage tips' },
     ],
@@ -79,7 +79,7 @@ const navGroups = [
 
 const tocItems = [
   { id: 'overview', label: 'Overview' },
-  { id: 'workflow', label: 'How Memora works' },
+  { id: 'workflow', label: 'How Memy works' },
   { id: 'memscore', label: 'MemScore' },
   { id: 'modules', label: 'Modules' },
   { id: 'tips', label: 'Usage tips' },
@@ -107,7 +107,7 @@ const moduleReference = [
     details: [
       'Add topics early so the schedule has something to work with.',
       'Use deadlines and priority labels to keep the queue realistic.',
-      'Think of Topics as the memory map for the rest of Memora.',
+      'Think of Topics as the memory map for the rest of Memy.',
     ],
   },
   {
@@ -180,7 +180,7 @@ const moduleReference = [
     id: 'listener',
     icon: MessageSquare,
     title: 'Listener',
-    summary: 'A conversational helper module for guided interaction and quick support surfaces. It belongs in Memora because the app is meant to feel responsive, not static.',
+    summary: 'A conversational helper module for guided interaction and quick support surfaces. It belongs in Memy because the app is meant to feel responsive, not static.',
     details: [
       'Keep interactions short and direct so they do not interrupt the study flow.',
       'Use it when you want a faster way to move through common actions.',
@@ -213,7 +213,7 @@ const moduleReference = [
     id: 'memscore',
     icon: Brain,
     title: 'MemScore',
-    summary: 'The baseline signal that helps Memora adapt review timing and prioritization. It connects performance, recall confidence, and spacing into a single useful signal.',
+    summary: 'The baseline signal that helps Memy adapt review timing and prioritization. It connects performance, recall confidence, and spacing into a single useful signal.',
     details: [
       'MemScore should shape the next step, not just report a number.',
       'It should help the app decide what comes back soon and what can wait.',
@@ -223,7 +223,7 @@ const moduleReference = [
 ];
 
 docsPages.overview = {
-    title: 'Memora docs',
+  title: 'Memy docs',
     icon: BookOpen,
     summary: 'A concise entry point for the docs. Start here, then open the individual pages for getting started and the module reference.',
     sections: [
@@ -237,16 +237,16 @@ docsPages.overview = {
       },
     ],
     links: [
-      { label: 'What is Memora?', to: '/docs/workflow' },
+      { label: 'What is Memy?', to: '/docs/workflow' },
       { label: 'MemScore', to: '/docs/memscore' },
       { label: 'Usage tips', to: '/docs/tips' },
     ],
 };
 
 docsPages.workflow = {
-  title: 'How Memora works',
+  title: 'How Memy works',
   icon: Layers3,
-  summary: 'Memora is built around a simple loop: structure topics, review in focused sessions, and use feedback to guide what comes next.',
+  summary: 'Memy is built around a simple loop: structure topics, review in focused sessions, and use feedback to guide what comes next.',
   sections: [
     {
       title: 'Workflow loop',
@@ -267,7 +267,7 @@ docsPages.workflow = {
 docsPages.memscore = {
   title: 'MemScore',
   icon: Brain,
-  summary: 'MemScore is the signal Memora uses to decide what should come back sooner, what can wait, and how intensely a topic should be revisited.',
+  summary: 'MemScore is the signal Memy uses to decide what should come back sooner, what can wait, and how intensely a topic should be revisited.',
   sections: [
     {
       title: 'Why it matters',
@@ -279,7 +279,7 @@ docsPages.memscore = {
     },
   ],
   links: [
-    { label: 'How Memora works', to: '/docs/workflow' },
+    { label: 'How Memy works', to: '/docs/workflow' },
     { label: 'Dashboard', to: '/docs/dashboard' },
     { label: 'Analytics', to: '/docs/analytics' },
   ],
@@ -307,9 +307,9 @@ docsPages.tips = {
 };
 
 docsPages.workflow = {
-  title: 'How Memora works',
+  title: 'How Memy works',
   icon: Layers3,
-  summary: 'Memora is built around a simple loop: structure topics, review in focused sessions, and use feedback to guide what comes next.',
+  summary: 'Memy is built around a simple loop: structure topics, review in focused sessions, and use feedback to guide what comes next.',
   sections: [
     {
       title: 'Workflow loop',
@@ -330,7 +330,7 @@ docsPages.workflow = {
 docsPages.memscore = {
   title: 'MemScore',
   icon: Brain,
-  summary: 'MemScore is the signal Memora uses to decide what should come back sooner, what can wait, and how intensely a topic should be revisited.',
+  summary: 'MemScore is the signal Memy uses to decide what should come back sooner, what can wait, and how intensely a topic should be revisited.',
   sections: [
     {
       title: 'Why it matters',
@@ -342,7 +342,7 @@ docsPages.memscore = {
     },
   ],
   links: [
-    { label: 'How Memora works', to: '/docs/workflow' },
+    { label: 'How Memy works', to: '/docs/workflow' },
     { label: 'Dashboard', to: '/docs/dashboard' },
     { label: 'Analytics', to: '/docs/analytics' },
   ],
@@ -386,7 +386,7 @@ moduleReference.forEach((module) => {
     ],
     links: [
       { label: 'Overview', to: '/docs' },
-      { label: 'How Memora works', to: '/docs/workflow' },
+      { label: 'How Memy works', to: '/docs/workflow' },
       { label: 'Usage tips', to: '/docs/tips' },
     ],
   };
@@ -421,8 +421,8 @@ const Docs = () => {
       <header className="docs-header sticky top-0 z-50 border-b border-white/6 bg-black/95 backdrop-blur-md">
         <div className="mx-auto flex h-20 max-w-[1600px] items-center gap-4 px-6 sm:px-8 lg:px-10">
           <Link to="/" className="inline-flex items-center gap-3 text-white hover:opacity-90 transition-opacity">
-            <img src={logoImg} alt="Memora" className="h-7 w-7 rounded-sm object-cover ring-1 ring-white/10" />
-            <span className="text-base font-semibold tracking-tight text-white">Memora</span>
+            <img src={logoImg} alt="Memy" className="h-7 w-7 rounded-sm object-cover" />
+            <span className="text-base font-semibold tracking-tight text-white">Memy</span>
           </Link>
 
           <nav className="hidden lg:flex top-nav items-center gap-6 ml-6">
@@ -451,7 +451,7 @@ const Docs = () => {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search Memora docs..."
+              placeholder="Search Memy docs..."
               className="w-full bg-transparent text-sm text-white placeholder:text-slate-500 focus:outline-none"
             />
           </label>
@@ -464,7 +464,7 @@ const Docs = () => {
             <div className="space-y-4">
               <div className="space-y-1">
                 <p className="text-sm font-medium text-slate-300">Quick highlights</p>
-                <p className="text-sm leading-6 text-slate-400">Context and current release info for Memora.</p>
+                <p className="text-sm leading-6 text-slate-400">Context and current release info for Memy.</p>
               </div>
 
               <div className="space-y-3">
@@ -530,7 +530,7 @@ function DocsFooter() {
       <div className="mx-auto max-w-[1600px] px-6 py-10 lg:px-10">
         <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <h3 className="text-white font-semibold mb-2">Memora</h3>
+            <h3 className="text-white font-semibold mb-2">Memy</h3>
             <p className="text-sm text-slate-400">Lightweight, focused study tools to help you remember more with less friction.</p>
           </div>
 
@@ -562,7 +562,7 @@ function DocsFooter() {
         </div>
 
         <div className="mt-8 border-t border-white/6 pt-6 text-sm text-slate-500">
-          © {new Date().getFullYear()} Memora — built for remembering. All rights reserved.
+          © {new Date().getFullYear()} Memy — built for remembering. All rights reserved.
         </div>
       </div>
     </footer>
@@ -578,7 +578,7 @@ function DocShellContent({ docsPages }) {
 
   return (
     <>
-      <div className="breadcrumb">Next.js Docs &nbsp;›&nbsp; Memora Docs &nbsp;›&nbsp; {page.title}</div>
+      <div className="breadcrumb">Next.js Docs &nbsp;›&nbsp; Memy Docs &nbsp;›&nbsp; {page.title}</div>
       <div className="flex items-center justify-between gap-4 mb-4">
         <div />
         <div>
@@ -588,8 +588,8 @@ function DocShellContent({ docsPages }) {
 
       {isOverview ? (
         <section className="scroll-mt-28 max-w-4xl pb-8">
-          <p className="text-sm font-medium text-slate-300">Memora documentation</p>
-          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-white sm:text-5xl">Memora docs</h1>
+          <p className="text-sm font-medium text-slate-300">Memy documentation</p>
+          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-white sm:text-5xl">Memy docs</h1>
           <p className="mt-5 max-w-3xl text-lg leading-8 text-white/90">Choose a page from the sidebar. The docs are split into distinct routes so the flow behaves more like Next.js and less like a single oversized page.</p>
           <div className="mt-8 grid gap-4 sm:grid-cols-2">
             {page.sections.map((section) => (
@@ -603,7 +603,7 @@ function DocShellContent({ docsPages }) {
           {/* horizontal rule and extra content blocks like Next.js docs */}
           <hr className="my-8 border-white/6" />
           <div className="prose max-w-3xl space-y-6">
-            <p className="text-white/90">Memora is designed to be lightweight and focused: short docs, clear flows, and quick links to the feature pages. Below are a few short paragraphs demonstrating content blocks separated by subtle rules, similar to Next.js documentation.</p>
+            <p className="text-white/90">Memy is designed to be lightweight and focused: short docs, clear flows, and quick links to the feature pages. Below are a few short paragraphs demonstrating content blocks separated by subtle rules, similar to Next.js documentation.</p>
             <p className="text-white/80">Use topics to collect small, reviewable pieces of information. Attach DocTags to keep source material close to the topic so you do not lose context during review.</p>
             <hr className="border-white/6" />
             <p className="text-white/80">Write short journal notes after sessions to close the loop between practice and planning. Analytics then surfaces trends so you can adjust your plan with confidence.</p>

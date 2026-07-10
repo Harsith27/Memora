@@ -29,7 +29,7 @@ function PublicFooter() {
             <div>
               <Link to="/" className="inline-flex items-center gap-2 text-white hover:opacity-90 transition-opacity">
                 <Logo size="sm" className="text-white" />
-                <span className="font-semibold text-sm sm:text-base tracking-tight">Memora</span>
+                <span className="font-semibold text-sm sm:text-base tracking-tight">Memy</span>
               </Link>
 
               <p className="mt-4 max-w-sm text-sm leading-6 text-zinc-300/85">
@@ -80,7 +80,7 @@ function PublicFooter() {
               <Link to="#" className="hover:text-zinc-200 transition-colors">Support</Link>
             </div>
 
-            <p>© 2026 Memora. All rights reserved.</p>
+            <p>© 2026 Memy. All rights reserved.</p>
           </div>
         </div>
       </div>

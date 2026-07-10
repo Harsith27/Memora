@@ -16,43 +16,8 @@ const router = express.Router();
 const PROFILE_ICON_IDS = Array.from({ length: 15 }, (_, index) => `sphere-${index + 1}`);
 const MEMSCORE_RETAKE_COOLDOWN_DAYS = 30;
 const SEED_MARKER_TAG = 'seed-btech-software-v2';
-
-const resolveModeForTopicSnapshot = (userMode, difficulty) => {
-  const safeUserMode = ['competitive', 'engineering', 'hybrid'].includes(String(userMode || '').trim())
-    ? String(userMode || '').trim()
-    : 'competitive';
-  const safeDifficulty = Math.max(1, Math.min(5, Number(difficulty) || 3));
-
-  if (safeUserMode === 'hybrid') {
-    return safeDifficulty >= 4 ? 'competitive' : 'engineering';
-  }
-
-  return safeUserMode;
-};
-
-const freezeInheritedTopicModes = async (userId, previousUserMode) => {
-  const topics = await Topic.find({
-    userId,
-    isActive: true,
-    revisionMode: 'inherit'
-  }).select('_id difficulty revisionMode');
-
-  if (!topics.length) return 0;
-
-  const bulkOperations = topics.map((topic) => ({
-    updateOne: {
-      filter: { _id: topic._id },
-      update: {
-        $set: {
-          revisionMode: resolveModeForTopicSnapshot(previousUserMode, topic.difficulty)
-        }
-      }
-    }
-  }));
-
-  const result = await Topic.bulkWrite(bulkOperations);
-  return Number(result?.modifiedCount || 0);
-};
+const DEFAULT_DAILY_RESET_TIME = '04:00';
+const DAILY_RESET_TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
 const parseValidDate = (value) => {
   if (!value) return null;
@@ -62,6 +27,26 @@ const parseValidDate = (value) => {
 
 const toUtcDayNumber = (date) => {
   return Math.floor(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 86400000);
+};
+
+const normalizeDailyResetTime = (value) => {
+  const normalized = String(value || '').trim();
+  return DAILY_RESET_TIME_PATTERN.test(normalized) ? normalized : DEFAULT_DAILY_RESET_TIME;
+};
+
+const getStudyDayKey = (value, resetTime = DEFAULT_DAILY_RESET_TIME) => {
+  const date = value instanceof Date ? new Date(value) : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const normalizedResetTime = normalizeDailyResetTime(resetTime);
+  const [hours, minutes] = normalizedResetTime.split(':').map((part) => Number(part));
+  const offsetMinutes = (Number.isFinite(hours) ? hours : 0) * 60 + (Number.isFinite(minutes) ? minutes : 0);
+  date.setMinutes(date.getMinutes() - offsetMinutes);
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const toStartOfDay = (value) => {
@@ -303,24 +288,29 @@ const redistributeSeededDatesForUser = async ({
   };
 };
 
-const computeStreakFromRevisionHistory = async (userId) => {
+const computeStreakFromRevisionHistory = async (userId, resetTime = DEFAULT_DAILY_RESET_TIME) => {
   const objectId = new mongoose.Types.ObjectId(String(userId));
-  const dailyEntries = await RevisionHistory.aggregate([
-    { $match: { userId: objectId } },
-    {
-      $group: {
-        _id: {
-          $dateToString: {
-            format: '%Y-%m-%d',
-            date: '$createdAt',
-            timezone: 'UTC'
-          }
-        },
-        lastActivity: { $max: '$createdAt' }
-      }
-    },
-    { $sort: { _id: 1 } }
-  ]);
+  const historyEntries = await RevisionHistory.find({ userId: objectId })
+    .select('createdAt')
+    .sort({ createdAt: 1 })
+    .lean();
+
+  const dailyEntriesMap = new Map();
+  historyEntries.forEach((entry) => {
+    const studyDayKey = getStudyDayKey(entry?.createdAt, resetTime);
+    if (!studyDayKey) return;
+
+    const previous = dailyEntriesMap.get(studyDayKey) || null;
+    const createdAt = new Date(entry.createdAt);
+    if (!previous || (createdAt.getTime() > new Date(previous.lastActivity).getTime())) {
+      dailyEntriesMap.set(studyDayKey, {
+        _id: studyDayKey,
+        lastActivity: createdAt
+      });
+    }
+  });
+
+  const dailyEntries = Array.from(dailyEntriesMap.values()).sort((left, right) => left._id.localeCompare(right._id));
 
   if (!dailyEntries.length) {
     return {
@@ -330,12 +320,10 @@ const computeStreakFromRevisionHistory = async (userId) => {
     };
   }
 
-  const dayNumbers = dailyEntries.map((entry) => {
-    return Math.floor(new Date(`${entry._id}T00:00:00Z`).getTime() / 86400000);
-  });
+  const dayNumbers = dailyEntries.map((entry) => Math.floor(new Date(`${entry._id}T00:00:00`).getTime() / 86400000));
 
   const daySet = new Set(dayNumbers);
-  const todayDay = Math.floor(Date.now() / 86400000);
+  const todayDay = Math.floor(new Date(`${getStudyDayKey(new Date(), resetTime)}T00:00:00`).getTime() / 86400000);
 
   let streakCursor = null;
   if (daySet.has(todayDay)) {
@@ -381,6 +369,19 @@ const handleValidationErrors = (req, res, next) => {
   next();
 };
 
+const normalizeBoostDates = (value) => {
+  const source = Array.isArray(value)
+    ? value
+    : String(value || '')
+        .split(/[\n,;]+/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+
+  return [...new Set(source
+    .map((entry) => String(entry || '').trim())
+    .filter((entry) => /^\d{4}-\d{2}-\d{2}$/.test(entry)))];
+};
+
 /**
  * @route   GET /api/user/profile
  * @desc    Get user profile
@@ -398,7 +399,8 @@ router.get('/profile', authenticateToken, async (req, res) => {
     }
 
     try {
-      const derived = await computeStreakFromRevisionHistory(user._id);
+      const resetTime = normalizeDailyResetTime(user.preferences?.dailyResetTime || DEFAULT_DAILY_RESET_TIME);
+      const derived = await computeStreakFromRevisionHistory(user._id, resetTime);
       const shouldUpdateStreak =
         Number(user.currentStreak || 0) !== Number(derived.currentStreak || 0) ||
         Number(user.longestStreak || 0) < Number(derived.longestStreak || 0);
@@ -550,6 +552,9 @@ router.put('/profile', [
       password
     } = req.body;
     const user = await User.findById(req.user.id);
+    const normalizedUsername = username !== undefined
+      ? String(username || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+      : undefined;
     
     if (!user) {
       return res.status(404).json({
@@ -559,15 +564,22 @@ router.put('/profile', [
     }
 
     // Check if username or email already exists (if being updated)
-    if (username && username !== user.username) {
-      const existingUser = await User.findOne({ username });
+    if (normalizedUsername && normalizedUsername !== user.username) {
+      if (!/^[a-z0-9]{3,30}$/.test(normalizedUsername)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Username can only contain lowercase letters and numbers'
+        });
+      }
+
+      const existingUser = await User.findOne({ username: normalizedUsername });
       if (existingUser) {
         return res.status(409).json({
           success: false,
           message: 'Username already taken'
         });
       }
-      user.username = username;
+      user.username = normalizedUsername;
     }
 
     if (email && email !== user.email) {
@@ -960,17 +972,13 @@ router.post('/study-session', authenticateToken, async (req, res) => {
     }
 
     const now = new Date();
-
-    const toUtcDayNumber = (date) => {
-      return Math.floor(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 86400000);
-    };
-
-    const todayUtcDay = toUtcDayNumber(now);
+    const resetTime = normalizeDailyResetTime(user.preferences?.dailyResetTime || DEFAULT_DAILY_RESET_TIME);
+    const todayStudyDayKey = getStudyDayKey(now, resetTime);
     const lastStudyDate = user.lastStudyDate ? new Date(user.lastStudyDate) : null;
-    const lastStudyUtcDay = lastStudyDate ? toUtcDayNumber(lastStudyDate) : null;
+    const lastStudyDayKey = lastStudyDate ? getStudyDayKey(lastStudyDate, resetTime) : null;
 
     // Check if user already studied today
-    if (lastStudyUtcDay !== null && lastStudyUtcDay === todayUtcDay) {
+    if (lastStudyDayKey !== null && lastStudyDayKey === todayStudyDayKey) {
       return res.json({
         success: true,
         message: 'Study session already recorded for today',
@@ -984,11 +992,13 @@ router.post('/study-session', authenticateToken, async (req, res) => {
     const previousLongestStreak = Number(user.longestStreak || 0);
     let newStreak = Number(user.currentStreak || 0);
 
-    if (lastStudyUtcDay === null) {
+    if (lastStudyDayKey === null) {
       // First time studying
       newStreak = 1;
     } else {
-      const dayGap = todayUtcDay - lastStudyUtcDay;
+      const todayDayNumber = Math.floor(new Date(`${todayStudyDayKey}T00:00:00`).getTime() / 86400000);
+      const lastDayNumber = Math.floor(new Date(`${lastStudyDayKey}T00:00:00`).getTime() / 86400000);
+      const dayGap = todayDayNumber - lastDayNumber;
 
       if (dayGap === 1) {
         // Studied yesterday, continue streak
@@ -1269,10 +1279,41 @@ router.put('/preferences', [
   body('memScoreRecalibrationFreq')
     .optional()
     .isInt({ min: 1, max: 365 })
-    .withMessage('Recalibration frequency must be between 1 and 365 days')
+    .withMessage('Recalibration frequency must be between 1 and 365 days'),
+  body('dailyResetTime')
+    .optional()
+    .matches(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+    .withMessage('Daily reset time must be in HH:MM format')
+  ,body('studyBoostDates')
+    .optional()
+    .custom((value) => Array.isArray(value) || typeof value === 'string')
+    .withMessage('Study boost dates must be a list or comma-separated string'),
+  body('studyBoostTopicBonus')
+    .optional()
+    .isInt({ min: 0, max: 10 })
+    .withMessage('Study boost topic bonus must be between 0 and 10'),
+  body('studyBoostDifficultyBonus')
+    .optional()
+    .isInt({ min: 0, max: 20 })
+    .withMessage('Study boost difficulty bonus must be between 0 and 20'),
+  body('studyBoostMinutesBonus')
+    .optional()
+    .isInt({ min: 0, max: 180 })
+    .withMessage('Study boost minutes bonus must be between 0 and 180')
 ], handleValidationErrors, async (req, res) => {
   try {
-    const { colorTheme, defaultDifficulty, retentionSpeed, revisionMode, memScoreRecalibrationFreq } = req.body;
+    const {
+      colorTheme,
+      defaultDifficulty,
+      retentionSpeed,
+      revisionMode,
+      memScoreRecalibrationFreq,
+      dailyResetTime,
+      studyBoostDates,
+      studyBoostTopicBonus,
+      studyBoostDifficultyBonus,
+      studyBoostMinutesBonus
+    } = req.body;
     const user = await User.findById(req.user.id);
     
     if (!user) {
@@ -1282,28 +1323,24 @@ router.put('/preferences', [
       });
     }
 
-    const previousRevisionMode = user.preferences?.revisionMode || 'competitive';
-
     // Update preferences
     if (colorTheme !== undefined) user.preferences.colorTheme = colorTheme;
     if (defaultDifficulty !== undefined) user.preferences.defaultDifficulty = defaultDifficulty;
     if (retentionSpeed !== undefined) user.preferences.retentionSpeed = retentionSpeed;
     if (revisionMode !== undefined) user.preferences.revisionMode = revisionMode;
     if (memScoreRecalibrationFreq !== undefined) user.preferences.memScoreRecalibrationFreq = memScoreRecalibrationFreq;
-
-    let frozenInheritedTopics = 0;
-    if (revisionMode !== undefined && revisionMode !== previousRevisionMode) {
-      // Keep old topics stable: freeze current inherited topics to previous mode snapshot.
-      frozenInheritedTopics = await freezeInheritedTopicModes(user._id, previousRevisionMode);
-    }
+    if (dailyResetTime !== undefined) user.preferences.dailyResetTime = normalizeDailyResetTime(dailyResetTime);
+    if (studyBoostDates !== undefined) user.preferences.studyBoostDates = normalizeBoostDates(studyBoostDates);
+    if (studyBoostTopicBonus !== undefined) user.preferences.studyBoostTopicBonus = Math.max(0, Number(studyBoostTopicBonus) || 0);
+    if (studyBoostDifficultyBonus !== undefined) user.preferences.studyBoostDifficultyBonus = Math.max(0, Number(studyBoostDifficultyBonus) || 0);
+    if (studyBoostMinutesBonus !== undefined) user.preferences.studyBoostMinutesBonus = Math.max(0, Number(studyBoostMinutesBonus) || 0);
 
     await user.save();
 
     res.json({
       success: true,
       message: 'Preferences updated successfully',
-      preferences: user.preferences,
-      frozenInheritedTopics
+      preferences: user.preferences
     });
 
   } catch (error) {

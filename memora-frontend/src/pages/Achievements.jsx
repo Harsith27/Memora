@@ -31,6 +31,7 @@ import DashboardGlyph from '../components/DashboardGlyph';
 import DashboardFooter from '../components/DashboardFooter';
 import { useAuth } from '../contexts/AuthContext';
 import { getSidebarNavItems } from '../constants/sidebarNavigation';
+import { DEFAULT_DAILY_RESET_TIME, getTrackingDayKey, normalizeDailyResetTime } from '../utils/dateFormat';
 import {
   ACHIEVEMENT_DEFINITIONS,
   getAchievementsState,
@@ -70,14 +71,16 @@ const buildStorageKeyCandidates = (user, primaryKey) => {
   return Array.from(keys);
 };
 
-const toLocalDateKey = (value = new Date()) => {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+const getCurrentUserDailyResetTime = () => {
+  try {
+    const cachedUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+    return normalizeDailyResetTime(cachedUser?.preferences?.dailyResetTime || DEFAULT_DAILY_RESET_TIME);
+  } catch {
+    return DEFAULT_DAILY_RESET_TIME;
+  }
 };
+
+const toLocalDateKey = (value = new Date()) => getTrackingDayKey(value, getCurrentUserDailyResetTime());
 
 const extractRatioFromProgress = (progressText, completed) => {
   if (completed && !progressText) return 1;
@@ -398,6 +401,7 @@ const PuzzlePiece = ({
 const RevealBatchOverlay = ({ reveals = [], pieceWidth, pieceHeight, tabDepth, centerPoint = null, onDone }) => {
   const [phase, setPhase] = useState('reveal');
   const completedClaimIdsRef = useRef(new Set());
+  const finishedRef = useRef(false);
 
   const fullSize = pieceWidth + (tabDepth * 2);
   const fallbackCenterX = typeof window === 'undefined' ? 0 : window.innerWidth / 2;
@@ -450,19 +454,31 @@ const RevealBatchOverlay = ({ reveals = [], pieceWidth, pieceHeight, tabDepth, c
 
   useEffect(() => {
     completedClaimIdsRef.current = new Set();
+    finishedRef.current = false;
     setPhase('reveal');
-    const timer = window.setTimeout(() => setPhase('fly'), 1380);
-    return () => window.clearTimeout(timer);
+    const flyTimer = window.setTimeout(() => setPhase('fly'), 920);
+    const fallbackTimer = window.setTimeout(() => {
+      if (finishedRef.current) return;
+      finishedRef.current = true;
+      onDone(reveals.map((item) => item?.claim?.id).filter(Boolean));
+    }, 2600 + (revealCount * 120));
+
+    return () => {
+      window.clearTimeout(flyTimer);
+      window.clearTimeout(fallbackTimer);
+    };
   }, [batchKey]);
 
   const handlePieceAnimationDone = useCallback((claimId) => {
     const normalizedClaimId = String(claimId || '').trim();
     if (!normalizedClaimId) return;
+    if (finishedRef.current) return;
 
     if (completedClaimIdsRef.current.has(normalizedClaimId)) return;
     completedClaimIdsRef.current.add(normalizedClaimId);
 
     if (completedClaimIdsRef.current.size >= revealCount) {
+      finishedRef.current = true;
       onDone(Array.from(completedClaimIdsRef.current));
     }
   }, [onDone, revealCount]);
@@ -1489,7 +1505,7 @@ const Achievements = () => {
           <div className={`h-16 sm:h-20 border-b border-white/10 flex items-center ${sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'}`}>
             <button onClick={() => navigate('/')} className={`flex items-center hover:opacity-80 transition-opacity ${sidebarCollapsed ? 'justify-center w-full' : 'gap-2 min-w-0'}`}>
               <Logo size="sm" className="text-white scale-90" />
-              {!sidebarCollapsed ? <span className="text-lg font-semibold text-white">Memora</span> : null}
+              {!sidebarCollapsed ? <span className="text-lg font-semibold text-white">Memy</span> : null}
             </button>
 
             {!sidebarCollapsed ? (
@@ -1569,7 +1585,7 @@ const Achievements = () => {
               className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
             >
               <Logo size="sm" className="text-white" />
-              <span className="text-lg font-semibold text-white">Memora</span>
+              <span className="text-lg font-semibold text-white">Memy</span>
             </button>
             <button
               type="button"
@@ -1650,7 +1666,7 @@ const Achievements = () => {
                 </h1>
                   <p className="hidden sm:block text-xs text-gray-400 mt-0.5">
                     {showLeaderboardView
-                      ? 'Leaderboard mode with rankings tailored to Memora progress.'
+                      ? 'Leaderboard mode with rankings tailored to Memy progress.'
                       : 'Puzzle-first mode with auto sync and achievement reveals.'}
                   </p>
               </div>
@@ -1697,7 +1713,7 @@ const Achievements = () => {
                   <div className="border-b border-white/10 px-3 sm:px-4 py-3">
                     <div className="flex flex-wrap items-center justify-between gap-2.5">
                       <div>
-                        <p className="text-[11px] uppercase tracking-[0.16em] text-gray-400">Memora Rankings</p>
+                        <p className="text-[11px] uppercase tracking-[0.16em] text-gray-400">Memy Rankings</p>
                         <h2 className="text-base sm:text-lg font-semibold text-white mt-0.5">Learning Progress Leaderboard</h2>
                       </div>
                       <button

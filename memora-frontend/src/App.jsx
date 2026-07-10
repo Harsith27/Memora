@@ -24,7 +24,9 @@ const loadFlashcards = () => import('./pages/Flashcards');
 const loadMemScoreEvaluation = () => import('./pages/MemScoreEvaluation');
 const loadFocusMode = () => import('./pages/FocusMode');
 const loadProfile = () => import('./pages/Profile');
+const loadProfileV2 = () => import('./pages/ProfileV2');
 const loadAchievements = () => import('./pages/Achievements');
+const loadPricing = () => import('./pages/Pricing');
 
 const Landing = lazy(loadLanding);
 const Docs = lazy(loadDocs);
@@ -43,7 +45,9 @@ const Flashcards = lazy(loadFlashcards);
 const MemScoreEvaluation = lazy(loadMemScoreEvaluation);
 const FocusMode = lazy(loadFocusMode);
 const Profile = lazy(loadProfile);
+const ProfileV2 = lazy(loadProfileV2);
 const Achievements = lazy(loadAchievements);
+const Pricing = lazy(loadPricing);
 
 function ProtectedRoute({ children, requireCompletedEvaluation = true }) {
   const { user, isLoading } = useAuth();
@@ -135,6 +139,7 @@ function RoutePrefetcher() {
         loadFlashcards();
         loadFocusMode();
         loadAchievements();
+        loadProfileV2();
       } else {
         loadDocs();
         loadLogin();
@@ -342,7 +347,7 @@ function GlobalProfileDock() {
     <div
       className={`fixed left-0 bottom-0 z-50 ${sidebarCollapsed ? 'w-16' : 'w-64'} max-h-[calc(100vh-80px)] pointer-events-none transition-[width,transform] duration-300`}
     >
-      <div className="flex h-full flex-col justify-end p-3 sm:p-4 pointer-events-none overflow-y-auto">
+      <div className="flex h-full flex-col justify-end p-3 sm:p-4 pointer-events-none overflow-visible">
         <div className="pointer-events-auto w-full">
           <UserProfileDropdown placement="bottom-left-dock" isSidebarCollapsed={sidebarCollapsed} integratedInSidebar />
         </div>
@@ -372,15 +377,15 @@ function App() {
                 <Route path="/evaluation" element={<EvaluationRoute><MemScoreEvaluation /></EvaluationRoute>} />
                 <Route
                   path="/evaluation/_memory-match"
-                  element={<ProtectedRoute requireCompletedEvaluation={true}><MemScoreEvaluation initialPhase="memory-game" /></ProtectedRoute>}
+                  element={<EvaluationRoute><MemScoreEvaluation initialPhase="memory-game" /></EvaluationRoute>}
                 />
                 <Route
                   path="/evaluation/_tile-recall"
-                  element={<ProtectedRoute requireCompletedEvaluation={true}><MemScoreEvaluation initialPhase="tile-recall" /></ProtectedRoute>}
+                  element={<EvaluationRoute><MemScoreEvaluation initialPhase="tile-recall" /></EvaluationRoute>}
                 />
                 <Route
                   path="/evaluation/_speed-test"
-                  element={<ProtectedRoute requireCompletedEvaluation={true}><MemScoreEvaluation initialPhase="speed-test" /></ProtectedRoute>}
+                  element={<EvaluationRoute><MemScoreEvaluation initialPhase="speed-test" /></EvaluationRoute>}
                 />
                 <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                 <Route path="/graph" element={<ProtectedRoute><Graph /></ProtectedRoute>} />
@@ -395,6 +400,8 @@ function App() {
                 <Route path="/focus" element={<ProtectedRoute><FocusMode /></ProtectedRoute>} />
                 <Route path="/achievements" element={<ProtectedRoute><Achievements /></ProtectedRoute>} />
                 <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                <Route path="/profile_v2" element={<ProtectedRoute><ProfileV2 /></ProtectedRoute>} />
+                <Route path="/pricing" element={<Pricing />} />
                 {/* Catch-all 404 route */}
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

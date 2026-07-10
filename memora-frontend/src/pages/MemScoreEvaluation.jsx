@@ -509,7 +509,7 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
   useEffect(() => {
     setCurrentPhase(sanitizedInitialPhase);
     directEntryInitializedRef.current = false;
-  }, [sanitizedInitialPhase, initMemoryGame, initTileRecall, initSpeedTest]);
+  }, [sanitizedInitialPhase]);
 
   useEffect(() => {
     if (!DIRECT_GAME_PHASES.has(sanitizedInitialPhase)) return;
@@ -737,7 +737,7 @@ const MemScoreEvaluation = ({ initialPhase = 'intro' }) => {
           <div className="max-w-4xl mx-auto flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <Logo size="md" className="text-white" />
-              <span className="text-xl font-semibold">Memora</span>
+              <span className="text-xl font-semibold">Memy</span>
             </div>
             <div className="text-sm text-gray-400">
               MemScore Evaluation

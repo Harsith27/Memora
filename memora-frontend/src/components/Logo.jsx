@@ -14,7 +14,7 @@ const Logo = ({ size = 'md', className = '' }) => {
     <div className={`${sizeClasses[size]} ${className} rounded-lg overflow-hidden`}>
       <img
         src={logoSrc}
-        alt="Memora Logo"
+        alt="Memy Logo"
         className="w-full h-full object-cover"
       />
     </div>

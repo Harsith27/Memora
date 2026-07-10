@@ -10,12 +10,26 @@ import { useAuth } from '../contexts/AuthContext';
 import Toast from '../components/Toast';
 import apiService from '../services/api';
 import ProfileSphereAvatar, { PROFILE_SPHERE_THEMES } from '../components/ProfileSphereAvatar';
-import { formatDateDDMMYYYY, getTodayIsoDateKey, parseDateInputToIso } from '../utils/dateFormat';
+import { DEFAULT_DAILY_RESET_TIME, formatDateDDMMYYYY, getTodayIsoDateKey, normalizeDailyResetTime, parseDateInputToIso } from '../utils/dateFormat';
 
 const normalizeDateInput = (value) => {
   const parsedIso = parseDateInputToIso(value);
   return parsedIso ? formatDateDDMMYYYY(parsedIso) : '';
 };
+
+const normalizeBoostDateInput = (value) => {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) return '';
+
+  return rawValue
+    .split(/[\n,;]+/)
+    .map((entry) => parseDateInputToIso(entry))
+    .filter(Boolean)
+    .join(', ');
+};
+
+const normalizeVisibleRevisionMode = (value) => (String(value || '').trim() === 'engineering' ? 'engineering' : 'competitive');
+const normalizeUsernameInput = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -32,10 +46,15 @@ const Profile = () => {
   const [profileErrors, setProfileErrors] = useState({ dateOfBirth: '' });
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [learningPreferences, setLearningPreferences] = useState({
-    revisionMode: user?.preferences?.revisionMode || 'competitive',
+    revisionMode: normalizeVisibleRevisionMode(user?.preferences?.revisionMode),
     retentionSpeed: user?.preferences?.retentionSpeed || 'medium',
     defaultDifficulty: Number(user?.preferences?.defaultDifficulty) || 3,
-    memScoreRecalibrationFreq: Number(user?.preferences?.memScoreRecalibrationFreq) || 30
+    memScoreRecalibrationFreq: Number(user?.preferences?.memScoreRecalibrationFreq) || 30,
+    dailyResetTime: normalizeDailyResetTime(user?.preferences?.dailyResetTime || DEFAULT_DAILY_RESET_TIME),
+    studyBoostDatesText: normalizeBoostDateInput(user?.preferences?.studyBoostDates || []).replace(/\s+/g, ''),
+    studyBoostTopicBonus: Math.max(0, Number(user?.preferences?.studyBoostTopicBonus) || 2),
+    studyBoostDifficultyBonus: Math.max(0, Number(user?.preferences?.studyBoostDifficultyBonus) || 4),
+    studyBoostMinutesBonus: Math.max(0, Number(user?.preferences?.studyBoostMinutesBonus) || 30)
   });
   
   // Form data
@@ -77,13 +96,18 @@ const Profile = () => {
     if (field === 'dateOfBirth') {
       setProfileErrors((prev) => ({ ...prev, dateOfBirth: '' }));
     }
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({
+      ...prev,
+      [field]: field === 'username' ? normalizeUsernameInput(value) : value
+    }));
   };
 
   useEffect(() => {
     const requestedTab = location?.state?.activeTab;
-    if (requestedTab && ['general', 'security', 'learning', 'account'].includes(requestedTab)) {
-      setActiveTab(requestedTab);
+    let tabToSet = requestedTab;
+    if (requestedTab === 'learning') tabToSet = 'modes';
+    if (tabToSet && ['general', 'security', 'modes', 'account'].includes(tabToSet)) {
+      setActiveTab(tabToSet);
     }
   }, [location?.state]);
 
@@ -96,19 +120,29 @@ const Profile = () => {
         if (!isMounted || !response?.success || !response.preferences) return;
 
         setLearningPreferences({
-          revisionMode: response.preferences.revisionMode || user?.preferences?.revisionMode || 'competitive',
+          revisionMode: normalizeVisibleRevisionMode(response.preferences.revisionMode || user?.preferences?.revisionMode),
           retentionSpeed: response.preferences.retentionSpeed || user?.preferences?.retentionSpeed || 'medium',
           defaultDifficulty: Number(response.preferences.defaultDifficulty || user?.preferences?.defaultDifficulty || 3),
-          memScoreRecalibrationFreq: Number(response.preferences.memScoreRecalibrationFreq || user?.preferences?.memScoreRecalibrationFreq || 30)
+          memScoreRecalibrationFreq: Number(response.preferences.memScoreRecalibrationFreq || user?.preferences?.memScoreRecalibrationFreq || 30),
+          dailyResetTime: normalizeDailyResetTime(response.preferences.dailyResetTime || user?.preferences?.dailyResetTime || DEFAULT_DAILY_RESET_TIME),
+          studyBoostDatesText: normalizeBoostDateInput(response.preferences.studyBoostDates || user?.preferences?.studyBoostDates || []),
+          studyBoostTopicBonus: Math.max(0, Number(response.preferences.studyBoostTopicBonus || user?.preferences?.studyBoostTopicBonus || 2)),
+          studyBoostDifficultyBonus: Math.max(0, Number(response.preferences.studyBoostDifficultyBonus || user?.preferences?.studyBoostDifficultyBonus || 4)),
+          studyBoostMinutesBonus: Math.max(0, Number(response.preferences.studyBoostMinutesBonus || user?.preferences?.studyBoostMinutesBonus || 30))
         });
       } catch (error) {
         console.warn('Failed to load user preferences:', error);
         if (isMounted) {
           setLearningPreferences({
-            revisionMode: user?.preferences?.revisionMode || 'competitive',
+            revisionMode: normalizeVisibleRevisionMode(user?.preferences?.revisionMode),
             retentionSpeed: user?.preferences?.retentionSpeed || 'medium',
             defaultDifficulty: Number(user?.preferences?.defaultDifficulty) || 3,
-            memScoreRecalibrationFreq: Number(user?.preferences?.memScoreRecalibrationFreq) || 30
+            memScoreRecalibrationFreq: Number(user?.preferences?.memScoreRecalibrationFreq) || 30,
+            dailyResetTime: normalizeDailyResetTime(user?.preferences?.dailyResetTime || DEFAULT_DAILY_RESET_TIME),
+            studyBoostDatesText: normalizeBoostDateInput(user?.preferences?.studyBoostDates || []),
+            studyBoostTopicBonus: Math.max(0, Number(user?.preferences?.studyBoostTopicBonus) || 2),
+            studyBoostDifficultyBonus: Math.max(0, Number(user?.preferences?.studyBoostDifficultyBonus) || 4),
+            studyBoostMinutesBonus: Math.max(0, Number(user?.preferences?.studyBoostMinutesBonus) || 30)
           });
         }
       }
@@ -119,7 +153,7 @@ const Profile = () => {
     return () => {
       isMounted = false;
     };
-  }, [user?.preferences?.revisionMode]);
+  }, [user?.preferences]);
 
   const validateDateOfBirthInput = (value) => {
     const trimmedValue = String(value || '').trim();
@@ -174,12 +208,23 @@ const Profile = () => {
         return;
       }
 
+      const normalizedUsername = normalizeUsernameInput(formData.username);
+      if (formData.username && normalizedUsername !== formData.username) {
+        setToast({ show: true, message: 'Username can only use lowercase letters and numbers.', type: 'error' });
+        return;
+      }
+
+      if (normalizedUsername && !/^[a-z0-9]{3,30}$/.test(normalizedUsername)) {
+        setToast({ show: true, message: 'Username must be 3 to 30 lowercase letters or numbers.', type: 'error' });
+        return;
+      }
+
       const parsedDateOfBirth = dateValidation.isoDate;
       setProfileErrors((prev) => ({ ...prev, dateOfBirth: '' }));
 
       // Update user profile with all fields
       const updateData = {
-        username: formData.username,
+        username: normalizedUsername || formData.username,
         email: formData.email,
         profileIconId: formData.profileIconId,
         firstName: formData.firstName,
@@ -230,7 +275,15 @@ const Profile = () => {
         revisionMode: learningPreferences.revisionMode,
         retentionSpeed: learningPreferences.retentionSpeed,
         defaultDifficulty: learningPreferences.defaultDifficulty,
-        memScoreRecalibrationFreq: learningPreferences.memScoreRecalibrationFreq
+        memScoreRecalibrationFreq: learningPreferences.memScoreRecalibrationFreq,
+        dailyResetTime: normalizeDailyResetTime(learningPreferences.dailyResetTime),
+        studyBoostDates: normalizeBoostDateInput(learningPreferences.studyBoostDatesText)
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter(Boolean),
+        studyBoostTopicBonus: Math.max(0, Number(learningPreferences.studyBoostTopicBonus) || 0),
+        studyBoostDifficultyBonus: Math.max(0, Number(learningPreferences.studyBoostDifficultyBonus) || 0),
+        studyBoostMinutesBonus: Math.max(0, Number(learningPreferences.studyBoostMinutesBonus) || 0)
       });
 
       if (!response?.success) {
@@ -241,7 +294,12 @@ const Profile = () => {
         revisionMode: response.preferences?.revisionMode || learningPreferences.revisionMode,
         retentionSpeed: response.preferences?.retentionSpeed || learningPreferences.retentionSpeed,
         defaultDifficulty: Number(response.preferences?.defaultDifficulty || learningPreferences.defaultDifficulty),
-        memScoreRecalibrationFreq: Number(response.preferences?.memScoreRecalibrationFreq || learningPreferences.memScoreRecalibrationFreq)
+        memScoreRecalibrationFreq: Number(response.preferences?.memScoreRecalibrationFreq || learningPreferences.memScoreRecalibrationFreq),
+        dailyResetTime: normalizeDailyResetTime(response.preferences?.dailyResetTime || learningPreferences.dailyResetTime),
+        studyBoostDatesText: normalizeBoostDateInput(response.preferences?.studyBoostDates || learningPreferences.studyBoostDatesText),
+        studyBoostTopicBonus: Math.max(0, Number(response.preferences?.studyBoostTopicBonus || learningPreferences.studyBoostTopicBonus) || 0),
+        studyBoostDifficultyBonus: Math.max(0, Number(response.preferences?.studyBoostDifficultyBonus || learningPreferences.studyBoostDifficultyBonus) || 0),
+        studyBoostMinutesBonus: Math.max(0, Number(response.preferences?.studyBoostMinutesBonus || learningPreferences.studyBoostMinutesBonus) || 0)
       });
 
       updateUser({
@@ -251,10 +309,7 @@ const Profile = () => {
         }
       });
 
-      const frozenCount = Number(response?.frozenInheritedTopics || 0);
-      const message = frozenCount > 0
-        ? `Learning preferences updated. ${frozenCount} existing topics were locked to their previous mode so only new topics use the new mode.`
-        : 'Learning preferences updated. New topics will use the selected mode.';
+      const message = 'Learning preferences updated. Topics set to Inherit now follow your selected global mode.';
       setToast({ show: true, message, type: 'success' });
     } catch (error) {
       console.error('Learning preferences update error:', error);
@@ -271,9 +326,6 @@ const Profile = () => {
       if (!response?.success) {
         throw new Error(response?.message || 'Failed to update profile icon');
       }
-
-      updateUser({ profileIconId: iconId });
-
       if (user?.id) {
         const savedProfile = localStorage.getItem(`user_profile_${user.id}`);
         const parsed = savedProfile ? JSON.parse(savedProfile) : {};
@@ -428,7 +480,7 @@ const Profile = () => {
   const tabs = [
     { id: 'general', label: 'General', icon: User },
     { id: 'security', label: 'Security', icon: Shield },
-    { id: 'learning', label: 'Learning', icon: Brain },
+    { id: 'modes', label: 'Modes', icon: Brain },
     { id: 'account', label: 'Account', icon: Trash2 }
   ];
 
@@ -557,13 +609,19 @@ const Profile = () => {
                         Username
                       </label>
                       {isEditing ? (
-                        <input
-                          type="text"
-                          value={formData.username}
-                          onChange={(e) => handleInputChange('username', e.target.value)}
-                          className="w-full px-3 py-2 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-rose-400"
-                          placeholder="Enter username"
-                        />
+                        <>
+                          <input
+                            type="text"
+                            value={formData.username}
+                            onChange={(e) => handleInputChange('username', e.target.value)}
+                            className="w-full px-3 py-2 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-rose-400"
+                            placeholder="lowercase letters and numbers only"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                          />
+                          <p className="mt-2 text-xs text-gray-500">Use 3-30 lowercase letters or numbers. Symbols and capitals are removed.</p>
+                        </>
                       ) : (
                         <div className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white">
                           {user?.username || 'Not set'}
@@ -940,40 +998,35 @@ const Profile = () => {
               )}
 
               {/* Learning Tab */}
-              {activeTab === 'learning' && (
+              {activeTab === 'modes' && (
                 <div className="space-y-6">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4 sm:p-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <h2 className="text-xl font-semibold text-white">Learning Engine</h2>
-                      <p className="text-sm text-gray-400 mt-1">
-                        Your mode change applies to newly created topics. Existing topics keep their current mode behavior.
+                      <h2 className="text-xl font-semibold text-rose-100">Modes Engine</h2>
+                      <p className="text-sm text-rose-100/70 mt-1 max-w-2xl">
+                        Global mode updates all topics set to Inherit. Per-topic overrides stay locked to their selected mode.
                       </p>
                     </div>
                     <button
                       onClick={handleSaveLearningPreferences}
-                      className={getThemedButtonClass('emerald')}
+                      className={getThemedButtonClass('red')}
                     >
                       <Save className="w-4 h-4" />
-                      <span>Save Learning Settings</span>
+                      <span>Save Mode Settings</span>
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {[
                       {
                         value: 'competitive',
-                        title: 'Competitive Exams Mode',
-                        description: 'Dense revision cadence with strong recall pressure for exam prep.'
+                        title: 'Relentless Study Mode',
+                        description: 'Dense revision cadence for nonstop study and rapid recall.'
                       },
                       {
                         value: 'engineering',
-                        title: 'Engineering Mode',
-                        description: 'Lean revision cadence optimized for practical project-heavy study.'
-                      },
-                      {
-                        value: 'hybrid',
-                        title: 'Hybrid Mode',
-                        description: 'Auto-switches by difficulty. Hard topics run competitive, lighter ones engineering.'
+                        title: 'Learning Mode',
+                        description: 'Practical, lower-theory cadence optimized for learning by doing.'
                       }
                     ].map((mode) => {
                       const active = learningPreferences.revisionMode === mode.value;
@@ -982,27 +1035,27 @@ const Profile = () => {
                           key={mode.value}
                           type="button"
                           onClick={() => setLearningPreferences((prev) => ({ ...prev, revisionMode: mode.value }))}
-                          className={`text-left rounded-xl border p-4 transition-colors ${active ? 'border-emerald-400/40 bg-emerald-500/10' : 'border-white/15 bg-white/[0.03] hover:bg-white/[0.05]'}`}
+                          className={`text-left rounded-xl border p-4 transition-colors ${active ? 'border-rose-400/45 bg-rose-500/12 shadow-[0_0_0_1px_rgba(244,63,94,0.18)]' : 'border-white/15 bg-white/[0.03] hover:bg-white/[0.05]'}`}
                         >
                           <div className="flex items-center justify-between gap-3">
                             <h3 className="font-semibold text-white">{mode.title}</h3>
-                            <div className={`h-3 w-3 rounded-full ${active ? 'bg-emerald-300' : 'bg-white/20'}`} />
+                            <div className={`h-3 w-3 rounded-full ${active ? 'bg-rose-300' : 'bg-white/20'}`} />
                           </div>
-                          <p className="mt-2 text-sm text-gray-400 leading-relaxed">{mode.description}</p>
+                          <p className="mt-2 text-sm text-gray-300 leading-relaxed">{mode.description}</p>
                         </button>
                       );
                     })}
                   </div>
 
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                    <p className="font-medium text-white mb-3">Mode Configurations</p>
+                  <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4">
+                    <p className="font-medium text-rose-100 mb-3">Mode Configurations</p>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
-                        <label className="text-sm text-gray-300 block mb-2">Retention Speed</label>
+                        <label className="text-sm text-rose-100/80 block mb-2">Retention Speed</label>
                         <select
                           value={learningPreferences.retentionSpeed}
                           onChange={(e) => setLearningPreferences((prev) => ({ ...prev, retentionSpeed: e.target.value }))}
-                          className="w-full px-3 py-2 bg-white/5 border border-white/20 rounded-lg text-white focus:outline-none focus:border-emerald-400"
+                          className="w-full px-3 py-2 bg-black/40 border border-rose-400/25 rounded-lg text-white focus:outline-none focus:border-rose-400"
                         >
                           <option value="fast">Fast</option>
                           <option value="medium">Medium</option>
@@ -1011,11 +1064,11 @@ const Profile = () => {
                       </div>
 
                       <div>
-                        <label className="text-sm text-gray-300 block mb-2">Default Topic Difficulty</label>
+                        <label className="text-sm text-rose-100/80 block mb-2">Default Topic Difficulty</label>
                         <select
                           value={learningPreferences.defaultDifficulty}
                           onChange={(e) => setLearningPreferences((prev) => ({ ...prev, defaultDifficulty: Number(e.target.value) }))}
-                          className="w-full px-3 py-2 bg-white/5 border border-white/20 rounded-lg text-white focus:outline-none focus:border-emerald-400"
+                          className="w-full px-3 py-2 bg-black/40 border border-rose-400/25 rounded-lg text-white focus:outline-none focus:border-rose-400"
                         >
                           {[1, 2, 3, 4, 5].map((level) => (
                             <option key={level} value={level}>Level {level}</option>
@@ -1024,7 +1077,7 @@ const Profile = () => {
                       </div>
 
                       <div>
-                        <label className="text-sm text-gray-300 block mb-2">MemScore Recalibration (days)</label>
+                        <label className="text-sm text-rose-100/80 block mb-2">MemScore Recalibration (days)</label>
                         <input
                           type="number"
                           min="1"
@@ -1034,14 +1087,94 @@ const Profile = () => {
                             ...prev,
                             memScoreRecalibrationFreq: Math.max(1, Math.min(365, Number(e.target.value) || 30))
                           }))}
-                          className="w-full px-3 py-2 bg-white/5 border border-white/20 rounded-lg text-white focus:outline-none focus:border-emerald-400"
+                          className="w-full px-3 py-2 bg-black/40 border border-rose-400/25 rounded-lg text-white focus:outline-none focus:border-rose-400"
                         />
+                      </div>
+
+                      <div>
+                        <label className="text-sm text-rose-100/80 block mb-2">Study Day Reset Time</label>
+                        <input
+                          type="time"
+                          step="60"
+                          value={learningPreferences.dailyResetTime}
+                          onChange={(e) => setLearningPreferences((prev) => ({
+                            ...prev,
+                            dailyResetTime: normalizeDailyResetTime(e.target.value)
+                          }))}
+                          className="w-full px-3 py-2 bg-black/40 border border-rose-400/25 rounded-lg text-white focus:outline-none focus:border-rose-400"
+                        />
+                        <p className="mt-2 text-xs text-rose-100/65 leading-relaxed">
+                          Study-day tracking resets at this time. Calendar dates stay on the real date.
+                        </p>
+                      </div>
+
+                      <div className="md:col-span-3 rounded-xl border border-white/10 bg-black/20 p-4 space-y-3">
+                        <div>
+                          <label className="text-sm text-rose-100/80 block mb-2">Free / Boost Days</label>
+                          <textarea
+                            value={learningPreferences.studyBoostDatesText}
+                            onChange={(e) => setLearningPreferences((prev) => ({ ...prev, studyBoostDatesText: e.target.value }))}
+                            rows={3}
+                            className="w-full px-3 py-2 bg-black/40 border border-rose-400/25 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-rose-400"
+                            placeholder="2026-06-08, 2026-06-15"
+                          />
+                          <p className="mt-2 text-xs text-rose-100/65 leading-relaxed">
+                            Enter dates in YYYY-MM-DD format. These days get a small extra topic and workload allowance.
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="text-sm text-rose-100/80 block mb-2">Extra Topics</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="10"
+                              value={learningPreferences.studyBoostTopicBonus}
+                              onChange={(e) => setLearningPreferences((prev) => ({
+                                ...prev,
+                                studyBoostTopicBonus: Math.max(0, Math.min(10, Number(e.target.value) || 0))
+                              }))}
+                              className="w-full px-3 py-2 bg-black/40 border border-rose-400/25 rounded-lg text-white focus:outline-none focus:border-rose-400"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-sm text-rose-100/80 block mb-2">Extra Difficulty Load</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="20"
+                              value={learningPreferences.studyBoostDifficultyBonus}
+                              onChange={(e) => setLearningPreferences((prev) => ({
+                                ...prev,
+                                studyBoostDifficultyBonus: Math.max(0, Math.min(20, Number(e.target.value) || 0))
+                              }))}
+                              className="w-full px-3 py-2 bg-black/40 border border-rose-400/25 rounded-lg text-white focus:outline-none focus:border-rose-400"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-sm text-rose-100/80 block mb-2">Extra Minutes</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="180"
+                              value={learningPreferences.studyBoostMinutesBonus}
+                              onChange={(e) => setLearningPreferences((prev) => ({
+                                ...prev,
+                                studyBoostMinutesBonus: Math.max(0, Math.min(180, Number(e.target.value) || 0))
+                              }))}
+                              className="w-full px-3 py-2 bg-black/40 border border-rose-400/25 rounded-lg text-white focus:outline-none focus:border-rose-400"
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm text-emerald-100 leading-relaxed">
-                    <p className="font-medium text-emerald-200 mb-1">Scope Rule</p>
+                  <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4 text-sm text-rose-100/80 leading-relaxed">
+                    <p className="font-medium text-rose-100 mb-1">Scope Rule</p>
                     <p>
                       Changing revision mode now affects new topics only. Existing topics are preserved with their prior mode behavior to avoid retroactive schedule shifts.
                     </p>

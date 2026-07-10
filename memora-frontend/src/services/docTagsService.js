@@ -1,6 +1,25 @@
 const RAW_API_BASE_URL = import.meta.env.VITE_API_URL;
 const IS_LOCALHOST_API_BASE = typeof RAW_API_BASE_URL === 'string' && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(RAW_API_BASE_URL);
 const API_BASE_URL = !import.meta.env.DEV && IS_LOCALHOST_API_BASE ? '/api' : (RAW_API_BASE_URL || '/api');
+const FALLBACK_API_BASE_URL = 'https://memora-api-04021453.azurewebsites.net/api';
+
+function isNetworkFetchError(error) {
+  return error?.name === 'TypeError' && typeof error?.message === 'string' && error.message.includes('fetch');
+}
+
+async function readResponseBody(response) {
+  const text = await response.text();
+
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
 
 class DocTagsService {
   constructor() {
@@ -14,10 +33,46 @@ class DocTagsService {
   // Get authorization headers
   getAuthHeaders() {
     const token = this.getAccessToken();
-    return {
-      'Authorization': `Bearer ${token}`,
+    const headers = {
       'Content-Type': 'application/json'
     };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    return headers;
+  }
+
+  async fetchJsonWithFallback(path, options = {}, allowFallback = true) {
+    const primaryUrl = `${this.baseURL}${path}`;
+    const fallbackUrl = `${FALLBACK_API_BASE_URL}/doctags${path}`;
+
+    const executeRequest = async (url) => {
+      const response = await fetch(url, options);
+
+      if (!response.ok) {
+        const payload = await readResponseBody(response);
+        const error = new Error(payload?.message || `Request failed with status ${response.status}`);
+        error.status = response.status;
+        error.payload = payload;
+        throw error;
+      }
+
+      return readResponseBody(response);
+    };
+
+    try {
+      return await executeRequest(primaryUrl);
+    } catch (error) {
+      const shouldFallback = allowFallback && API_BASE_URL === '/api' && (isNetworkFetchError(error) || (typeof error?.status === 'number' && error.status >= 500));
+
+      if (!shouldFallback) {
+        throw error;
+      }
+
+      return await executeRequest(fallbackUrl);
+    }
   }
 
   // Upload files
@@ -28,7 +83,7 @@ class DocTagsService {
     });
 
     try {
-      const response = await fetch(`${this.baseURL}/upload`, {
+      const response = await this.fetchJsonWithFallback('/upload', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.getAccessToken()}`
@@ -36,21 +91,7 @@ class DocTagsService {
         body: formData
       });
 
-      if (!response.ok) {
-        let message = 'Failed to upload files';
-        try {
-          const errorData = await response.json();
-          if (errorData?.message) {
-            message = errorData.message;
-          }
-        } catch {
-          // Ignore JSON parsing errors and keep fallback message.
-        }
-        throw new Error(message);
-      }
-
-      const data = await response.json();
-      return data.files;
+      return response?.files || [];
     } catch (error) {
       console.error('File upload error:', error);
       throw error;
@@ -60,33 +101,11 @@ class DocTagsService {
   // Create a new DocTag (document or folder)
   async createDocTag(docTagData) {
     try {
-      const response = await fetch(this.baseURL, {
+      return await this.fetchJsonWithFallback('', {
         method: 'POST',
         headers: this.getAuthHeaders(),
         body: JSON.stringify(docTagData)
       });
-
-      if (!response.ok) {
-        let message = 'Failed to create DocTag';
-        try {
-          const errorData = await response.json();
-          if (errorData?.message) {
-            message = errorData.message;
-          }
-          if (Array.isArray(errorData?.errors) && errorData.errors.length > 0) {
-            const firstError = errorData.errors[0];
-            const detail = typeof firstError === 'string' ? firstError : firstError?.msg;
-            if (detail) {
-              message = `${message}: ${detail}`;
-            }
-          }
-        } catch {
-          // Ignore parsing errors and keep fallback message.
-        }
-        throw new Error(message);
-      }
-
-      return await response.json();
     } catch (error) {
       console.error('Create DocTag error:', error);
       throw error;
@@ -106,15 +125,9 @@ class DocTagsService {
       if (options.limit) params.append('limit', options.limit);
       if (options.page) params.append('page', options.page);
 
-      const response = await fetch(`${this.baseURL}?${params}`, {
+      return await this.fetchJsonWithFallback(`?${params}`, {
         headers: this.getAuthHeaders()
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch DocTags');
-      }
-
-      return await response.json();
     } catch (error) {
       console.error('Get DocTags error:', error);
       throw error;
@@ -124,33 +137,11 @@ class DocTagsService {
   // Update a DocTag
   async updateDocTag(id, updateData) {
     try {
-      const response = await fetch(`${this.baseURL}/${id}`, {
+      return await this.fetchJsonWithFallback(`/${id}`, {
         method: 'PUT',
         headers: this.getAuthHeaders(),
         body: JSON.stringify(updateData)
       });
-
-      if (!response.ok) {
-        let message = 'Failed to update DocTag';
-        try {
-          const errorData = await response.json();
-          if (errorData?.message) {
-            message = errorData.message;
-          }
-          if (Array.isArray(errorData?.errors) && errorData.errors.length > 0) {
-            const firstError = errorData.errors[0];
-            const detail = typeof firstError === 'string' ? firstError : firstError?.msg;
-            if (detail) {
-              message = `${message}: ${detail}`;
-            }
-          }
-        } catch {
-          // Ignore parse failures and use fallback message.
-        }
-        throw new Error(message);
-      }
-
-      return await response.json();
     } catch (error) {
       console.error('Update DocTag error:', error);
       throw error;
@@ -160,16 +151,10 @@ class DocTagsService {
   // Delete a DocTag
   async deleteDocTag(id) {
     try {
-      const response = await fetch(`${this.baseURL}/${id}`, {
+      return await this.fetchJsonWithFallback(`/${id}`, {
         method: 'DELETE',
         headers: this.getAuthHeaders()
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete DocTag');
-      }
-
-      return await response.json();
     } catch (error) {
       console.error('Delete DocTag error:', error);
       throw error;
@@ -179,15 +164,9 @@ class DocTagsService {
   // Get recent documents
   async getRecentDocuments(limit = 10) {
     try {
-      const response = await fetch(`${this.baseURL}/recent?limit=${limit}`, {
+      return await this.fetchJsonWithFallback(`/recent?limit=${limit}`, {
         headers: this.getAuthHeaders()
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch recent documents');
-      }
-
-      return await response.json();
     } catch (error) {
       console.error('Get recent documents error:', error);
       throw error;
@@ -203,15 +182,9 @@ class DocTagsService {
       if (options.type) params.append('type', options.type);
       if (options.limit) params.append('limit', options.limit);
 
-      const response = await fetch(`${this.baseURL}?${params}`, {
+      return await this.fetchJsonWithFallback(`?${params}`, {
         headers: this.getAuthHeaders()
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to search DocTags');
-      }
-
-      return await response.json();
     } catch (error) {
       console.error('Search DocTags error:', error);
       throw error;
@@ -220,18 +193,12 @@ class DocTagsService {
 
   async cleanupDuplicates() {
     try {
-      const response = await fetch(`${this.baseURL}/cleanup-duplicates`, {
+      return await this.fetchJsonWithFallback('/cleanup-duplicates', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.getAccessToken()}`
         }
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to cleanup duplicates');
-      }
-
-      return await response.json();
     } catch (error) {
       console.error('Cleanup duplicates error:', error);
       throw error;

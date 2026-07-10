@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, LogOut, Settings, MoreHorizontal } from 'lucide-react';
+import { User, LogOut, Settings, ChevronUp, ChevronDown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ProfileSphereAvatar from './ProfileSphereAvatar';
 
@@ -13,6 +13,8 @@ const UserProfileDropdown = ({ placement = 'inline', isSidebarCollapsed = false,
   const isSidebarFooterDock = isDockedBottomLeft && integratedInSidebar;
   const isCompactDock = isDockedBottomLeft && isSidebarCollapsed;
   const isIntegratedDock = isSidebarFooterDock;
+  const [showDockActions, setShowDockActions] = useState(false);
+  const isEmbedded = false;
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -42,9 +44,14 @@ const UserProfileDropdown = ({ placement = 'inline', isSidebarCollapsed = false,
     navigate('/profile');
   };
 
+  const handleProfileV2 = () => {
+    setIsOpen(false);
+    navigate('/profile_v2');
+  };
+
   const handleSettings = () => {
     setIsOpen(false);
-    navigate('/profile', { state: { activeTab: 'account' } });
+    navigate('/profile', { state: { activeTab: 'modes' } });
   };
 
   if (!user) return null;
@@ -60,55 +67,61 @@ const UserProfileDropdown = ({ placement = 'inline', isSidebarCollapsed = false,
   return (
     <div className={dockContainerClass} ref={dropdownRef}>
       {isDockedBottomLeft ? (
-        <div
-          className={`${isCompactDock ? 'mb-2 w-11 bg-transparent rounded-none shadow-none backdrop-blur-0 overflow-visible' : `${isIntegratedDock ? 'w-full mb-0 bg-black/92 rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-sm overflow-hidden' : 'w-[218px] max-w-[calc(100vw-1.5rem)] mb-2 bg-black/92 rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-sm overflow-hidden'}`}`}
-        >
-          <button
-            onClick={handleProfile}
-            className={`${isCompactDock ? 'justify-center px-0 rounded-lg' : `${isIntegratedDock ? 'gap-2 px-3 py-2.5' : 'gap-2 px-3'}`} w-full flex items-center text-sm text-gray-300 hover:text-white hover:bg-white/8 active:text-white transition-colors`}
-            title="Profile"
+        <div className={`relative ${isCompactDock ? 'w-40' : `${isIntegratedDock ? 'w-full' : 'w-[218px] max-w-[calc(100vw-1.5rem)]'}`} overflow-visible`}>
+          <div
+            className={`absolute bottom-full left-0 z-[71] mb-2 overflow-hidden rounded-lg bg-black/92 shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-sm transition-all duration-200 ease-out ${showDockActions ? 'pointer-events-auto translate-y-0 opacity-100 scale-100' : 'pointer-events-none translate-y-2 opacity-0 scale-[0.98]'}`}
           >
-            <User className="w-4 h-4 text-gray-400 shrink-0" />
-            {!isCompactDock ? <span>Profile</span> : null}
-          </button>
+            <div className="py-1">
+              <button
+                onClick={handleProfile}
+                className="w-full flex items-center px-4 py-3 text-sm text-white hover:bg-white/5 transition-colors"
+                title="Profile"
+              >
+                <User className="w-4 h-4 mr-2.5 text-gray-400 shrink-0" />
+                <span>Profile</span>
+              </button>
+
+              <button
+                onClick={handleProfileV2}
+                className="w-full flex items-center px-4 py-3 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+                title="Profile V2"
+              >
+                <Settings className="w-4 h-4 mr-2.5 text-gray-400 shrink-0" />
+                <span>Profile V2</span>
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center px-4 py-3 text-sm text-red-400 hover:text-red-300 hover:bg-white/5 transition-colors"
+                title="Logout"
+              >
+                <LogOut className="w-4 h-4 mr-2.5 text-red-400 shrink-0" />
+                <span>Logout</span>
+              </button>
+            </div>
+          </div>
+
           <button
-            onClick={handleSettings}
-            className={`${isCompactDock ? 'justify-center px-0 rounded-lg' : `${isIntegratedDock ? 'gap-2 px-3 py-2.5' : 'gap-2 px-3'}`} w-full flex items-center text-sm text-gray-300 hover:text-white hover:bg-white/8 active:text-white transition-colors`}
-            title="Settings"
+            type="button"
+            onClick={() => setShowDockActions((previous) => !previous)}
+            className={`${isCompactDock ? 'justify-center px-0 rounded-lg' : 'gap-2 px-3 py-2.5'} w-full flex items-center text-sm text-gray-300 hover:text-white hover:bg-white/8 active:text-white transition-colors rounded-lg border border-white/15 bg-black/90 shadow-[0_8px_24px_rgba(0,0,0,0.24)]`}
+            title={showDockActions ? 'Collapse actions' : 'Expand actions'}
+            aria-expanded={showDockActions}
           >
-            <Settings className="w-4 h-4 text-gray-400 shrink-0" />
-            {!isCompactDock ? <span>Settings</span> : null}
+            <ProfileSphereAvatar iconId={user?.profileIconId} username={user?.username || user?.email?.split('@')[0] || 'User'} size="sm" />
+            {!isCompactDock ? (
+              <span className="text-sm text-white truncate font-medium min-w-0 flex-1 text-left">
+                {user?.username || user?.email?.split('@')[0] || 'User'}
+              </span>
+            ) : null}
+            {!isCompactDock ? (
+              <span className="inline-flex items-center justify-center transition-transform duration-200">
+                {showDockActions ? <ChevronDown className="w-3.5 h-3.5 text-gray-300" /> : <ChevronUp className="w-3.5 h-3.5 text-gray-300" />}
+              </span>
+            ) : null}
           </button>
         </div>
       ) : null}
-
-      {/* User Avatar and Name - Clickable */}
-      <button
-        onClick={isDockedBottomLeft ? undefined : (() => setIsOpen(!isOpen))}
-        className={isDockedBottomLeft
-          ? (isCompactDock
-            ? 'w-11 h-11 flex items-center justify-center bg-black/85 hover:bg-white/10 rounded-lg p-0 transition-colors shadow-[0_8px_24px_rgba(0,0,0,0.42)] backdrop-blur-sm'
-            : `${isIntegratedDock ? 'w-full flex items-center justify-between bg-black/88 border border-white/18 rounded-xl px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.34)] backdrop-blur-sm' : 'w-[218px] max-w-[calc(100vw-1.5rem)] flex items-center justify-between bg-black/85 border border-white/20 hover:bg-white/10 rounded-lg px-2.5 py-1.5 transition-colors shadow-[0_8px_24px_rgba(0,0,0,0.42)] backdrop-blur-sm'}`)
-          : 'flex items-center hover:bg-white/5 rounded-lg px-2 py-1 transition-colors'}
-        title="Profile"
-        aria-expanded={isDockedBottomLeft ? false : isOpen}
-      >
-        {isDockedBottomLeft ? (
-          <>
-            <div className={`${isCompactDock ? 'justify-center' : 'gap-2 min-w-0'} flex items-center`}>
-              <ProfileSphereAvatar iconId={user?.profileIconId} username={user?.username || user?.email?.split('@')[0] || 'User'} size="sm" />
-              {!isCompactDock ? (
-                <span className={`text-sm text-white truncate ${isIntegratedDock ? 'font-medium' : ''}`}>
-                {user?.username || user?.email?.split('@')[0] || 'User'}
-                </span>
-              ) : null}
-            </div>
-            {!isCompactDock ? <MoreHorizontal className="w-3 h-3 text-gray-300 shrink-0" /> : null}
-          </>
-        ) : (
-          <ProfileSphereAvatar iconId={user?.profileIconId} username={user?.username || user?.email?.split('@')[0] || 'User'} size="sm" />
-        )}
-      </button>
 
       {/* Dropdown Menu */}
       {isOpen && (
@@ -129,7 +142,7 @@ const UserProfileDropdown = ({ placement = 'inline', isSidebarCollapsed = false,
 
           {/* Menu Items */}
           <div className="py-2">
-            {!isDockedBottomLeft ? (
+            {(!isDockedBottomLeft) ? (
               <>
                 <button
                   onClick={handleProfile}
@@ -147,7 +160,25 @@ const UserProfileDropdown = ({ placement = 'inline', isSidebarCollapsed = false,
                   Settings
                 </button>
               </>
-            ) : null}
+            ) : (isEmbedded ? (
+              <>
+                <button
+                  onClick={handleProfile}
+                  className="w-full flex items-center px-6 py-3 text-sm text-white hover:bg-white/5 transition-colors"
+                >
+                  <User className="w-4 h-4 mr-3" />
+                  Profile
+                </button>
+
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center px-6 py-3 text-sm text-red-400 hover:text-red-300 hover:bg-white/5 transition-colors"
+                >
+                  <LogOut className="w-4 h-4 mr-3" />
+                  Logout
+                </button>
+              </>
+            ) : null)}
 
             <button
               onClick={handleLogout}

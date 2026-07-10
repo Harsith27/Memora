@@ -107,7 +107,7 @@ ehthumbs.db
 Desktop.ini
 
 # Project local archive / cleanup
-extra_items/
+# extra_items/
 
 # Invalid Windows reserved filename artifact
 memora-backend/nul
@@ -125,4 +125,4 @@ memora-backend/app-logs.zip
 memora-backend/uploads/
 
 # Local deployment notes with sensitive infra details
-DEPLOYMENT_RUNBOOK.md
+# DEPLOYMENT_RUNBOOK.md

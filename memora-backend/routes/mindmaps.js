@@ -5,6 +5,14 @@ const router = express.Router();
 const clampText = (value, maxLen) => String(value || '').trim().slice(0, maxLen);
 const clampNumber = (value, min, max) => Math.min(max, Math.max(min, value));
 
+const normalizeGroqApiKey = (value) => {
+  return String(value || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/^['"]+|['"]+$/g, '')
+    .replace(/\s+/g, '')
+    .trim();
+};
+
 const inferDesiredNodeCount = (topic, requestedValue = null) => {
   const requested = Number(requestedValue);
   if (Number.isFinite(requested) && requested > 0) {
@@ -677,13 +685,13 @@ const generateMindmapWithGroq = async ({
   desiredNodeCount,
   useMixedNodeKinds
 }) => {
-  const apiKey = clampText(process.env.GROQ_API_KEY, 500);
+  const apiKey = normalizeGroqApiKey(process.env.GROQ_API_KEY);
   if (!apiKey) {
     throw new Error('groq-key-missing-or-expired');
   }
 
   const baseUrl = clampText(process.env.GROQ_BASE_URL, 240) || 'https://api.groq.com/openai/v1';
-  const model = clampText(process.env.GROQ_MODEL, 120) || 'llama-3.1-8b-instant';
+  const model = clampText(process.env.GROQ_MODEL, 120) || 'llama-3.3-70b-versatile';
   const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
 
   const basePrompt = buildMindmapPrompt({
@@ -814,7 +822,7 @@ router.post('/generate-ai', async (req, res) => {
   }
 
   const aiProvider = String(process.env.AI_PROVIDER || '').trim().toLowerCase();
-  const hasGroqKey = Boolean(clampText(process.env.GROQ_API_KEY, 500));
+  const hasGroqKey = Boolean(normalizeGroqApiKey(process.env.GROQ_API_KEY));
   const hasGeminiKey = Boolean(clampText(process.env.GEMINI_API_KEY, 500));
 
   const shouldTryGroq = hasGroqKey && (aiProvider === '' || aiProvider === 'groq');

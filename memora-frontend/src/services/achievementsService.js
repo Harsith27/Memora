@@ -1,5 +1,6 @@
 import apiService from './api';
 import taskService from './taskService';
+import { DEFAULT_DAILY_RESET_TIME, getTrackingDayKey, normalizeDailyResetTime } from '../utils/dateFormat';
 
 const ACHIEVEMENTS_STATE_VERSION = 5;
 const ACHIEVEMENTS_STATE_KEY_PREFIX = 'memora_achievements_state_';
@@ -10,6 +11,15 @@ const FOCUS_SESSION_TIMESTAMP_SKEW_MS = 15 * 60 * 1000;
 const MAX_FOCUS_SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
 const DEFAULT_PUZZLE_DIMENSIONS = { rows: 7, cols: 12 };
+
+const getCurrentUserDailyResetTime = () => {
+  try {
+    const cachedUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+    return normalizeDailyResetTime(cachedUser?.preferences?.dailyResetTime || DEFAULT_DAILY_RESET_TIME);
+  } catch {
+    return DEFAULT_DAILY_RESET_TIME;
+  }
+};
 
 const normalizeTaskTypeForSnapshot = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
@@ -62,7 +72,14 @@ const getChecklistProgressText = (snapshot = {}) => {
 };
 
 const getRevisionCompletionTargets = (snapshot = {}) => {
-  const baselineDueCount = Math.max(0, Number(snapshot?.dailyBaseline?.initialDueTopics ?? snapshot?.dueTopicsCount ?? 0));
+  const baselineDueCount = Math.max(0, Number(
+    snapshot?.dailyBaseline?.initialDueTodayTopics
+      ?? snapshot?.dueTodayCount
+      ?? (snapshot?.reviewedTopicsTodayCount > 0 ? snapshot?.reviewedTopicsTodayCount : null)
+      ?? snapshot?.dailyBaseline?.initialDueTopics
+      ?? snapshot?.dueTopicsCount
+      ?? 0
+  ));
   const reviewedTopicsTodayCount = Math.max(0, Number(snapshot?.reviewedTopicsTodayCount || 0));
   const revisionsTodayCount = Math.max(0, Number(snapshot?.revisionsTodayCount || 0));
 
@@ -701,8 +718,8 @@ const saveState = (userStorageKey, state) => {
   return normalized;
 };
 
-const getTodayTaskSnapshot = (tasks = [], todayKey) => {
-  const todayTasks = (Array.isArray(tasks) ? tasks : []).filter((task) => toLocalDateKey(task?.date) === todayKey);
+const getTodayTaskSnapshot = (tasks = [], todayKey, resetTime = DEFAULT_DAILY_RESET_TIME) => {
+  const todayTasks = (Array.isArray(tasks) ? tasks : []).filter((task) => getTrackingDayKey(task?.date, resetTime) === todayKey);
   const completedToday = todayTasks.filter((task) => Boolean(task?.completed));
   const todayOneTimeTasks = todayTasks.filter((task) => isOneTimeTaskType(task?.taskType));
   const todayHabits = todayTasks.filter((task) => isHabitTaskType(task?.taskType));
@@ -720,14 +737,14 @@ const getTodayTaskSnapshot = (tasks = [], todayKey) => {
   };
 };
 
-const getFocusSnapshot = (sessions = [], todayKey) => {
+const getFocusSnapshot = (sessions = [], todayKey, resetTime = DEFAULT_DAILY_RESET_TIME) => {
   const sanitized = sanitizeFocusSessions(sessions);
 
   const completedTodaySessions = sanitized.filter((session) => {
     if (!session?.completed) return false;
     const timeRef = parseFocusSessionTimestamp(session.endTime, session.date, session.startTime);
     if (!Number.isFinite(timeRef)) return false;
-    return toLocalDateKey(timeRef) === todayKey;
+    return getTrackingDayKey(timeRef, resetTime) === todayKey;
   });
 
   const focusMs = completedTodaySessions.reduce((total, session) => {
@@ -742,11 +759,11 @@ const getFocusSnapshot = (sessions = [], todayKey) => {
   };
 };
 
-const getMindmapSnapshot = (mindmaps = [], todayKey) => {
+const getMindmapSnapshot = (mindmaps = [], todayKey, resetTime = DEFAULT_DAILY_RESET_TIME) => {
   const createdToday = (Array.isArray(mindmaps) ? mindmaps : []).filter((map) => {
     const createdAt = Number(map?.createdAt || 0);
     if (!Number.isFinite(createdAt) || createdAt <= 0) return false;
-    return toLocalDateKey(createdAt) === todayKey;
+    return getTrackingDayKey(createdAt, resetTime) === todayKey;
   });
 
   return {
@@ -796,7 +813,7 @@ const toISODateOnly = (value) => {
   return date.toISOString().slice(0, 10);
 };
 
-const getLocalReviewedCountFromActivities = (userStorageKey, todayKey) => {
+const getLocalReviewedCountFromActivities = (userStorageKey, todayKey, resetTime = DEFAULT_DAILY_RESET_TIME) => {
   const countReviewedEntries = (raw) => {
     const activities = safeParseJson(raw, []);
     if (!Array.isArray(activities)) return 0;
@@ -821,9 +838,9 @@ const getLocalReviewedCountFromActivities = (userStorageKey, todayKey) => {
   return 0;
 };
 
-const getTodayRevisionHistorySnapshot = (entries = [], todayKey) => {
+const getTodayRevisionHistorySnapshot = (entries = [], todayKey, resetTime = DEFAULT_DAILY_RESET_TIME) => {
   const todayEntries = (Array.isArray(entries) ? entries : []).filter((entry) => {
-    const completedAtKey = toLocalDateKey(entry?.completedAt || entry?.createdAt || entry?.date);
+    const completedAtKey = getTrackingDayKey(entry?.completedAt || entry?.createdAt || entry?.date, resetTime);
     return completedAtKey === todayKey;
   });
 
@@ -839,10 +856,10 @@ const getTodayRevisionHistorySnapshot = (entries = [], todayKey) => {
   };
 };
 
-const getRevisionSnapshot = (stats = [], todayKey, fallbackReviewedCount = 0, historySnapshot = {}) => {
+const getRevisionSnapshot = (stats = [], todayKey, fallbackReviewedCount = 0, historySnapshot = {}, resetTime = DEFAULT_DAILY_RESET_TIME) => {
   const rows = Array.isArray(stats) ? stats : [];
   const todayRow = rows.find((row) => {
-    const normalized = toLocalDateKey(row?.date) || toISODateOnly(row?.date);
+    const normalized = getTrackingDayKey(row?.date, resetTime) || toISODateOnly(row?.date);
     return normalized === todayKey;
   });
 
@@ -868,7 +885,8 @@ const getRevisionSnapshot = (stats = [], todayKey, fallbackReviewedCount = 0, hi
 };
 
 const collectSnapshot = async (userStorageKey) => {
-  const todayKey = toLocalDateKey(new Date());
+  const resetTime = getCurrentUserDailyResetTime();
+  const todayKey = getTrackingDayKey(new Date(), resetTime);
 
   const [
     dueTopicsResponse,
@@ -880,7 +898,8 @@ const collectSnapshot = async (userStorageKey) => {
     apiService.getDueTopics(200).catch(() => ({ success: false, topics: [] })),
     apiService.getRevisionDailyStats(45).catch(() => ({ success: false, stats: [] })),
     apiService.getRevisionHistory(45).catch(() => ({ success: false, entries: [] })),
-    apiService.getTopics({ page: 1, limit: 200 }).catch(() => ({ success: false, topics: [], pagination: { total: 0 } })),
+    // Only the total count is needed here, so request the smallest page possible.
+    apiService.getTopics({ page: 1, limit: 1 }).catch(() => ({ success: false, topics: [], pagination: { total: 0 } })),
     getJournalSnapshot(userStorageKey, todayKey)
   ]);
 
@@ -900,24 +919,29 @@ const collectSnapshot = async (userStorageKey) => {
   const dueTopicsCount = hasDueMetadata
     ? Math.max(0, (Number.isFinite(todaysCountRaw) ? todaysCountRaw : 0) + (Number.isFinite(overdueCountRaw) ? overdueCountRaw : 0))
     : dueTopics.length;
+  const dueTodayCount = Number.isFinite(todaysCountRaw)
+    ? Math.max(0, todaysCountRaw)
+    : dueTopics.length;
 
   const activeTopicsCount = Number(topicsResponse?.pagination?.total || topics.length || 0);
 
-  const taskSnapshot = getTodayTaskSnapshot(allTasks, todayKey);
-  const focusSnapshot = getFocusSnapshot(focusSessionsRaw, todayKey);
-  const mindmapSnapshot = getMindmapSnapshot(mindmapsRaw, todayKey);
-  const localReviewedTodayCount = getLocalReviewedCountFromActivities(userStorageKey, todayKey);
-  const revisionHistorySnapshot = getTodayRevisionHistorySnapshot(revisionHistory, todayKey);
+  const taskSnapshot = getTodayTaskSnapshot(allTasks, todayKey, resetTime);
+  const focusSnapshot = getFocusSnapshot(focusSessionsRaw, todayKey, resetTime);
+  const mindmapSnapshot = getMindmapSnapshot(mindmapsRaw, todayKey, resetTime);
+  const localReviewedTodayCount = getLocalReviewedCountFromActivities(userStorageKey, todayKey, resetTime);
+  const revisionHistorySnapshot = getTodayRevisionHistorySnapshot(revisionHistory, todayKey, resetTime);
   const revisionSnapshot = getRevisionSnapshot(
     revisionStats,
     todayKey,
     localReviewedTodayCount,
-    revisionHistorySnapshot
+    revisionHistorySnapshot,
+    resetTime
   );
 
   return {
     todayKey,
     dueTopicsCount,
+    dueTodayCount,
     activeTopicsCount,
     ...taskSnapshot,
     ...focusSnapshot,
@@ -1153,6 +1177,7 @@ const ensureDailyBaseline = (state, snapshot) => {
       ...baselines,
       [snapshot.todayKey]: {
         initialDueTopics: Number(snapshot.dueTopicsCount || 0),
+        initialDueTodayTopics: Number(snapshot.dueTodayCount || 0),
         initialOneTimeTaskCount: Number(snapshot.todayOneTimeTaskCount || 0),
         capturedAt: Date.now()
       }
@@ -1163,6 +1188,7 @@ const ensureDailyBaseline = (state, snapshot) => {
 const attachSnapshotBaseline = (state, snapshot) => {
   const baseline = state.dailyBaselines?.[snapshot.todayKey] || {
     initialDueTopics: Number(snapshot.dueTopicsCount || 0),
+    initialDueTodayTopics: Number(snapshot.dueTodayCount || 0),
     initialOneTimeTaskCount: Number(snapshot.todayOneTimeTaskCount || 0),
     capturedAt: Date.now()
   };
@@ -1248,9 +1274,26 @@ const summarizeLeaderboardState = (state) => {
   };
 };
 
-const syncLeaderboardState = async (state) => {
+const getLeaderboardSyncCacheKey = (userStorageKey) => `memora_achievements_leaderboard_sync_${userStorageKey}`;
+
+const syncLeaderboardState = async (userStorageKey, state) => {
+  const payload = summarizeLeaderboardState(state);
+  const cacheKey = getLeaderboardSyncCacheKey(userStorageKey);
+
   try {
-    await apiService.syncAchievementsLeaderboardStats(summarizeLeaderboardState(state));
+    const previousPayload = localStorage.getItem(cacheKey);
+    const nextPayload = JSON.stringify(payload);
+    if (previousPayload === nextPayload) {
+      return;
+    }
+
+    localStorage.setItem(cacheKey, nextPayload);
+  } catch {
+    // If storage is unavailable, fall through and sync normally.
+  }
+
+  try {
+    await apiService.syncAchievementsLeaderboardStats(payload);
   } catch {
     // Non-blocking: local achievements flow should still work if leaderboard sync fails.
   }
@@ -1341,7 +1384,7 @@ export const syncAchievements = async (userOrKey) => {
   });
 
   const persistedState = saveState(userStorageKey, mutableState);
-  await syncLeaderboardState(persistedState);
+  await syncLeaderboardState(userStorageKey, persistedState);
 
   const activePuzzle = getActivePuzzle(persistedState);
   const unseenClaims = getUnseenClaims(persistedState);

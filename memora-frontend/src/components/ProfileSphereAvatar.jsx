@@ -1,21 +1,21 @@
 import React from 'react';
 
 export const PROFILE_SPHERE_THEMES = [
-  { id: 'sphere-1', name: 'Blush Mist', gradient: 'radial-gradient(circle at 24% 20%, #ffd7db 0%, #f39fb5 34%, #de7ea0 62%, #bf6f91 100%), linear-gradient(135deg, #2b1f33 0%, #4a2f58 100%)' },
-  { id: 'sphere-2', name: 'Violet Drift', gradient: 'linear-gradient(140deg, #8d4ce9 0%, #b364ff 35%, #f1b95d 100%)' },
-  { id: 'sphere-3', name: 'Solar Ember', gradient: 'radial-gradient(circle at 52% 54%, #ff4f64 0%, #ff8f3e 26%, #f8cb76 56%, #d8b891 100%), linear-gradient(180deg, #4a2b20 0%, #785138 100%)' },
-  { id: 'sphere-4', name: 'Aurora Tide', gradient: 'linear-gradient(140deg, #25115f 0%, #1f6aa3 40%, #86f19e 76%, #ffe884 100%)' },
-  { id: 'sphere-5', name: 'Indigo Pulse', gradient: 'linear-gradient(145deg, #d0c5ff 0%, #8f84dd 40%, #5642bf 72%, #2f1a86 100%)' },
-  { id: 'sphere-6', name: 'Neon Bloom', gradient: 'radial-gradient(circle at 18% 28%, #ffb48a 0%, rgba(255,180,138,0.26) 44%, rgba(255,180,138,0) 62%), linear-gradient(145deg, #1ea5d8 0%, #63d8f6 38%, #ce4bff 100%)' },
-  { id: 'sphere-7', name: 'Prism Veil', gradient: 'linear-gradient(140deg, #b078ff 0%, #7bc3ff 48%, #5df6d4 100%), radial-gradient(circle at 80% 70%, #7a2aff 0%, rgba(122,42,255,0) 60%)' },
-  { id: 'sphere-8', name: 'Magenta Storm', gradient: 'radial-gradient(circle at 30% 50%, #ff7f57 0%, #ff3d6f 34%, #ee2f8a 70%, #c4308e 100%), linear-gradient(145deg, #2d0c3d 0%, #5f1b66 100%)' },
-  { id: 'sphere-9', name: 'Electric Peach', gradient: 'linear-gradient(145deg, #ff5f6d 0%, #ff8f56 34%, #ffcf63 72%, #6168ff 100%)' },
-  { id: 'sphere-10', name: 'Cyan Orbit', gradient: 'radial-gradient(circle at 72% 32%, #66f5ff 0%, rgba(102,245,255,0.08) 40%, rgba(102,245,255,0) 66%), linear-gradient(145deg, #1f0f73 0%, #1a5ca1 46%, #5fe89e 100%)' },
-  { id: 'sphere-11', name: 'Sunset Haze', gradient: 'linear-gradient(145deg, #ff7f5f 0%, #ff5895 36%, #d34bf0 72%, #6a42d9 100%)' },
-  { id: 'sphere-12', name: 'Lunar Mint', gradient: 'radial-gradient(circle at 82% 18%, #f6fbff 0%, rgba(246,251,255,0.24) 28%, rgba(246,251,255,0) 52%), linear-gradient(145deg, #5c76d9 0%, #76b6ff 45%, #88f0d8 100%)' },
-  { id: 'sphere-13', name: 'Coral Flux', gradient: 'linear-gradient(145deg, #ff6e5b 0%, #ff3f8d 34%, #7e44d8 72%, #3a56bf 100%)' },
-  { id: 'sphere-14', name: 'Sapphire Dawn', gradient: 'radial-gradient(circle at 26% 24%, #ffca72 0%, rgba(255,202,114,0.28) 34%, rgba(255,202,114,0) 54%), linear-gradient(145deg, #305cff 0%, #3d88ff 42%, #8d4eff 100%)' },
-  { id: 'sphere-15', name: 'Velvet Rainbow', gradient: 'linear-gradient(145deg, #ff5f7f 0%, #ff8060 28%, #ffcc5a 52%, #5dd7d6 76%, #5f5bff 100%)' }
+  { id: 'sphere-1', name: 'Midnight Plum', gradient: 'radial-gradient(circle at 24% 20%, rgba(125,93,173,0.38) 0%, rgba(125,93,173,0) 42%), linear-gradient(145deg, #0b1020 0%, #1a1533 42%, #3a224d 100%)' },
+  { id: 'sphere-2', name: 'Deep Aurora', gradient: 'radial-gradient(circle at 70% 24%, rgba(85,215,196,0.3) 0%, rgba(85,215,196,0) 42%), linear-gradient(145deg, #07111c 0%, #11273b 44%, #133b4e 100%)' },
+  { id: 'sphere-3', name: 'Obsidian Rose', gradient: 'radial-gradient(circle at 50% 44%, rgba(189,94,141,0.28) 0%, rgba(189,94,141,0) 44%), linear-gradient(145deg, #0f0b14 0%, #231224 46%, #40192e 100%)' },
+  { id: 'sphere-4', name: 'Night Tide', gradient: 'radial-gradient(circle at 20% 28%, rgba(61,162,190,0.24) 0%, rgba(61,162,190,0) 46%), linear-gradient(145deg, #07131d 0%, #0f2334 48%, #16354d 100%)' },
+  { id: 'sphere-5', name: 'Ink Violet', gradient: 'radial-gradient(circle at 76% 18%, rgba(156,113,255,0.24) 0%, rgba(156,113,255,0) 42%), linear-gradient(145deg, #090a16 0%, #17142b 44%, #2d2154 100%)' },
+  { id: 'sphere-6', name: 'Smoke Ember', gradient: 'radial-gradient(circle at 30% 34%, rgba(255,132,92,0.2) 0%, rgba(255,132,92,0) 44%), linear-gradient(145deg, #100d12 0%, #24161d 42%, #432628 100%)' },
+  { id: 'sphere-7', name: 'Cosmic Moss', gradient: 'radial-gradient(circle at 80% 70%, rgba(132,230,167,0.24) 0%, rgba(132,230,167,0) 46%), linear-gradient(145deg, #08110d 0%, #13231b 44%, #20392c 100%)' },
+  { id: 'sphere-8', name: 'Dusk Ruby', gradient: 'radial-gradient(circle at 28% 52%, rgba(255,92,126,0.24) 0%, rgba(255,92,126,0) 44%), linear-gradient(145deg, #120910 0%, #2a121f 45%, #47172a 100%)' },
+  { id: 'sphere-9', name: 'Shadow Cobalt', gradient: 'radial-gradient(circle at 68% 30%, rgba(87,143,255,0.24) 0%, rgba(87,143,255,0) 44%), linear-gradient(145deg, #070d18 0%, #112040 45%, #203e6d 100%)' },
+  { id: 'sphere-10', name: 'Nocturne Mint', gradient: 'radial-gradient(circle at 74% 28%, rgba(102,240,214,0.24) 0%, rgba(102,240,214,0) 42%), linear-gradient(145deg, #07110f 0%, #10231e 44%, #17413a 100%)' },
+  { id: 'sphere-11', name: 'Black Orchid', gradient: 'radial-gradient(circle at 52% 24%, rgba(197,113,255,0.22) 0%, rgba(197,113,255,0) 42%), linear-gradient(145deg, #08070d 0%, #17111f 46%, #2f183f 100%)' },
+  { id: 'sphere-12', name: 'Slate Flame', gradient: 'radial-gradient(circle at 22% 22%, rgba(255,167,102,0.22) 0%, rgba(255,167,102,0) 42%), linear-gradient(145deg, #0d1018 0%, #1d232f 45%, #3a2c25 100%)' },
+  { id: 'sphere-13', name: 'Deep Lagoon', gradient: 'radial-gradient(circle at 74% 72%, rgba(80,172,255,0.24) 0%, rgba(80,172,255,0) 44%), linear-gradient(145deg, #061219 0%, #0d2635 46%, #14455f 100%)' },
+  { id: 'sphere-14', name: 'Velvet Steel', gradient: 'radial-gradient(circle at 30% 20%, rgba(165,174,255,0.2) 0%, rgba(165,174,255,0) 42%), linear-gradient(145deg, #0b0d14 0%, #182030 44%, #2f3b54 100%)' },
+  { id: 'sphere-15', name: 'Graphite Prism', gradient: 'radial-gradient(circle at 48% 28%, rgba(124,225,255,0.18) 0%, rgba(124,225,255,0) 40%), linear-gradient(145deg, #07090d 0%, #131922 46%, #243044 100%)' }
 ];
 
 const SIZE_STYLES = {
@@ -43,14 +43,14 @@ const getTheme = (iconId) => {
 
 const getAvatarInitials = (username) => {
   const normalized = String(username || '').trim();
-  if (!normalized) return 'U';
+  if (!normalized) return 'u';
 
   const words = normalized.split(/\s+/).filter(Boolean);
   if (words.length >= 2) {
-    return `${words[0][0] || ''}${words[1][0] || ''}`.toUpperCase();
+    return `${(words[0][0] || '').toLowerCase()}${(words[1][0] || '').toLowerCase()}`;
   }
 
-  return normalized.slice(0, 2).toUpperCase();
+  return normalized.slice(0, 2).toLowerCase();
 };
 
 const getThemeLuminance = (gradient) => {
@@ -93,18 +93,17 @@ const ProfileSphereAvatar = ({ iconId = 'sphere-1', username = '', size = 'md', 
 
   return (
     <div
-      className={`relative ${resolvedSize.shell} ${resolvedSize.radius} border border-white/30 shadow-[0_8px_18px_rgba(0,0,0,0.35)] overflow-hidden ${className}`}
+      className={`relative ${resolvedSize.shell} ${resolvedSize.radius} border border-white/15 shadow-[0_10px_24px_rgba(0,0,0,0.42)] overflow-hidden ${className}`}
       style={{ backgroundImage: theme.gradient }}
       title={title || theme.name}
       aria-label={title || theme.name}
     >
-      <div className="absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.36)_0%,rgba(255,255,255,0.08)_32%,rgba(255,255,255,0)_58%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_80%,rgba(0,0,0,0.22)_0%,rgba(0,0,0,0)_56%)]" />
-      <div className="absolute -top-[24%] left-[12%] h-[52%] w-[76%] rounded-full bg-white/30 blur-[2px]" />
-      <div className="absolute bottom-[8%] right-[8%] h-[34%] w-[34%] rounded-full bg-black/10 blur-[4px]" />
+      <div className="absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0.04)_30%,rgba(0,0,0,0.08)_72%,rgba(0,0,0,0.16)_100%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_20%,rgba(255,255,255,0.08)_0%,rgba(255,255,255,0)_38%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_48%_78%,rgba(0,0,0,0.28)_0%,rgba(0,0,0,0)_54%)]" />
       <div
         className="absolute inset-0 flex items-center justify-center select-none font-normal tracking-normal"
-         style={{ color: textColor, fontSize, textShadow: useDarkText ? '0 1px 1px rgba(255,255,255,0.12)' : '0 1px 1px rgba(0,0,0,0.28)' }}
+         style={{ color: textColor, fontSize, textShadow: useDarkText ? '0 1px 1px rgba(255,255,255,0.12)' : '0 1px 1px rgba(0,0,0,0.35)' }}
       >
         {initials}
       </div>

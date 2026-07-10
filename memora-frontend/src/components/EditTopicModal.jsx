@@ -4,7 +4,9 @@ import DatePicker from 'react-datepicker';
 import Modal from './Modal';
 import ShadcnSelect from './ShadcnSelect';
 import apiService from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import { formatDateDDMMYYYY, formatDateWithWeekday, getTodayIsoDateKey, parseDateInputToIso } from '../utils/dateFormat';
+import { getEffectiveRevisionMode, getRevisionModeDifficultyOptions, normalizeDifficultyForRevisionMode } from '../utils/revisionModes';
 
 const toLocalDateKey = (value) => {
   if (!value) return '';
@@ -28,6 +30,7 @@ const toLocalDateFromIso = (isoDate) => {
 };
 
 const EditTopicModal = ({ isOpen, onClose, onSubmit, onReschedule, onStartFocus, topic, loading = false }) => {
+  const { user } = useAuth();
   const defaultLearnedDateInput = formatDateDDMMYYYY(getTodayIsoDateKey());
   const [formData, setFormData] = useState({
     title: '',
@@ -69,6 +72,13 @@ const EditTopicModal = ({ isOpen, onClose, onSubmit, onReschedule, onStartFocus,
     return toLocalDateFromIso(isoDate);
   }, [customDate]);
 
+  const userRevisionMode = user?.preferences?.revisionMode || 'competitive';
+  const effectiveRevisionMode = getEffectiveRevisionMode(formData.revisionMode, userRevisionMode);
+  const difficultyOptions = useMemo(
+    () => getRevisionModeDifficultyOptions(effectiveRevisionMode),
+    [effectiveRevisionMode]
+  );
+
   const timelineOptions = useMemo(() => {
     const baseDate = new Date();
     baseDate.setHours(0, 0, 0, 0);
@@ -88,12 +98,14 @@ const EditTopicModal = ({ isOpen, onClose, onSubmit, onReschedule, onStartFocus,
   // Initialize form data when topic changes
   useEffect(() => {
     if (topic) {
+      const nextRevisionMode = topic.revisionMode || 'inherit';
+      const resolvedRevisionMode = getEffectiveRevisionMode(nextRevisionMode, userRevisionMode);
       const nextReview = toLocalDateKey(topic.nextReviewDate);
       setFormData({
         title: topic.title || '',
         content: topic.content || '',
-        difficulty: topic.difficulty || 3,
-        revisionMode: topic.revisionMode || 'inherit',
+        difficulty: normalizeDifficultyForRevisionMode(topic.difficulty || 3, resolvedRevisionMode),
+        revisionMode: nextRevisionMode,
         tags: topic.tags || [],
         learnedDate: formatDateDDMMYYYY(topic.learnedDate ? toLocalDateKey(topic.learnedDate) : getTodayIsoDateKey()),
         externalLinks: Array.isArray(topic.externalLinks) ? topic.externalLinks : []
@@ -104,7 +116,16 @@ const EditTopicModal = ({ isOpen, onClose, onSubmit, onReschedule, onStartFocus,
       setRescheduleState({ loading: false, error: '', success: '' });
       setShowReschedulePopup(false);
     }
-  }, [topic, timelineOptions]);
+  }, [topic, timelineOptions, userRevisionMode]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const normalizedDifficulty = normalizeDifficultyForRevisionMode(formData.difficulty, effectiveRevisionMode);
+    if (normalizedDifficulty !== formData.difficulty) {
+      setFormData((prev) => ({ ...prev, difficulty: normalizedDifficulty }));
+    }
+  }, [effectiveRevisionMode, formData.difficulty, isOpen]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -194,14 +215,6 @@ const EditTopicModal = ({ isOpen, onClose, onSubmit, onReschedule, onStartFocus,
       })
       .slice(0, 8);
   }, [availableTopicTags, formData.tags, tagInput]);
-
-  const difficultyLabels = {
-    1: 'Very Easy',
-    2: 'Easy', 
-    3: 'Medium',
-    4: 'Hard',
-    5: 'Very Hard'
-  };
 
   const difficultyColors = {
     1: 'text-green-400 bg-green-400/10 border-green-400/20',
@@ -461,25 +474,30 @@ const EditTopicModal = ({ isOpen, onClose, onSubmit, onReschedule, onStartFocus,
             <Target className="w-4 h-4" />
             <span>Difficulty Level</span>
           </label>
-          <div className="grid grid-cols-5 gap-2">
-            {[1, 2, 3, 4, 5].map(level => (
+          <div className={`grid gap-2 ${effectiveRevisionMode === 'engineering' ? 'grid-cols-3' : 'grid-cols-5'}`}>
+            {difficultyOptions.map((option) => (
               <button
-                key={level}
+                key={option.value}
                 type="button"
-                onClick={() => setFormData(prev => ({ ...prev, difficulty: level }))}
+                onClick={() => setFormData(prev => ({ ...prev, difficulty: option.value }))}
                 className={`p-3 rounded-lg border text-sm font-medium transition-all ${
-                  formData.difficulty === level
-                    ? difficultyColors[level]
+                  formData.difficulty === option.value
+                    ? difficultyColors[option.value]
                     : 'text-gray-400 bg-white/5 border-white/10 hover:bg-white/10'
                 }`}
               >
                 <div className="text-center">
-                  <div className="font-bold">{level}</div>
-                  <div className="text-xs mt-1">{difficultyLabels[level]}</div>
+                  <div className="font-bold">{effectiveRevisionMode === 'engineering' ? option.label : option.value}</div>
+                  <div className="text-xs mt-1">{option.label}</div>
                 </div>
               </button>
             ))}
           </div>
+          <p className="mt-2 text-xs text-gray-400">
+            {effectiveRevisionMode === 'engineering'
+              ? 'Learning Mode uses three difficulty levels: Easy, Medium, and Hard.'
+              : 'Relentless Study Mode uses five difficulty levels.'}
+          </p>
         </div>
 
         {/* Revision Mode */}
@@ -493,8 +511,8 @@ const EditTopicModal = ({ isOpen, onClose, onSubmit, onReschedule, onStartFocus,
             onChange={(value) => setFormData(prev => ({ ...prev, revisionMode: value }))}
             options={[
               { value: 'inherit', label: 'Inherit from settings' },
-              { value: 'competitive', label: 'Competitive Exams Mode' },
-              { value: 'engineering', label: 'Engineering Mode' }
+              { value: 'competitive', label: 'Relentless Study Mode' },
+              { value: 'engineering', label: 'Learning Mode' }
             ]}
           />
           <p className="text-xs text-gray-400 mt-1">

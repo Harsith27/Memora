@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Sparkles, X } from 'lucide-react';
+import { ChevronRight, Sparkles } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getAchievementsState, syncAchievements } from '../services/achievementsService';
 
@@ -45,6 +45,7 @@ const AchievementUnlockNotifier = () => {
   const ctaTimerRef = useRef(null);
   const dismissTimerRef = useRef(null);
   const queuedPollTimerRef = useRef(null);
+  const syncInFlightRef = useRef(false);
   const userStorageKey = useMemo(() => toStorageKey(user), [user]);
 
   const clearTimers = useCallback(() => {
@@ -112,6 +113,9 @@ const AchievementUnlockNotifier = () => {
   const pollForNewClaims = useCallback(async () => {
     if (!user) return;
     if (location.pathname === '/achievements') return;
+    if (syncInFlightRef.current) return;
+
+    syncInFlightRef.current = true;
 
     try {
       const result = await syncAchievements(userStorageKey);
@@ -128,6 +132,8 @@ const AchievementUnlockNotifier = () => {
       enqueueClaims(Array.from(mergedById.values()));
     } catch {
       // Ignore transient sync failures for notifier polling.
+    } finally {
+      syncInFlightRef.current = false;
     }
   }, [enqueueClaims, location.pathname, user, userStorageKey]);
 
@@ -144,6 +150,7 @@ const AchievementUnlockNotifier = () => {
       seenClaimIdsRef.current = new Set();
       bufferedClaimsRef.current = [];
       activeClaimIdsRef.current = new Set();
+      syncInFlightRef.current = false;
       clearTimers();
       setQueue([]);
       setActiveClaims([]);
@@ -243,7 +250,7 @@ const AchievementUnlockNotifier = () => {
 
   useEffect(() => () => clearTimers(), [clearTimers]);
 
-  if (activeClaims.length === 0) return null;
+  if (!user || activeClaims.length === 0) return null;
 
   const activeClaim = activeClaims[activeClaims.length - 1] || null;
   if (!activeClaim) return null;
@@ -258,49 +265,32 @@ const AchievementUnlockNotifier = () => {
     : (activeClaim.achievement?.description || 'A new milestone was completed.');
 
   return (
-    <div className="fixed top-4 right-4 z-[200] w-[min(92vw,23rem)] pointer-events-none">
-      <div className="relative pointer-events-auto rounded-2xl border border-emerald-300/25 bg-slate-950/92 px-4 py-3 shadow-[0_18px_50px_rgba(15,23,42,0.45)] backdrop-blur-md">
-        <button
-          type="button"
-          aria-label="Close achievement notification"
-          onClick={handleClose}
-          className="absolute top-2 right-2 p-1 rounded-full text-emerald-100/80 hover:bg-emerald-800/30 focus:outline-none focus:ring-2 focus:ring-emerald-400"
-        >
-          <X className="w-4 h-4" />
-        </button>
-        <p className="text-emerald-200 text-[10px] sm:text-[11px] uppercase tracking-[0.24em] inline-flex items-center gap-1.5">
-          <Sparkles className="w-4 h-4" />
-          achievement completed
-        </p>
+    <div className="fixed top-4 right-4 z-[200] w-[min(92vw,24rem)] pointer-events-none">
+      <div className="relative pointer-events-auto overflow-hidden rounded-2xl border border-amber-500/25 bg-[#231707] px-4 py-3 shadow-[0_18px_45px_rgba(0,0,0,0.5)] backdrop-blur-md">
+        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,196,61,0.14),rgba(255,196,61,0.03)_40%,transparent_75%)] pointer-events-none" />
 
-        <h3 className="mt-2 text-sm sm:text-base font-semibold text-emerald-50 leading-snug">
-          {achievementTitle}
-        </h3>
+        <div className="relative flex items-center gap-3 pr-1">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-amber-400/30 bg-amber-300/10 text-amber-300">
+            <Sparkles className="h-4 w-4" />
+          </div>
 
-        <p className="mt-1 text-xs text-emerald-100/90 leading-snug">
-          {achievementDescription}
-        </p>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 text-[0.68rem] font-medium uppercase tracking-[0.26em] text-amber-300/80">
+              <span className="truncate">achievement completed</span>
+            </div>
 
-        <p className="mt-1 text-[11px] text-emerald-100/75">
-          {activeClaimCount > 1 ? `${activeClaimCount} puzzle pieces revealed.` : 'One puzzle piece revealed.'}
-        </p>
+            <div className="mt-0.5 flex min-w-0 items-center gap-2 text-sm font-semibold leading-snug text-amber-50">
+              <span className="truncate">{achievementTitle}</span>
+            </div>
+          </div>
 
-        <div className="mt-3 h-[3px] rounded-full bg-emerald-200/15 overflow-hidden">
-          <div className="h-full w-full bg-gradient-to-r from-emerald-300 via-lime-200 to-emerald-100" />
-        </div>
-
-        {showCta ? (
           <button
             type="button"
-            className="mt-3 px-3 py-1.5 rounded-full border border-emerald-200/45 bg-emerald-500/18 text-emerald-50 text-xs font-medium hover:bg-emerald-500/28 transition-colors"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
 
               clearTimers();
-
-              const claimToReveal = activeClaim;
-              if (!claimToReveal?.id) return;
 
               const stagedClaims = [...bufferedClaimsRef.current, ...activeClaims, ...queue].filter((claim) => claim?.id);
               const uniqueClaimMap = new Map();
@@ -330,10 +320,12 @@ const AchievementUnlockNotifier = () => {
                 setShowCta(false);
               }, 0);
             }}
+            aria-label="Open achievements"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-amber-400/30 bg-amber-300/12 text-amber-200 transition-colors hover:bg-amber-300/20 hover:text-amber-50"
           >
-            View in Achievements
+            <ChevronRight className="h-4 w-4" />
           </button>
-        ) : null}
+        </div>
       </div>
     </div>
   );

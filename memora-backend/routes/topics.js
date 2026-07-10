@@ -2,9 +2,9 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const mongoose = require('mongoose');
 const Topic = require('../models/Topic');
-const User = require('../models/User');
 const DocTag = require('../models/DocTag');
 const RevisionHistory = require('../models/RevisionHistory');
+const User = require('../models/User');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
@@ -61,29 +61,53 @@ const FESTIVAL_MM_DD = new Set([
 
 const WEEKDAY_LABELS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
-
-const resolveModeForTopicSnapshot = (userMode, difficulty) => {
-  const safeUserMode = ['competitive', 'engineering', 'hybrid'].includes(String(userMode || '').trim())
-    ? String(userMode || '').trim()
-    : 'competitive';
-  const safeDifficulty = Math.max(1, Math.min(5, Number(difficulty) || 3));
-
-  if (safeUserMode === 'hybrid') {
-    return safeDifficulty >= 4 ? 'competitive' : 'engineering';
-  }
-
-  return safeUserMode;
+const REVISION_MODES = {
+  competitive: 'competitive',
+  engineering: 'engineering',
+  hybrid: 'hybrid'
 };
 
-const getTopicRevisionModeForPersist = async ({ requestedMode, userId, difficulty }) => {
+const getTopicRevisionModeForPersist = async ({ requestedMode }) => {
   const safeRequested = String(requestedMode || 'inherit').trim();
-  if (safeRequested === 'competitive' || safeRequested === 'engineering') {
+
+  if (safeRequested === 'competitive' || safeRequested === 'engineering' || safeRequested === 'inherit') {
     return safeRequested;
   }
 
-  const user = await User.findById(userId).select('preferences.revisionMode').lean();
-  const userMode = user?.preferences?.revisionMode || 'competitive';
-  return resolveModeForTopicSnapshot(userMode, difficulty);
+  return 'inherit';
+};
+
+const resolveEffectiveRevisionModeForTopic = ({ topicMode = 'inherit', userMode = REVISION_MODES.competitive, difficulty = 3 }) => {
+  const safeTopicMode = String(topicMode || 'inherit').trim();
+  const safeUserMode = String(userMode || REVISION_MODES.competitive).trim();
+  const safeDifficulty = clamp(Number(difficulty) || 3, 1, 5);
+
+  if (safeTopicMode === REVISION_MODES.competitive || safeTopicMode === REVISION_MODES.engineering) {
+    return safeTopicMode;
+  }
+
+  if (safeUserMode === REVISION_MODES.hybrid) {
+    return safeDifficulty >= 4 ? REVISION_MODES.competitive : REVISION_MODES.engineering;
+  }
+
+  return safeUserMode === REVISION_MODES.engineering
+    ? REVISION_MODES.engineering
+    : REVISION_MODES.competitive;
+};
+
+const getDefaultEstimatedMinutesByMode = (effectiveRevisionMode) => {
+  return effectiveRevisionMode === REVISION_MODES.engineering ? 10 : 15;
+};
+
+const isMandatoryFirstRevisionTopic = (topic, todayStart = startOfDay(), todayEnd = (() => {
+  const end = new Date(todayStart);
+  end.setHours(23, 59, 59, 999);
+  return end;
+})()) => {
+  if (!topic) return false;
+  const createdToday = isDateWithinRange(topic.createdAt, todayStart, todayEnd);
+  const reviewCount = Number(topic.reviewCount || 0);
+  return createdToday && reviewCount <= 0;
 };
 
 const startOfDay = (value = new Date()) => {
@@ -162,6 +186,53 @@ const isDateWithinRange = (value, start, end) => {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return false;
   return date >= start && date <= end;
+};
+
+const parseBoostDateList = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item || '').trim())
+      .filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item));
+  }
+
+  return String(value || '')
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item));
+};
+
+const getBoostedLimitProfileForDate = (baseLimits = HARD_SKIP_LIMITS, preferences = {}, candidateDate = new Date()) => {
+  const date = candidateDate instanceof Date ? candidateDate : new Date(candidateDate);
+  if (Number.isNaN(date.getTime())) return { ...baseLimits, boost: { topics: 0, difficulty: 0, minutes: 0 } };
+
+  const isSunday = date.getDay() === 0;
+  const dayKey = dateKey(date);
+  const boostedDates = new Set(parseBoostDateList(preferences?.studyBoostDates));
+  const isCustomBoostDay = boostedDates.has(dayKey);
+
+  const customTopicBonus = Math.max(0, Number(preferences?.studyBoostTopicBonus) || 2);
+  const customDifficultyBonus = Math.max(0, Number(preferences?.studyBoostDifficultyBonus) || 4);
+  const customMinutesBonus = Math.max(0, Number(preferences?.studyBoostMinutesBonus) || 30);
+
+  const sundayBoost = isSunday
+    ? { topics: 1, difficulty: 2, minutes: 20 }
+    : { topics: 0, difficulty: 0, minutes: 0 };
+
+  const customBoost = isCustomBoostDay
+    ? { topics: customTopicBonus, difficulty: customDifficultyBonus, minutes: customMinutesBonus }
+    : { topics: 0, difficulty: 0, minutes: 0 };
+
+  return {
+    ...baseLimits,
+    maxTopicsPerDay: baseLimits.maxTopicsPerDay + sundayBoost.topics + customBoost.topics,
+    maxDifficultyLoad: baseLimits.maxDifficultyLoad + sundayBoost.difficulty + customBoost.difficulty,
+    maxEstimatedMinutes: baseLimits.maxEstimatedMinutes + sundayBoost.minutes + customBoost.minutes,
+    boost: {
+      topics: sundayBoost.topics + customBoost.topics,
+      difficulty: sundayBoost.difficulty + customBoost.difficulty,
+      minutes: sundayBoost.minutes + customBoost.minutes
+    }
+  };
 };
 
 const getDefaultSchedulingProfile = () => ({
@@ -261,16 +332,17 @@ const getUserSchedulingProfile = async (userId) => {
   };
 };
 
-const isDayFeasible = (stats, topic, limits = HARD_SKIP_LIMITS) => {
+const isDayFeasible = (stats, topic, limits = HARD_SKIP_LIMITS, candidateDate = new Date(), preferences = {}) => {
+  const effectiveLimits = getBoostedLimitProfileForDate(limits, preferences, candidateDate);
   const difficulty = Number(topic?.difficulty) || 3;
   const estimatedMinutes = getTopicEstimatedMinutes(topic);
   const isVeryHard = difficulty >= 5 ? 1 : 0;
 
   return (
-    (stats.count + 1) <= limits.maxTopicsPerDay &&
-    (stats.difficultyLoad + difficulty) <= limits.maxDifficultyLoad &&
-    (stats.veryHardCount + isVeryHard) <= limits.maxVeryHardTopics &&
-    (stats.estimatedMinutes + estimatedMinutes) <= limits.maxEstimatedMinutes
+    (stats.count + 1) <= effectiveLimits.maxTopicsPerDay &&
+    (stats.difficultyLoad + difficulty) <= effectiveLimits.maxDifficultyLoad &&
+    (stats.veryHardCount + isVeryHard) <= effectiveLimits.maxVeryHardTopics &&
+    (stats.estimatedMinutes + estimatedMinutes) <= effectiveLimits.maxEstimatedMinutes
   );
 };
 
@@ -378,7 +450,8 @@ const chooseNextBestDate = (
   earliestDate,
   latestDate,
   schedulingProfile = getDefaultSchedulingProfile(),
-  limits = HARD_SKIP_LIMITS
+  limits = HARD_SKIP_LIMITS,
+  preferences = {}
 ) => {
   const start = startOfDay(earliestDate);
   const end = startOfDay(latestDate);
@@ -390,7 +463,7 @@ const chooseNextBestDate = (
     const stats = statsMap.get(key) || getEmptyDayStats();
     const distanceDays = Math.max(0, Math.round((cursor.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
 
-    if (isDayFeasible(stats, topic, limits)) {
+    if (isDayFeasible(stats, topic, limits, cursor, preferences)) {
       return new Date(cursor);
     }
 
@@ -415,7 +488,7 @@ const toLabeledDayWeights = (profile) => {
 const selectDueTopicsWithinDailyLimits = (orderedTopics = [], requestedLimit = 10, options = {}) => {
   const {
     limits = HARD_SKIP_LIMITS,
-    forceIncludeTodayCreated = true,
+    prioritizeTodayCreated = true,
     todayStart = startOfDay(),
     todayEnd = (() => {
       const end = new Date(startOfDay());
@@ -433,24 +506,29 @@ const selectDueTopicsWithinDailyLimits = (orderedTopics = [], requestedLimit = 1
   const dayStats = getEmptyDayStats();
   const selected = [];
   const deferred = [];
-  const forcedTodayCreated = [];
+  const todayCreatedTopics = [];
+  const remainingTopics = [];
 
   for (const topic of orderedTopics) {
     const createdToday = isDateWithinRange(topic?.createdAt, todayStart, todayEnd);
+    const isMandatoryFirstRevision = createdToday && Number(topic?.reviewCount || 0) <= 0;
 
-    if (forceIncludeTodayCreated && createdToday) {
-      selected.push(topic);
-      forcedTodayCreated.push(topic);
-      applyTopicToDayStats(dayStats, topic);
-      continue;
+    if (prioritizeTodayCreated && isMandatoryFirstRevision) {
+      todayCreatedTopics.push(topic);
+    } else {
+      remainingTopics.push(topic);
     }
+  }
+
+  for (const topic of [...todayCreatedTopics, ...remainingTopics]) {
+    const createdToday = isDateWithinRange(topic?.createdAt, todayStart, todayEnd);
 
     if (selected.length >= cappedLimit) {
       deferred.push(topic);
       continue;
     }
 
-    if (isDayFeasible(dayStats, topic, limits)) {
+    if (isDayFeasible(dayStats, topic, limits, todayStart)) {
       selected.push(topic);
       applyTopicToDayStats(dayStats, topic);
       continue;
@@ -464,7 +542,7 @@ const selectDueTopicsWithinDailyLimits = (orderedTopics = [], requestedLimit = 1
     deferred,
     dayStats,
     cappedLimit,
-    forcedTodayCreatedCount: forcedTodayCreated.length
+    forcedTodayCreatedCount: todayCreatedTopics.length
   };
 };
 
@@ -473,10 +551,11 @@ const autoRescheduleDeferredDueTopics = async (
   deferredTopics,
   schedulingProfile,
   limits,
-  referenceDay = startOfDay()
+  referenceDay = startOfDay(),
+  preferences = {}
 ) => {
   if (!Array.isArray(deferredTopics) || deferredTopics.length === 0) {
-    return { moved: 0, unresolved: 0, unresolvedTopicIds: [] };
+    return { moved: 0, unresolved: 0, unresolvedTopicIds: [], movedTopics: [], skippedMandatoryTopicIds: [] };
   }
 
   const deferredIds = deferredTopics.map((topic) => topic._id);
@@ -497,6 +576,7 @@ const autoRescheduleDeferredDueTopics = async (
   const dayStatsMap = buildDayStatsMap(baselineTopics);
   const updates = [];
   const unresolvedTopicIds = [];
+  const movedTopics = [];
 
   for (const topic of deferredTopics) {
     const hardDeadline = topic.deadlineType === 'hard' && topic.deadlineDate
@@ -514,7 +594,8 @@ const autoRescheduleDeferredDueTopics = async (
       horizonStart,
       latestDate,
       schedulingProfile,
-      limits
+      limits,
+      preferences
     );
 
     if (!selectedDate) {
@@ -536,6 +617,12 @@ const autoRescheduleDeferredDueTopics = async (
         }
       }
     });
+    movedTopics.push({
+      id: String(topic._id),
+      title: topic.title,
+      from: topic.nextReviewDate,
+      to: setPreferredReviewTime(selectedDate)
+    });
   }
 
   if (updates.length > 0) {
@@ -545,7 +632,9 @@ const autoRescheduleDeferredDueTopics = async (
   return {
     moved: updates.length,
     unresolved: unresolvedTopicIds.length,
-    unresolvedTopicIds
+    unresolvedTopicIds,
+    movedTopics,
+    skippedMandatoryTopicIds: []
   };
 };
 
@@ -630,6 +719,9 @@ router.get('/due', authenticateToken, async (req, res) => {
     const overdueTopics = await Topic.getOverdueTopics(userId, fetchWindow);
     const schedulingProfile = await getUserSchedulingProfile(userId);
     const adaptiveLimits = getAdaptiveDailyLimits(schedulingProfile);
+    const user = await User.findById(userId).select('preferences').lean();
+    const preferences = user?.preferences || {};
+    const effectiveTodayLimits = getBoostedLimitProfileForDate(adaptiveLimits, preferences, todayStart);
 
     // Combine and prioritize by urgency (hard deadlines, overdue depth, difficulty), then enforce hard daily limits.
     const dedupedDueTopics = [...new Map([...overdueTopics, ...todaysTopics]
@@ -637,8 +729,8 @@ router.get('/due', authenticateToken, async (req, res) => {
       .values()];
     const orderedDueTopics = rankDueTopicsByPriority(dedupedDueTopics, todayStart);
     const selectedDue = selectDueTopicsWithinDailyLimits(orderedDueTopics, safeLimit, {
-      limits: adaptiveLimits,
-      forceIncludeTodayCreated: true,
+      limits: effectiveTodayLimits,
+      prioritizeTodayCreated: true,
       todayStart,
       todayEnd
     });
@@ -649,7 +741,8 @@ router.get('/due', authenticateToken, async (req, res) => {
       selectedDue.deferred,
       schedulingProfile,
       adaptiveLimits,
-      todayStart
+      todayStart,
+      preferences
     );
 
     res.json({
@@ -662,11 +755,12 @@ router.get('/due', authenticateToken, async (req, res) => {
       forcedTodayCreatedCount: selectedDue.forcedTodayCreatedCount,
       autoRescheduledDeferred: deferredRescheduleResult,
       enforcedLimits: {
-        maxTopicsPerDay: adaptiveLimits.maxTopicsPerDay,
-        maxDifficultyLoad: adaptiveLimits.maxDifficultyLoad,
-        maxVeryHardTopics: adaptiveLimits.maxVeryHardTopics,
-        maxEstimatedMinutes: adaptiveLimits.maxEstimatedMinutes,
+        maxTopicsPerDay: effectiveTodayLimits.maxTopicsPerDay,
+        maxDifficultyLoad: effectiveTodayLimits.maxDifficultyLoad,
+        maxVeryHardTopics: effectiveTodayLimits.maxVeryHardTopics,
+        maxEstimatedMinutes: effectiveTodayLimits.maxEstimatedMinutes,
         activityBonus: adaptiveLimits.activityBonus,
+        boostBonus: effectiveTodayLimits.boost,
         requestedLimit: safeLimit,
         appliedLimit: selectedDue.cappedLimit
       },
@@ -974,7 +1068,7 @@ router.post('/', [
       tags = [],
       deadlineDate,
       deadlineType = 'soft',
-      estimatedMinutes = 30,
+      estimatedMinutes,
       revisionMode = 'inherit',
       externalLinks = [],
       attachments = []
@@ -989,6 +1083,17 @@ router.post('/', [
       difficulty
     });
 
+    const userPreferences = await User.findById(userId).select('preferences.revisionMode').lean();
+    const effectiveRevisionMode = resolveEffectiveRevisionModeForTopic({
+      topicMode: persistedRevisionMode,
+      userMode: userPreferences?.preferences?.revisionMode || REVISION_MODES.competitive,
+      difficulty
+    });
+    const parsedEstimatedMinutes = Number(estimatedMinutes);
+    const resolvedEstimatedMinutes = Number.isFinite(parsedEstimatedMinutes) && parsedEstimatedMinutes > 0
+      ? parsedEstimatedMinutes
+      : getDefaultEstimatedMinutesByMode(effectiveRevisionMode);
+
     const topic = new Topic({
       title,
       content,
@@ -999,7 +1104,7 @@ router.post('/', [
       learnedDate: new Date(),
       deadlineDate: deadlineDate ? new Date(deadlineDate) : null,
       deadlineType,
-      estimatedMinutes: Number(estimatedMinutes) || 30,
+      estimatedMinutes: resolvedEstimatedMinutes,
       revisionMode: persistedRevisionMode,
       externalLinks: externalLinks || [],
       attachments: attachments || []
@@ -1253,14 +1358,13 @@ router.post('/:id/review', [
       throw new Error(`Spaced repetition calculation failed: ${srError.message}`);
     }
 
-    // Check for crowding and redistribute if necessary (non-blocking)
-    let crowdingResult = { redistributed: false, topicsRescheduled: 0 };
-    try {
-      crowdingResult = await Topic.preventCrowding(topic.userId, topic.nextReviewDate);
-    } catch (crowdingError) {
-      console.error('⚠️  Crowding prevention error (non-blocking):', crowdingError.message);
-      // Don't fail the review if crowding prevention fails
-    }
+    // Do not auto-redistribute on review. A done action should only move this topic forward.
+    const crowdingResult = {
+      redistributed: false,
+      count: 0,
+      redistributedTopics: [],
+      details: []
+    };
 
     try {
       const now = new Date();
@@ -1371,8 +1475,10 @@ router.patch('/:id/revision-date', [
     const dayStats = buildDayStatsMap(sameDayTopics).get(dateKey(targetDay)) || getEmptyDayStats();
     const schedulingProfile = await getUserSchedulingProfile(userId);
     const adaptiveLimits = getAdaptiveDailyLimits(schedulingProfile);
+    const user = await User.findById(userId).select('preferences').lean();
+    const preferences = user?.preferences || {};
 
-    if (!isDayFeasible(dayStats, topic, adaptiveLimits)) {
+    if (!isDayFeasible(dayStats, topic, adaptiveLimits, targetDay, preferences)) {
       return res.status(409).json({
         success: false,
         message: 'Selected day is overloaded. Choose another day.'
@@ -1455,13 +1561,16 @@ router.post('/:id/skip', authenticateToken, async (req, res) => {
     const dayStatsMap = buildDayStatsMap(baselineTopics);
     const schedulingProfile = await getUserSchedulingProfile(userId);
     const adaptiveLimits = getAdaptiveDailyLimits(schedulingProfile);
+    const user = await User.findById(userId).select('preferences').lean();
+    const preferences = user?.preferences || {};
     const selectedDate = chooseNextBestDate(
       topic,
       dayStatsMap,
       horizonStart,
       latestDate,
       schedulingProfile,
-      adaptiveLimits
+      adaptiveLimits,
+      preferences
     );
 
     if (!selectedDate) {
@@ -1514,7 +1623,7 @@ router.post('/skip-today', authenticateToken, async (req, res) => {
     const todayEnd = new Date(todayStart);
     todayEnd.setHours(23, 59, 59, 999);
 
-    const topicsToMove = await Topic.find({
+    const todayTopics = await Topic.find({
       userId,
       isActive: true,
       nextReviewDate: { $gte: todayStart, $lte: todayEnd }
@@ -1522,11 +1631,17 @@ router.post('/skip-today', authenticateToken, async (req, res) => {
       .sort({ difficulty: -1, deadlineDate: 1, createdAt: 1 })
       .lean();
 
+    const mandatoryTopics = todayTopics.filter((topic) => isMandatoryFirstRevisionTopic(topic, todayStart, todayEnd));
+    const topicsToMove = todayTopics.filter((topic) => !isMandatoryFirstRevisionTopic(topic, todayStart, todayEnd));
+
     if (topicsToMove.length === 0) {
       return res.json({
         success: true,
         moved: 0,
-        message: 'No topics scheduled for today'
+        preservedMandatory: mandatoryTopics.length,
+        message: mandatoryTopics.length > 0
+          ? `Preserved ${mandatoryTopics.length} newly added topic${mandatoryTopics.length === 1 ? '' : 's'} for mandatory first revision today.`
+          : 'No topics scheduled for today'
       });
     }
 
@@ -1548,8 +1663,11 @@ router.post('/skip-today', authenticateToken, async (req, res) => {
     const dayStatsMap = buildDayStatsMap(baselineTopics);
     const schedulingProfile = await getUserSchedulingProfile(userId);
     const adaptiveLimits = getAdaptiveDailyLimits(schedulingProfile);
+    const user = await User.findById(userId).select('preferences').lean();
+    const preferences = user?.preferences || {};
     const updates = [];
     const unresolvedTopics = [];
+    const movedTopics = [];
 
     for (const topic of topicsToMove) {
       const hardDeadline = topic.deadlineType === 'hard' && topic.deadlineDate
@@ -1567,7 +1685,8 @@ router.post('/skip-today', authenticateToken, async (req, res) => {
         horizonStart,
         latestDate,
         schedulingProfile,
-        adaptiveLimits
+        adaptiveLimits,
+        preferences
       );
       if (!selectedDate) {
         unresolvedTopics.push(String(topic._id));
@@ -1588,6 +1707,12 @@ router.post('/skip-today', authenticateToken, async (req, res) => {
           }
         }
       });
+      movedTopics.push({
+        id: String(topic._id),
+        title: topic.title,
+        from: topic.nextReviewDate,
+        to: setPreferredReviewTime(selectedDate)
+      });
     }
 
     if (updates.length > 0) {
@@ -1599,7 +1724,10 @@ router.post('/skip-today', authenticateToken, async (req, res) => {
       moved: updates.length,
       unresolved: unresolvedTopics.length,
       unresolvedTopicIds: unresolvedTopics,
-      message: `Rescheduled ${updates.length} topic${updates.length === 1 ? '' : 's'} from today.`
+      preservedMandatory: mandatoryTopics.length,
+      preservedMandatoryTopicIds: mandatoryTopics.map((topic) => String(topic._id)),
+      movedTopics,
+      message: `Rescheduled ${updates.length} topic${updates.length === 1 ? '' : 's'} from today.${mandatoryTopics.length > 0 ? ` Preserved ${mandatoryTopics.length} newly added topic${mandatoryTopics.length === 1 ? '' : 's'} for first revision today.` : ''}`
     });
   } catch (error) {
     console.error('Hard skip today error:', error);
@@ -1658,8 +1786,11 @@ router.post('/move-overdue', authenticateToken, async (req, res) => {
     const dayStatsMap = buildDayStatsMap(baselineTopics);
     const schedulingProfile = await getUserSchedulingProfile(userId);
     const adaptiveLimits = getAdaptiveDailyLimits(schedulingProfile);
+    const user = await User.findById(userId).select('preferences').lean();
+    const preferences = user?.preferences || {};
     const updates = [];
     const unresolvedTopics = [];
+    const movedTopics = [];
 
     for (const topic of overdueTopics) {
       const hardDeadline = topic.deadlineType === 'hard' && topic.deadlineDate
@@ -1677,7 +1808,8 @@ router.post('/move-overdue', authenticateToken, async (req, res) => {
         horizonStart,
         latestDate,
         schedulingProfile,
-        adaptiveLimits
+        adaptiveLimits,
+        preferences
       );
       if (!selectedDate) {
         unresolvedTopics.push(String(topic._id));
@@ -1698,6 +1830,12 @@ router.post('/move-overdue', authenticateToken, async (req, res) => {
           }
         }
       });
+      movedTopics.push({
+        id: String(topic._id),
+        title: topic.title,
+        from: topic.nextReviewDate,
+        to: setPreferredReviewTime(selectedDate)
+      });
     }
 
     if (updates.length > 0) {
@@ -1709,6 +1847,7 @@ router.post('/move-overdue', authenticateToken, async (req, res) => {
       moved: updates.length,
       unresolved: unresolvedTopics.length,
       unresolvedTopicIds: unresolvedTopics,
+      movedTopics,
       message: `Rescheduled ${updates.length} overdue topic${updates.length === 1 ? '' : 's'} across the next days.`
     });
 

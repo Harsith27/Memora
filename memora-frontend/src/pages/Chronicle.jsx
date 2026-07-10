@@ -173,6 +173,11 @@ const Chronicle = () => {
       return;
     }
 
+    if (item.label === "Flashcards") {
+      navigate('/flashcards');
+      return;
+    }
+
     if (item.label === "Graph Mode") {
       navigate('/graph');
       return;
@@ -798,6 +803,8 @@ const Chronicle = () => {
   const generateCalendarDays = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
+    const today = new Date();
+    const isViewingCurrentMonth = year === today.getFullYear() && month === today.getMonth();
     
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
@@ -811,6 +818,9 @@ const Chronicle = () => {
       const dateKey = currentDateObj.toDateString();
       const isCurrentMonth = currentDateObj.getMonth() === month;
       const isToday = dateKey === new Date().toDateString();
+      const isPastDayInCurrentMonth = isViewingCurrentMonth
+        && isCurrentMonth
+        && currentDateObj.getDate() < today.getDate();
       const events = filteredCalendarEvents[dateKey] || [];
       
       days.push({
@@ -819,6 +829,7 @@ const Chronicle = () => {
         day: currentDateObj.getDate(),
         isCurrentMonth,
         isToday,
+        isPastDayInCurrentMonth,
         events,
         hasEvents: events.length > 0
       });
@@ -1269,7 +1280,7 @@ const Chronicle = () => {
             className={`flex items-center hover:opacity-80 transition-opacity ${isSidebarCollapsed ? 'justify-center w-full' : 'gap-2 min-w-0'}`}
           >
             <Logo size="sm" className="text-white scale-90" />
-            {!isSidebarCollapsed && <span className="text-lg font-semibold text-white">Memora</span>}
+            {!isSidebarCollapsed && <span className="text-lg font-semibold text-white">Memy</span>}
           </button>
 
           {isDesktopViewport && !isSidebarCollapsed && (
@@ -1480,11 +1491,18 @@ const Chronicle = () => {
               {calendarDays.map((day, index) => (
                 <div
                   key={index}
-                  className={`border-r border-b border-white/10 last:border-r-0 p-1.5 sm:p-2 cursor-pointer hover:bg-white/5 transition-colors ${
+                  className={`relative overflow-hidden border-r border-b border-white/10 last:border-r-0 p-1.5 sm:p-2 cursor-pointer hover:bg-white/5 transition-colors ${
                     isPhoneViewport ? 'min-h-[64px]' : 'min-h-[120px]'
                   } ${!day.isCurrentMonth ? 'opacity-40' : ''} ${day.isToday ? 'bg-yellow-500/10' : ''}`}
                   onClick={() => openDayDetails(day)}
                 >
+                  {day.isPastDayInCurrentMonth && (
+                    <div
+                      className="absolute inset-0 pointer-events-none"
+                      style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+                    />
+                  )}
+
                   <div className={`text-xs sm:text-sm font-medium ${isPhoneViewport ? 'mb-0.5' : 'mb-1'} ${
                     day.isToday ? 'text-yellow-300' : day.isCurrentMonth ? 'text-white' : 'text-gray-500'
                   }`}>

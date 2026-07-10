@@ -145,7 +145,7 @@ const featureCards = [
 const feedbackItems = [
   {
     quote:
-      'Memora stopped my random study routine. The revision queue finally feels like a real plan, not guesswork.',
+      'Memy stopped my random study routine. The revision queue finally feels like a real plan, not guesswork.',
     name: 'Akhil R',
     role: 'Engineering Student',
   },
@@ -749,7 +749,6 @@ const FeatureCard = ({ card, index }) => {
 
 function Landing() {
   const { user, logout } = useAuth();
-  const [activeSection, setActiveSection] = useState('memscore');
   const [isScrolled, setIsScrolled] = useState(false);
   const [ctaGlow, setCtaGlow] = useState({ x: 50, y: 50, hovering: false });
   const rotatingHeadlinePhrases = ['memory-powered learning.', 'personalized study experience.'];
@@ -758,7 +757,9 @@ function Landing() {
   const [isHeadlineDeleting, setIsHeadlineDeleting] = useState(false);
   const [mobileFocus, setMobileFocus] = useState('memscore');
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [isModulesMenuOpen, setIsModulesMenuOpen] = useState(false);
   const accountMenuRef = useRef(null);
+  const modulesMenuRef = useRef(null);
   const heroRef = useRef(null);
   const currentHeadlinePhrase = rotatingHeadlinePhrases[headlinePhraseIndex];
   const isHeadlineIdle = !isHeadlineDeleting && typedHeadline === currentHeadlinePhrase;
@@ -771,12 +772,19 @@ function Landing() {
   const heroPreviewScale = useTransform(heroProgress, [0, 1], [1, 0.93]);
 
   const navItems = [
-    { id: 'memscore', label: 'Product', chevron: true },
-    { id: 'features', label: 'Use cases', chevron: true },
-    { id: 'feedback', label: 'Docs', chevron: true },
-    { id: 'pricing', label: 'Community', chevron: true },
-    { id: 'pricing', label: 'Enterprise', chevron: false },
-    { id: 'pricing', label: 'Pricing', chevron: false },
+    { id: 'dashboard', label: 'Dashboard', type: 'link', to: '/dashboard' },
+    { id: 'modules', label: 'Modules', type: 'dropdown' },
+    { id: 'about-us', label: 'About Us', type: 'placeholder' },
+    { id: 'docs', label: 'Docs', type: 'link', to: '/docs' },
+    { id: 'pricing', label: 'Pricing', type: 'link', to: '/pricing' },
+    { id: 'support', label: 'Support', type: 'placeholder' },
+  ];
+
+  const moduleInfoCards = [
+    { title: 'Dashboard', description: 'Daily task flow, due topics, and momentum signals.' },
+    { title: 'Mindmaps', description: 'Visual concept maps for connected revision.' },
+    { title: 'Docs', description: 'Guides, workflows, and product documentation.' },
+    { title: 'Listener', description: 'Voice capture and transcriptions for study notes.' },
   ];
 
   const mobileFeatureCards = featureCards;
@@ -803,21 +811,8 @@ function Landing() {
   };
 
   useEffect(() => {
-    const sectionIds = navItems.map((item) => item.id);
-
     const handleScroll = () => {
-      const triggerY = window.scrollY + 140;
       setIsScrolled(window.scrollY > 10);
-      let current = sectionIds[0];
-
-      sectionIds.forEach((id) => {
-        const section = document.getElementById(id);
-        if (section && triggerY >= section.offsetTop) {
-          current = id;
-        }
-      });
-
-      setActiveSection(current);
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -825,14 +820,6 @@ function Landing() {
 
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
-
-  const scrollToSection = (id) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setActiveSection(id);
-    }
-  };
 
   const handleCtaMouseMove = (event) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -849,6 +836,9 @@ function Landing() {
     const handleClickOutside = (event) => {
       if (accountMenuRef.current && !accountMenuRef.current.contains(event.target)) {
         setIsAccountMenuOpen(false);
+      }
+      if (modulesMenuRef.current && !modulesMenuRef.current.contains(event.target)) {
+        setIsModulesMenuOpen(false);
       }
     };
 
@@ -910,26 +900,69 @@ function Landing() {
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.98 }}
             >
-              <div className="w-8 h-8 overflow-hidden rounded-lg ring-1 ring-white/10">
-                <img src={logoImg} alt="Memora Logo" className="w-full h-full object-cover" />
+              <div className="w-8 h-8 overflow-hidden rounded-lg">
+                <img src={logoImg} alt="Memy Logo" className="w-full h-full object-cover" />
               </div>
-              <span className="font-semibold text-base sm:text-[1.05rem] tracking-tight truncate">Memora</span>
+              <span className="font-semibold text-base sm:text-[1.05rem] tracking-tight truncate">Memy</span>
             </motion.div>
 
             <div className="hidden lg:flex items-center justify-center gap-1 xl:gap-2 rounded-full px-2 py-1">
               {navItems.map((item) => {
-                const isActive = activeSection === item.id;
+                if (item.type === 'link') {
+                  return (
+                    <Link
+                      key={item.id}
+                      to={item.to}
+                      className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-[0.92rem] text-zinc-300/90 transition-colors hover:text-white"
+                    >
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                }
+
+                if (item.type === 'dropdown') {
+                  return (
+                    <div key={item.id} className="relative" ref={modulesMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => setIsModulesMenuOpen((prev) => !prev)}
+                        className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-[0.92rem] text-zinc-300/90 transition-colors hover:text-white"
+                        aria-expanded={isModulesMenuOpen}
+                      >
+                        <span>{item.label}</span>
+                        <ChevronDown className={`h-3.5 w-3.5 opacity-80 transition-transform ${isModulesMenuOpen ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {isModulesMenuOpen ? (
+                        <div className="absolute left-1/2 top-full z-50 mt-3 w-[340px] -translate-x-1/2 rounded-2xl border border-white/12 bg-[#07070c]/96 p-4 shadow-[0_18px_44px_rgba(0,0,0,0.42)] backdrop-blur-xl">
+                          <div className="mb-3">
+                            <p className="text-sm font-semibold text-white">Modules</p>
+                            <p className="mt-1 text-xs leading-5 text-zinc-400">
+                              Quick access to the main areas of the product.
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {moduleInfoCards.map((card) => (
+                              <div key={card.title} className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                                <p className="text-sm font-medium text-white">{card.title}</p>
+                                <p className="mt-1 text-xs leading-5 text-zinc-400">{card.description}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }
+
                 return (
                   <button
-                    key={item.label}
+                    key={item.id}
                     type="button"
-                    onClick={() => scrollToSection(item.id)}
-                    className={`inline-flex items-center gap-1 rounded-full px-3 py-2 text-[0.92rem] transition-colors ${
-                      isActive ? 'text-white' : 'text-zinc-300/90 hover:text-white'
-                    }`}
+                    title="Coming soon"
+                    className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-[0.92rem] text-zinc-300/60 transition-colors cursor-default"
                   >
                     <span>{item.label}</span>
-                    {item.chevron ? <ChevronDown className="h-3.5 w-3.5 opacity-80" /> : null}
                   </button>
                 );
               })}
@@ -966,13 +999,6 @@ function Landing() {
                         </div>
                       </div>
                       <div className="py-2">
-                        <Link
-                          to="/dashboard"
-                          onClick={() => setIsAccountMenuOpen(false)}
-                          className="block px-4 py-2 text-sm text-zinc-200 hover:bg-white/6 hover:text-white transition-colors"
-                        >
-                          Dashboard
-                        </Link>
                         <button
                           type="button"
                           onClick={handleLogout}
@@ -1103,7 +1129,7 @@ function Landing() {
 
                 <img
                   src="/dashboard-preview.png"
-                  alt="Memora dashboard preview"
+                  alt="Memy dashboard preview"
                   className="relative z-10 w-full h-[210px] sm:h-[320px] md:h-[420px] lg:h-[500px] object-cover object-top"
                   loading="lazy"
                 />
@@ -1318,7 +1344,7 @@ function Landing() {
                 A clean <span className="text-blue-200">3-step baseline</span> before your first schedule.
               </h2>
               <p className="text-zinc-400 text-base sm:text-lg leading-relaxed">
-                Memora evaluates recall accuracy, sequence memory, and response speed first. The resulting <span className="text-cyan-100">MemScore</span> becomes your personal scheduling signal, not a generic default.
+                Memy evaluates recall accuracy, sequence memory, and response speed first. The resulting <span className="text-cyan-100">MemScore</span> becomes your personal scheduling signal, not a generic default.
               </p>
             </div>
           </Reveal>
@@ -1451,7 +1477,7 @@ function Landing() {
             <p className="text-xs uppercase tracking-[0.18em] text-blue-300/80 mb-3">Platform Modules</p>
             <h2 className="text-4xl sm:text-5xl font-semibold tracking-tight mb-4">Everything in one place.</h2>
             <p className="max-w-3xl mx-auto text-zinc-400 text-lg leading-relaxed">
-              Nine focused modules, one clean grid. No noisy infographics, just a structured product surface that explains exactly how Memora works.
+              Nine focused modules, one clean grid. No noisy infographics, just a structured product surface that explains exactly how Memy works.
             </p>
           </Reveal>
 
@@ -1470,7 +1496,7 @@ function Landing() {
           <Reveal className="mb-10">
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-purple-300/80 mb-3">Feedback</p>
-              <h3 className="text-2xl sm:text-4xl font-semibold tracking-tight">What learners say after switching to Memora</h3>
+              <h3 className="text-2xl sm:text-4xl font-semibold tracking-tight">What learners say after switching to Memy</h3>
             </div>
           </Reveal>
 
