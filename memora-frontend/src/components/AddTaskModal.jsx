@@ -378,40 +378,7 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-200">Tracking Metric</label>
-            <ShadcnSelect
-              value={formData.completionType}
-              onChange={(value) => setFormData((prev) => ({ ...prev, completionType: value }))}
-              options={[
-                { value: 'boolean', label: 'Simple Checkbox' },
-                { value: 'quantity', label: 'Quantity Target' },
-                { value: 'percent', label: 'Percentage (%) Target' },
-                { value: 'time', label: 'Duration (minutes) Target' }
-              ]}
-              className="h-11 w-full"
-            />
-          </div>
 
-          {formData.completionType !== 'boolean' && (
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-200">
-                {formData.completionType === 'quantity' && 'Target Quantity'}
-                {formData.completionType === 'percent' && 'Target Percentage (%)'}
-                {formData.completionType === 'time' && 'Target Duration (mins)'}
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={formData.completionType === 'percent' ? 100 : 9999}
-                value={formData.targetValue}
-                onChange={(event) => setFormData((prev) => ({ ...prev, targetValue: Math.max(1, Number(event.target.value) || 1) }))}
-                className="h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-sm text-white outline-none transition-colors focus:border-cyan-300/60"
-              />
-            </div>
-          )}
-        </div>
 
         {formData.taskType === 'habit' && (
           <div data-error-field="customDates">

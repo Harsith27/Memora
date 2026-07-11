@@ -1,4 +1,11 @@
 const express = require('express');
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
+try {
+  dns.setServers(['8.8.8.8', '8.8.4.4']);
+} catch (e) {
+  console.warn('Could not set custom DNS servers:', e.message);
+}
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
