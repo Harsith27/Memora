@@ -1,0 +1,77 @@
+name: Deploy Frontend to Vercel
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - memora-frontend/**
+      - .github/workflows/deploy-frontend-vercel.yml
+  workflow_dispatch:
+    inputs:
+      alias_domain:
+        description: 'Target alias for this deployment'
+        required: true
+        default: 'memyapp.vercel.app'
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel Environment Information
+        working-directory: memora-frontend
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
+
+      - name: Guard protected legacy URL
+        run: |
+          TARGET_ALIAS="${{ inputs.alias_domain }}"
+          TARGET_ALIAS="${TARGET_ALIAS:-memyapp.vercel.app}"
+          if [ "$TARGET_ALIAS" = "memoraapp.vercel.app" ]; then
+            echo "Refusing deployment: memoraapp.vercel.app is deprecated."
+            echo "Use memyapp.vercel.app instead"
+            exit 1
+          fi
+
+      - name: Build Frontend
+        working-directory: memora-frontend
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel build --prod --token "$VERCEL_TOKEN"
+
+      - name: Deploy Frontend (preview deployment)
+        id: deploy_frontend
+        working-directory: memora-frontend
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          DEPLOYMENT_OUTPUT=$(vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN" --yes)
+          DEPLOYMENT_URL=$(echo "$DEPLOYMENT_OUTPUT" | grep -Eo 'https://[^ ]+\.vercel\.app' | tail -n 1)
+
+          if [ -z "$DEPLOYMENT_URL" ]; then
+            echo "Failed to parse Vercel deployment URL"
+            echo "$DEPLOYMENT_OUTPUT"
+            exit 1
+          fi
+
+          echo "deployment_url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
