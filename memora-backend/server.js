@@ -1,6 +1,11 @@
 const express = require('express');
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
+try {
+  dns.setServers(['8.8.8.8', '8.8.4.4']);
+} catch (e) {
+  console.warn('Could not set custom DNS servers:', e.message);
+}
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -105,7 +110,9 @@ app.use('/uploads', (req, res, next) => {
 // MongoDB connection
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/memora');
+    const conn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/memora', {
+      family: 4
+    });
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
     console.error('❌ Mongoose connection error details:', error);
