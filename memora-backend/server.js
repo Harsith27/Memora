@@ -128,7 +128,7 @@ const migrateExistingTasks = async () => {
     const Task = require('./models/Task');
     const { fetchGroq } = require('./utils/groq');
 
-    console.log('[Migration] Starting task classification migration...');
+    console.log('[Migration] Starting optimized task classification migration...');
     const tasks = await Task.find({
       $or: [
         { completionType: { $exists: false } },
@@ -141,8 +141,25 @@ const migrateExistingTasks = async () => {
       return;
     }
 
-    console.log(`[Migration] Found ${tasks.length} default tasks/habits to analyze.`);
-    const processedSeriesIds = new Set();
+    // Group tasks by their clean unique title
+    const tasksByTitle = new Map();
+    tasks.forEach((task) => {
+      const cleanTitle = String(task.title || '').trim();
+      if (!cleanTitle || cleanTitle.length < 3) return;
+      const lower = cleanTitle.toLowerCase();
+      if (!tasksByTitle.has(lower)) {
+        tasksByTitle.set(lower, { title: cleanTitle, ids: [], seriesIds: new Set() });
+      }
+      const entry = tasksByTitle.get(lower);
+      entry.ids.push(task._id);
+      if (task.seriesId) {
+        entry.seriesIds.add(task.seriesId);
+      }
+    });
+
+    console.log(`[Migration] Found ${tasks.length} tasks matching ${tasksByTitle.size} unique titles.`);
+    if (tasksByTitle.size === 0) return;
+
     const systemPrompt = `You are a helper that classifies user study tasks and habits into one of four metric tracking types:
 - 'boolean' (tasks that are simple yes/no checkmarks, e.g., "Check email", "Buy milk", "Submit form", "Call mom")
 - 'quantity' (tasks that specify a target numerical quantity, e.g., "Do 50 pushups", "Solve 5 math problems", "Eat 2 eggs", "Read 10 pages")
@@ -156,15 +173,8 @@ For 'percent', targetValue is the percentage target (e.g. 100, 80, etc). If not 
 For 'time', targetValue is the duration normalized into minutes (e.g., 60 for "60 mins", 120 for "2 hrs", 60 for "1 hour").
 Do not include any explanation or markdown formatting in your response. Return ONLY the raw JSON object.`;
 
-    for (const task of tasks) {
-      if (task.seriesId && processedSeriesIds.has(task.seriesId)) {
-        continue;
-      }
-
-      const titleVal = String(task.title || '').trim();
-      if (!titleVal || titleVal.length < 3) continue;
-
-      console.log(`[Migration] Analyzing: "${titleVal}"`);
+    for (const [lowerTitle, entry] of tasksByTitle.entries()) {
+      console.log(`[Migration] Classifying unique title: "${entry.title}"`);
       let classification = { completionType: 'boolean', targetValue: 1 };
 
       try {
@@ -179,7 +189,7 @@ Do not include any explanation or markdown formatting in your response. Return O
             response_format: { type: 'json_object' },
             messages: [
               { role: 'system', content: systemPrompt },
-              { role: 'user', content: `Title: "${titleVal}"` }
+              { role: 'user', content: `Title: "${entry.title}"` }
             ]
           })
         });
@@ -193,48 +203,33 @@ Do not include any explanation or markdown formatting in your response. Return O
               targetValue: Math.max(1, Number(parsed.targetValue) || 1)
             };
           }
+        } else {
+          console.warn(`[Migration] AI query rejected for "${entry.title}" status: ${response.status}`);
         }
       } catch (e) {
-        console.warn(`[Migration] Failed to classify "${titleVal}":`, e.message);
-        continue;
+        console.warn(`[Migration] Error classifying "${entry.title}":`, e.message);
       }
 
-      if (classification.completionType !== 'boolean' || classification.targetValue !== 1) {
-        if (task.seriesId) {
-          console.log(`[Migration] Applying ${classification.completionType} (${classification.targetValue}) to series: ${task.seriesId}`);
-          await Task.updateMany(
-            { seriesId: task.seriesId },
-            {
-              $set: {
-                completionType: classification.completionType,
-                targetValue: classification.targetValue
-              }
-            }
-          );
-          processedSeriesIds.add(task.seriesId);
-        } else {
-          console.log(`[Migration] Applying ${classification.completionType} (${classification.targetValue}) to task: ${task.clientId}`);
-          await Task.updateOne(
-            { _id: task._id },
-            {
-              $set: {
-                completionType: classification.completionType,
-                targetValue: classification.targetValue
-              }
-            }
-          );
-        }
-      } else {
-        await Task.updateOne(
-          { _id: task._id },
-          { $set: { completionType: 'boolean', targetValue: 1 } }
-        );
-        if (task.seriesId) {
-          processedSeriesIds.add(task.seriesId);
-        }
+      // Perform a bulk update for all tasks matching this title or its series
+      const filter = {
+        $or: [
+          { _id: { $in: entry.ids } }
+        ]
+      };
+      if (entry.seriesIds.size > 0) {
+        filter.$or.push({ seriesId: { $in: Array.from(entry.seriesIds) } });
       }
+
+      console.log(`[Migration] Updating matching tasks to ${classification.completionType} (${classification.targetValue})...`);
+      await Task.updateMany(filter, {
+        $set: {
+          completionType: classification.completionType,
+          targetValue: classification.targetValue
+        }
+      });
     }
-    console.log('[Migration] All legacy tasks processed successfully.');
+
+    console.log('[Migration] All legacy tasks migrated successfully.');
   } catch (err) {
     console.error('[Migration] Failed:', err);
   }
