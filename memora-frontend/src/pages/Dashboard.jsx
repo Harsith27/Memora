@@ -3575,7 +3575,7 @@ const Dashboard = () => {
                       return (
                       <div
                         key={task.id || `${selectedDayData?.date || 'day'}-${index}`}
-                        className={`group/taskrow relative rounded-lg border px-3 py-2 transition-colors ${
+                        className={`rounded-lg border px-3 py-2 transition-colors ${
                           isTaskSpotlightActive
                             ? taskSpotlightId === task.id
                               ? 'border-cyan-300/75 bg-cyan-500/12 ring-1 ring-cyan-300/30'
@@ -3583,18 +3583,6 @@ const Dashboard = () => {
                             : 'border-white/10 bg-white/[0.03]'
                         }`}
                       >
-                        {/* Hover tooltip */}
-                        <div className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-56 opacity-0 group-hover/taskrow:opacity-100 transition-opacity duration-150">
-                          <div className="rounded-lg border border-white/10 bg-black/90 backdrop-blur-md shadow-xl px-3 py-2.5">
-                            <p className="text-xs font-semibold text-white leading-snug mb-0.5 line-clamp-2">{task.title || 'Untitled task'}</p>
-                            {task.description
-                              ? <p className="text-[10px] text-gray-400 leading-relaxed line-clamp-3">{task.description}</p>
-                              : <p className="text-[10px] text-gray-600 italic">No description</p>
-                            }
-                          </div>
-                          {/* Arrow */}
-                          <div className="ml-3 h-2 w-2 rotate-45 border-b border-r border-white/10 bg-black/90 -mt-1" />
-                        </div>
                         <div className="flex items-start gap-2">
                           <div className="mt-0.5 flex flex-col items-center gap-1.5 shrink-0">
                             <button
@@ -3634,40 +3622,63 @@ const Dashboard = () => {
                           </div>
 
                           <div className="min-w-0 flex-1">
-                            <button
-                              type="button"
-                              onClick={() => openTaskDetailsDialog(task)}
-                              className={`w-full text-left text-sm flex items-center gap-1.5 hover:text-cyan-200 transition-colors ${task.completed ? 'text-gray-500 line-through' : 'text-gray-200'}`}
-                              title="View full task"
-                            >
-                              {/* Metric type icon */}
-                              {(() => {
-                                const ct = String(task.completionType || 'boolean').toLowerCase();
-                                if (ct === 'quantity') return (
-                                  <span className="shrink-0 inline-flex items-center justify-center w-4 h-4 rounded border border-blue-400/40 bg-blue-500/10 text-blue-400 text-[9px] font-black leading-none select-none" title="Quantity">#</span>
-                                );
-                                if (ct === 'time') return (
-                                  <span className="shrink-0 inline-flex items-center justify-center w-4 h-4 rounded border border-orange-400/40 bg-orange-500/10 text-orange-400" title="Time">
-                                    <Clock className="w-2.5 h-2.5" />
+                            {/* Title button with tooltip on hover */}
+                            <div className="group/title relative">
+                              <button
+                                type="button"
+                                onClick={() => openTaskDetailsDialog(task)}
+                                className={`w-full text-left text-sm flex items-center gap-1.5 hover:text-cyan-200 transition-colors ${task.completed ? 'text-gray-500 line-through' : 'text-gray-200'}`}
+                              >
+                                {/* Metric type icon */}
+                                {(() => {
+                                  const ct = String(task.completionType || 'boolean').toLowerCase();
+                                  if (ct === 'quantity') return (
+                                    <span className="shrink-0 inline-flex items-center justify-center w-4 h-4 rounded border border-blue-400/40 bg-blue-500/10 text-blue-400 text-[9px] font-black leading-none select-none">&#35;</span>
+                                  );
+                                  if (ct === 'time') return (
+                                    <span className="shrink-0 inline-flex items-center justify-center w-4 h-4 rounded border border-orange-400/40 bg-orange-500/10 text-orange-400">
+                                      <Clock className="w-2.5 h-2.5" />
+                                    </span>
+                                  );
+                                  if (ct === 'percent') return (
+                                    <span className="shrink-0 inline-flex items-center justify-center w-4 h-4 rounded border border-emerald-400/40 bg-emerald-500/10 text-emerald-400 text-[9px] font-black leading-none select-none">%</span>
+                                  );
+                                  return null;
+                                })()}
+                                <span className="truncate">{task.title || 'Untitled task'}</span>
+                              </button>
+                              {/* Tooltip — appears below title on hover, stays within panel */}
+                              <div className="pointer-events-none absolute top-full left-0 z-50 mt-1.5 w-52 opacity-0 group-hover/title:opacity-100 transition-opacity duration-150 delay-100">
+                                <div className="rounded-lg border border-white/10 bg-black/95 backdrop-blur-md shadow-2xl px-3 py-2.5">
+                                  <p className="text-xs font-semibold text-white leading-snug mb-1 line-clamp-2">{task.title || 'Untitled task'}</p>
+                                  {task.description
+                                    ? <p className="text-[10px] text-gray-400 leading-relaxed line-clamp-4">{task.description}</p>
+                                    : <p className="text-[10px] text-gray-500 italic">No description</p>
+                                  }
+                                </div>
+                              </div>
+                            </div>
+                            {/* Metric progress + description on one line */}
+                            <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
+                              {task.completionType && String(task.completionType).toLowerCase() !== 'boolean' && (() => {
+                                const ct = String(task.completionType).toLowerCase();
+                                const colorClass = ct === 'quantity' ? 'text-blue-400' : ct === 'time' ? 'text-orange-400' : 'text-emerald-400';
+                                return (
+                                  <span className={`shrink-0 text-[10px] font-bold ${colorClass}`}>
+                                    {task.currentValue || 0}/{task.targetValue || 1}{ct === 'percent' && '%'}{ct === 'time' && 'm'}
                                   </span>
                                 );
-                                if (ct === 'percent') return (
-                                  <span className="shrink-0 inline-flex items-center justify-center w-4 h-4 rounded border border-emerald-400/40 bg-emerald-500/10 text-emerald-400 text-[9px] font-black leading-none select-none" title="Percent">%</span>
-                                );
-                                return null;
                               })()}
-                              <span className="truncate">{task.title || 'Untitled task'}</span>
-                            </button>
-                            {task.completionType && String(task.completionType).toLowerCase() !== 'boolean' && (
-                              <p className="mt-0.5 text-xs font-semibold text-cyan-300/80">
-                                {task.currentValue || 0}/{task.targetValue || 1}{String(task.completionType).toLowerCase() === 'percent' && '%'}{String(task.completionType).toLowerCase() === 'time' && 'm'}
-                              </p>
-                            )}
-                            {task.description ? (
-                              <p className="mt-0.5 text-xs text-gray-400 line-clamp-1">{task.description}</p>
-                            ) : (
-                              <p className="mt-0.5 text-xs text-gray-500">No description</p>
-                            )}
+                              {task.completionType && String(task.completionType).toLowerCase() !== 'boolean' && task.description && (
+                                <span className="shrink-0 text-[10px] text-gray-600">·</span>
+                              )}
+                              {task.description
+                                ? <p className="text-xs text-gray-400 truncate">{task.description}</p>
+                                : !task.completionType || String(task.completionType).toLowerCase() === 'boolean'
+                                  ? <p className="text-xs text-gray-500">No description</p>
+                                  : null
+                              }
+                            </div>
                           </div>
 
                           <div className="shrink-0 flex flex-col items-center gap-1">
