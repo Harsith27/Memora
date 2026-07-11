@@ -65,7 +65,7 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          DEPLOYMENT_OUTPUT=$(vercel deploy --prebuilt --token "$VERCEL_TOKEN" --yes)
+          DEPLOYMENT_OUTPUT=$(vercel deploy --prebuilt --prod --token "$VERCEL_TOKEN" --yes)
           DEPLOYMENT_URL=$(echo "$DEPLOYMENT_OUTPUT" | grep -Eo 'https://[^ ]+\.vercel\.app' | tail -n 1)
 
           if [ -z "$DEPLOYMENT_URL" ]; then

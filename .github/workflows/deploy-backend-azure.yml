@@ -30,7 +30,8 @@ jobs:
 
       - name: Package Backend
         run: |
-          zip -r backend-deploy.zip memora-backend -x "memora-backend/node_modules/*" -x "memora-backend/.git/*" -x "memora-backend/.env*"
+          cd memora-backend
+          zip -r ../backend-deploy.zip . -x "node_modules/*" -x ".git/*" -x ".env*"
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
