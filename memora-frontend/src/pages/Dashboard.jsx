@@ -3575,7 +3575,7 @@ const Dashboard = () => {
                       return (
                       <div
                         key={task.id || `${selectedDayData?.date || 'day'}-${index}`}
-                        className={`rounded-lg border px-3 py-2 transition-colors ${
+                        className={`group/taskrow relative rounded-lg border px-3 py-2 transition-colors ${
                           isTaskSpotlightActive
                             ? taskSpotlightId === task.id
                               ? 'border-cyan-300/75 bg-cyan-500/12 ring-1 ring-cyan-300/30'
@@ -3583,6 +3583,18 @@ const Dashboard = () => {
                             : 'border-white/10 bg-white/[0.03]'
                         }`}
                       >
+                        {/* Hover tooltip */}
+                        <div className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-56 opacity-0 group-hover/taskrow:opacity-100 transition-opacity duration-150">
+                          <div className="rounded-lg border border-white/10 bg-black/90 backdrop-blur-md shadow-xl px-3 py-2.5">
+                            <p className="text-xs font-semibold text-white leading-snug mb-0.5 line-clamp-2">{task.title || 'Untitled task'}</p>
+                            {task.description
+                              ? <p className="text-[10px] text-gray-400 leading-relaxed line-clamp-3">{task.description}</p>
+                              : <p className="text-[10px] text-gray-600 italic">No description</p>
+                            }
+                          </div>
+                          {/* Arrow */}
+                          <div className="ml-3 h-2 w-2 rotate-45 border-b border-r border-white/10 bg-black/90 -mt-1" />
+                        </div>
                         <div className="flex items-start gap-2">
                           <div className="mt-0.5 flex flex-col items-center gap-1.5 shrink-0">
                             <button
@@ -3645,12 +3657,12 @@ const Dashboard = () => {
                                 return null;
                               })()}
                               <span className="truncate">{task.title || 'Untitled task'}</span>
-                              {task.completionType && String(task.completionType).toLowerCase() !== 'boolean' && (
-                                <span className="shrink-0 ml-1 text-xs font-semibold text-cyan-300">
-                                  ({task.currentValue || 0}/{task.targetValue || 1}{String(task.completionType).toLowerCase() === 'percent' && '%'}{String(task.completionType).toLowerCase() === 'time' && 'm'})
-                                </span>
-                              )}
                             </button>
+                            {task.completionType && String(task.completionType).toLowerCase() !== 'boolean' && (
+                              <p className="mt-0.5 text-xs font-semibold text-cyan-300/80">
+                                {task.currentValue || 0}/{task.targetValue || 1}{String(task.completionType).toLowerCase() === 'percent' && '%'}{String(task.completionType).toLowerCase() === 'time' && 'm'}
+                              </p>
+                            )}
                             {task.description ? (
                               <p className="mt-0.5 text-xs text-gray-400 line-clamp-1">{task.description}</p>
                             ) : (
