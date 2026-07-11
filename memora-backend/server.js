@@ -106,6 +106,7 @@ const connectDB = async () => {
     const conn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/memora');
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
+    console.error('❌ Mongoose connection error details:', error);
     console.warn('⚠️  MongoDB connection failed. Running in development mode without database.');
     console.warn('To use full functionality, please start MongoDB or provide a valid MONGODB_URI');
   }

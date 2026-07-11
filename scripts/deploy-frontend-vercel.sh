@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FRONTEND_DIR="$ROOT_DIR/memora-frontend"
-ALIAS_URL="${1:-memoraapp.vercel.app}"
+ALIAS_URL="${1:-memyapp.vercel.app}"
 BACKEND_HEALTH_URL="${2:-https://memora-api-04021453.azurewebsites.net/api/health}"
 DEPLOY_TARGET="${3:-preview}"
 

@@ -1,12 +1,18 @@
 name: Deploy Frontend to Vercel
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - memora-frontend/**
+      - .github/workflows/deploy-frontend-vercel.yml
   workflow_dispatch:
     inputs:
       alias_domain:
-        description: 'Target alias for this deployment (use memoraapp-next.vercel.app)'
+        description: 'Target alias for this deployment'
         required: true
-        default: 'memoraapp-next.vercel.app'
+        default: 'memyapp.vercel.app'
         type: string
 
 jobs:
@@ -29,14 +35,17 @@ jobs:
         working-directory: memora-frontend
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
 
       - name: Guard protected legacy URL
         run: |
           TARGET_ALIAS="${{ inputs.alias_domain }}"
+          TARGET_ALIAS="${TARGET_ALIAS:-memyapp.vercel.app}"
           if [ "$TARGET_ALIAS" = "memoraapp.vercel.app" ]; then
             echo "Refusing deployment: memoraapp.vercel.app is deprecated."
-            echo "Use memoraapp-next.vercel.app instead"
+            echo "Use memyapp.vercel.app instead"
             exit 1
           fi
 
@@ -73,4 +82,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: vercel alias set "${{ steps.deploy_frontend.outputs.deployment_url }}" "${{ inputs.alias_domain }}" --token "$VERCEL_TOKEN"
+        run: |
+          TARGET_ALIAS="${{ inputs.alias_domain }}"
+          TARGET_ALIAS="${TARGET_ALIAS:-memyapp.vercel.app}"
+          vercel alias set "${{ steps.deploy_frontend.outputs.deployment_url }}" "$TARGET_ALIAS" --token "$VERCEL_TOKEN"

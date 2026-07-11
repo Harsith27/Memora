@@ -28,9 +28,15 @@ jobs:
         working-directory: memora-backend
         run: npm ci
 
+      - name: Package Backend
+        run: |
+          zip -r backend-deploy.zip memora-backend -x "memora-backend/node_modules/*" -x "memora-backend/.git/*" -x "memora-backend/.env*"
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ vars.AZURE_BACKEND_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_BACKEND }}
-          package: memora-backend
+          package: backend-deploy.zip
+        env:
+          SCM_DO_BUILD_DURING_DEPLOYMENT: true

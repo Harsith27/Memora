@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
 const SITE_NAME = 'Memy';
-const SITE_URL = 'https://memy.vercel.app';
+const SITE_URL = 'https://memyapp.vercel.app';
 
 const PUBLIC_DOC_META = {
   '/docs': {
