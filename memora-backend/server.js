@@ -114,10 +114,129 @@ const connectDB = async () => {
       family: 4
     });
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+    // Run background classification migration for existing legacy tasks
+    migrateExistingTasks();
   } catch (error) {
     console.error('❌ Mongoose connection error details:', error);
     console.warn('⚠️  MongoDB connection failed. Running in development mode without database.');
     console.warn('To use full functionality, please start MongoDB or provide a valid MONGODB_URI');
+  }
+};
+
+const migrateExistingTasks = async () => {
+  try {
+    const Task = require('./models/Task');
+    const { fetchGroq } = require('./utils/groq');
+
+    console.log('[Migration] Starting task classification migration...');
+    const tasks = await Task.find({
+      $or: [
+        { completionType: { $exists: false } },
+        { completionType: 'boolean', targetValue: 1 }
+      ]
+    }).lean();
+
+    if (tasks.length === 0) {
+      console.log('[Migration] No default tasks need classification.');
+      return;
+    }
+
+    console.log(`[Migration] Found ${tasks.length} default tasks/habits to analyze.`);
+    const processedSeriesIds = new Set();
+    const systemPrompt = `You are a helper that classifies user study tasks and habits into one of four metric tracking types:
+- 'boolean' (tasks that are simple yes/no checkmarks, e.g., "Check email", "Buy milk", "Submit form", "Call mom")
+- 'quantity' (tasks that specify a target numerical quantity, e.g., "Do 50 pushups", "Solve 5 math problems", "Eat 2 eggs", "Read 10 pages")
+- 'percent' (tasks that imply progress tracking, completion, or reading/study drafts where percentage-based progress is desired, e.g., "Complete Fabric Concept", "Finish writing project draft", "Work on physics essay", "Complete 80% of project draft", "Review 100% of biology cards")
+- 'time' (tasks that specify a duration in minutes or hours, e.g., "Study Physics for 60 mins", "Revise React for 2 hrs", "Code for 1 hour")
+
+Return ONLY a valid JSON object with keys "completionType" and "targetValue".
+For 'boolean', targetValue should be 1.
+For 'quantity', targetValue is the numerical quantity target (e.g. 50, 5, etc).
+For 'percent', targetValue is the percentage target (e.g. 100, 80, etc). If not specified, default to 100.
+For 'time', targetValue is the duration normalized into minutes (e.g., 60 for "60 mins", 120 for "2 hrs", 60 for "1 hour").
+Do not include any explanation or markdown formatting in your response. Return ONLY the raw JSON object.`;
+
+    for (const task of tasks) {
+      if (task.seriesId && processedSeriesIds.has(task.seriesId)) {
+        continue;
+      }
+
+      const titleVal = String(task.title || '').trim();
+      if (!titleVal || titleVal.length < 3) continue;
+
+      console.log(`[Migration] Analyzing: "${titleVal}"`);
+      let classification = { completionType: 'boolean', targetValue: 1 };
+
+      try {
+        const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+        const response = await fetchGroq('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            temperature: 0.1,
+            max_tokens: 150,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: `Title: "${titleVal}"` }
+            ]
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const parsed = JSON.parse((data?.choices?.[0]?.message?.content || '').trim());
+          if (['boolean', 'quantity', 'percent', 'time'].includes(parsed.completionType)) {
+            classification = {
+              completionType: parsed.completionType,
+              targetValue: Math.max(1, Number(parsed.targetValue) || 1)
+            };
+          }
+        }
+      } catch (e) {
+        console.warn(`[Migration] Failed to classify "${titleVal}":`, e.message);
+        continue;
+      }
+
+      if (classification.completionType !== 'boolean' || classification.targetValue !== 1) {
+        if (task.seriesId) {
+          console.log(`[Migration] Applying ${classification.completionType} (${classification.targetValue}) to series: ${task.seriesId}`);
+          await Task.updateMany(
+            { seriesId: task.seriesId },
+            {
+              $set: {
+                completionType: classification.completionType,
+                targetValue: classification.targetValue
+              }
+            }
+          );
+          processedSeriesIds.add(task.seriesId);
+        } else {
+          console.log(`[Migration] Applying ${classification.completionType} (${classification.targetValue}) to task: ${task.clientId}`);
+          await Task.updateOne(
+            { _id: task._id },
+            {
+              $set: {
+                completionType: classification.completionType,
+                targetValue: classification.targetValue
+              }
+            }
+          );
+        }
+      } else {
+        await Task.updateOne(
+          { _id: task._id },
+          { $set: { completionType: 'boolean', targetValue: 1 } }
+        );
+        if (task.seriesId) {
+          processedSeriesIds.add(task.seriesId);
+        }
+      }
+    }
+    console.log('[Migration] All legacy tasks processed successfully.');
+  } catch (err) {
+    console.error('[Migration] Failed:', err);
   }
 };
 

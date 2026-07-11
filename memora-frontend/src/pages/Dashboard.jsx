@@ -12,6 +12,7 @@ import AddTopicModal from '../components/AddTopicModal';
 import AddTaskModal from '../components/AddTaskModal';
 import EditTaskModal from '../components/EditTaskModal';
 import EditTopicModal from '../components/EditTopicModal';
+import Modal from '../components/Modal';
 import Toast from '../components/Toast';
 import ProgressRing from '../components/ProgressRing';
 import Dialog from '../components/Dialog';
@@ -2180,16 +2181,26 @@ const Dashboard = () => {
     }
   };
 
+  const getIntelligentStep = (target) => {
+    const val = Number(target) || 1;
+    if (val <= 10) return 1;
+    if (val <= 50) return 5;
+    if (val <= 150) return 10;
+    if (val <= 300) return 15;
+    return 30;
+  };
+
   useEffect(() => {
     if (!isPartialModalOpen || !partialModalTask) return;
 
     const handleKeyDown = (e) => {
+      const step = getIntelligentStep(partialModalTask.targetValue);
       if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
         e.preventDefault();
-        setPartialModalValue((prev) => Math.min(partialModalTask.targetValue, prev + 1));
+        setPartialModalValue((prev) => Math.min(partialModalTask.targetValue, prev + step));
       } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
         e.preventDefault();
-        setPartialModalValue((prev) => Math.max(0, prev - 1));
+        setPartialModalValue((prev) => Math.max(0, prev - step));
       } else if (e.key === 'Enter') {
         e.preventDefault();
         handleSubmitPartialProgress();
@@ -3618,11 +3629,11 @@ const Dashboard = () => {
                               title="View full task"
                             >
                               {task.title || 'Untitled task'}
-                              {task.completionType && task.completionType !== 'boolean' && (
+                              {task.completionType && String(task.completionType).toLowerCase() !== 'boolean' && (
                                 <span className="ml-2 text-xs font-semibold text-cyan-300">
                                   ({task.currentValue || 0} / {task.targetValue || 1}
-                                  {task.completionType === 'percent' && '%'}
-                                  {task.completionType === 'time' && 'm'})
+                                  {String(task.completionType).toLowerCase() === 'percent' && '%'}
+                                  {String(task.completionType).toLowerCase() === 'time' && 'm'})
                                 </span>
                               )}
                             </button>
@@ -3796,25 +3807,18 @@ const Dashboard = () => {
       />
 
       {/* Partial Task Completion Slider Modal */}
-      {isPartialModalOpen && partialModalTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md transition-opacity">
-          <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-slate-950/80 p-6 shadow-2xl backdrop-blur-xl animate-fade-in flex flex-col gap-5 text-white">
-            <button
-              type="button"
-              onClick={() => setIsPartialModalOpen(false)}
-              className="absolute right-4 top-4 text-gray-400 hover:text-white transition-colors"
-              title="Close modal"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            <div>
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Target className="h-5 w-5 text-amber-400" />
-                Adjust Progress
-              </h3>
-              <p className="mt-1.5 text-xs text-gray-400 line-clamp-2">
-                Update progress for: <strong className="text-gray-200">{partialModalTask.title}</strong>
+      <Modal
+        isOpen={isPartialModalOpen}
+        onClose={() => setIsPartialModalOpen(false)}
+        title="Adjust Progress"
+        size="sm"
+      >
+        {partialModalTask && (
+          <div className="flex flex-col gap-6 text-white">
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Task / Habit</span>
+              <p className="text-sm text-gray-200 font-medium">
+                {partialModalTask.title}
               </p>
             </div>
 
@@ -3828,7 +3832,7 @@ const Dashboard = () => {
               <div className="flex w-full items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setPartialModalValue(prev => Math.max(0, prev - 1))}
+                  onClick={() => setPartialModalValue(prev => Math.max(0, prev - getIntelligentStep(partialModalTask.targetValue)))}
                   className="h-10 w-10 shrink-0 border border-white/15 bg-white/5 rounded-lg flex items-center justify-center text-lg font-bold hover:bg-white/10 transition-all active:scale-95 text-gray-300 hover:text-white"
                   title="Decrease"
                 >
@@ -3846,7 +3850,7 @@ const Dashboard = () => {
 
                 <button
                   type="button"
-                  onClick={() => setPartialModalValue(prev => Math.min(partialModalTask.targetValue, prev + 1))}
+                  onClick={() => setPartialModalValue(prev => Math.min(partialModalTask.targetValue, prev + getIntelligentStep(partialModalTask.targetValue)))}
                   className="h-10 w-10 shrink-0 border border-white/15 bg-white/5 rounded-lg flex items-center justify-center text-lg font-bold hover:bg-white/10 transition-all active:scale-95 text-gray-300 hover:text-white"
                   title="Increase"
                 >
@@ -3854,12 +3858,12 @@ const Dashboard = () => {
                 </button>
               </div>
 
-              <p className="text-[10px] text-gray-500 text-center">
-                Tip: Use Left/Right Arrow keys on your keyboard to adjust, and Enter to submit.
+              <p className="text-[10px] text-gray-500 text-center leading-normal">
+                Tip: Press Arrow Left/Right to adjust (step is {getIntelligentStep(partialModalTask.targetValue)}), and Enter to save.
               </p>
             </div>
 
-            <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-4">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
               <button
                 type="button"
                 onClick={() => setIsPartialModalOpen(false)}
@@ -3876,8 +3880,8 @@ const Dashboard = () => {
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {/* Toast Notifications */}
       <Toast

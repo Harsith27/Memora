@@ -221,15 +221,15 @@ router.post('/sync', authenticateToken, async (req, res) => {
 });
 
 const systemPrompt = `You are a helper that classifies user study tasks and habits into one of four metric tracking types:
-- 'boolean' (tasks that are simple checkboxes/done-undone, e.g., "Read book chapters", "Write essay draft", "Check email")
-- 'quantity' (tasks that have a target numerical quantity, e.g., "Do 50 pushups", "Solve 5 math problems", "Read 5 articles")
-- 'percent' (tasks that target a percentage or completion ratio, e.g., "Complete 80% of project draft", "Review 100% of biology cards")
+- 'boolean' (tasks that are simple yes/no checkmarks, e.g., "Check email", "Buy milk", "Submit form", "Call mom")
+- 'quantity' (tasks that specify a target numerical quantity, e.g., "Do 50 pushups", "Solve 5 math problems", "Eat 2 eggs", "Read 10 pages")
+- 'percent' (tasks that imply progress tracking, completion, or reading/study drafts where percentage-based progress is desired, e.g., "Complete Fabric Concept", "Finish writing project draft", "Work on physics essay", "Complete 80% of project draft", "Review 100% of biology cards")
 - 'time' (tasks that specify a duration in minutes or hours, e.g., "Study Physics for 60 mins", "Revise React for 2 hrs", "Code for 1 hour")
 
 Return ONLY a valid JSON object with keys "completionType" and "targetValue".
 For 'boolean', targetValue should be 1.
 For 'quantity', targetValue is the numerical quantity target (e.g. 50, 5, etc).
-For 'percent', targetValue is the percentage target (e.g. 80, 100).
+For 'percent', targetValue is the percentage target (e.g. 100, 80, etc). If not specified, default to 100.
 For 'time', targetValue is the duration normalized into minutes (e.g., 60 for "60 mins", 120 for "2 hrs", 60 for "1 hour").
 Do not include any explanation or markdown formatting in your response. Return ONLY the raw JSON object.`;
 
