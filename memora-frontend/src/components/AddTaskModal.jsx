@@ -229,13 +229,29 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
       return;
     }
 
+    let finalCompletionType = formData.completionType;
+    let finalTargetValue = formData.targetValue;
+
+    const titleVal = String(formData.title).trim();
+    if (titleVal.length >= 3 && (isClassifying || (formData.completionType === 'boolean' && formData.targetValue === 1))) {
+      try {
+        const result = await taskService.classifyTaskTitle(titleVal, formData.description);
+        if (result && result.completionType) {
+          finalCompletionType = result.completionType;
+          finalTargetValue = result.completionType === 'boolean' ? 1 : Number(result.targetValue || 1);
+        }
+      } catch (e) {
+        console.warn('Inline submit classification failed:', e);
+      }
+    }
+
     const payload = {
       title: String(formData.title || '').trim(),
       description: String(formData.description || '').trim(),
       date: parsedDate,
       taskType: formData.taskType === 'habit' ? 'custom-recurring' : 'one-time',
-      completionType: formData.completionType,
-      targetValue: formData.completionType === 'boolean' ? 1 : Number(formData.targetValue || 1),
+      completionType: finalCompletionType,
+      targetValue: finalCompletionType === 'boolean' ? 1 : Number(finalTargetValue || 1),
       currentValue: 0,
       partiallyCompleted: false,
       customDates: []

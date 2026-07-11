@@ -517,6 +517,10 @@ const addTask = (userOrKey, taskInput) => {
     taskType,
     seriesId,
     completed: false,
+    completionType: taskInput?.completionType,
+    targetValue: taskInput?.targetValue,
+    currentValue: taskInput?.currentValue,
+    partiallyCompleted: taskInput?.partiallyCompleted,
     createdAt: now + index,
     updatedAt: now + index
   }));
@@ -559,6 +563,15 @@ const toggleTaskCompletion = (userOrKey, taskId) => {
   const tasks = getTasks(userOrKey);
   const target = tasks.find((task) => task.id === taskId);
   if (!target) return tasks;
+
+  if (target.completionType && target.completionType !== 'boolean') {
+    const nextCompleted = !target.completed;
+    return updateTask(userOrKey, taskId, {
+      completed: nextCompleted,
+      currentValue: nextCompleted ? target.targetValue : 0,
+      partiallyCompleted: false
+    });
+  }
 
   return updateTask(userOrKey, taskId, { completed: !target.completed });
 };
