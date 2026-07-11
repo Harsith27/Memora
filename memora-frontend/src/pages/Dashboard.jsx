@@ -572,6 +572,9 @@ const Dashboard = () => {
     return `${year}-${month}-${day}`;
   });
   const [tasks, setTasks] = useState([]);
+  const [isPartialModalOpen, setIsPartialModalOpen] = useState(false);
+  const [partialModalTask, setPartialModalTask] = useState(null);
+  const [partialModalValue, setPartialModalValue] = useState(0);
   const [processingTasks, setProcessingTasks] = useState(new Set());
   const [isForwardingDayTasks, setIsForwardingDayTasks] = useState(false);
   const [taskSpotlightId, setTaskSpotlightId] = useState(null);
@@ -2125,6 +2128,81 @@ const Dashboard = () => {
     commitToggle(false);
   };
 
+  const handleRightClickCheckbox = (task) => {
+    if (!task) return;
+    if (!task.completionType || task.completionType === 'boolean') {
+      showToast('This task does not support partial tracking. Adjust it in Task settings.', 'error');
+      return;
+    }
+    setPartialModalTask(task);
+    setPartialModalValue(task.currentValue || 0);
+    setIsPartialModalOpen(true);
+  };
+
+  const handleSubmitPartialProgress = async () => {
+    if (!partialModalTask) return;
+    const taskId = partialModalTask.id;
+    const value = Math.max(0, Math.min(partialModalTask.targetValue, Number(partialModalValue) || 0));
+
+    const completed = value === partialModalTask.targetValue;
+    const partiallyCompleted = value > 0 && value < partialModalTask.targetValue;
+
+    setProcessingTasks((prev) => new Set(prev).add(taskId));
+    setIsPartialModalOpen(false);
+
+    try {
+      taskService.updateTask(userTaskStorageKey, taskId, {
+        currentValue: value,
+        completed,
+        partiallyCompleted
+      });
+
+      // Update state locally
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId
+            ? { ...t, currentValue: value, completed, partiallyCompleted }
+            : t
+        )
+      );
+
+      showToast(`Saved progress: ${value} / ${partialModalTask.targetValue}`, 'success');
+      requestTaskSyncRefresh();
+    } catch (err) {
+      console.error('Failed to save partial progress:', err);
+      showToast('Failed to update progress', 'error');
+    } finally {
+      setProcessingTasks((prev) => {
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (!isPartialModalOpen || !partialModalTask) return;
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        setPartialModalValue((prev) => Math.min(partialModalTask.targetValue, prev + 1));
+      } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        e.preventDefault();
+        setPartialModalValue((prev) => Math.max(0, prev - 1));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSubmitPartialProgress();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsPartialModalOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPartialModalOpen, partialModalTask, partialModalValue]);
+
   const handleForwardTaskToNextDay = (task) => {
     const taskId = task?.id;
     if (!taskId) return;
@@ -3499,15 +3577,24 @@ const Dashboard = () => {
                             <button
                               type="button"
                               onClick={() => handleToggleTaskCompletion(task)}
+                              onContextMenu={(e) => { e.preventDefault(); handleRightClickCheckbox(task); }}
                               disabled={isTaskBusy}
                               className={`inline-flex h-4 w-4 items-center justify-center border text-[10px] transition-colors ${isHabitTask ? 'rounded-full' : 'rounded'} ${
                                 task.completed
                                   ? 'border-emerald-400/70 bg-emerald-500/20 text-emerald-100'
-                                  : 'border-white/30 bg-transparent text-transparent hover:border-emerald-300/60'
+                                  : task.partiallyCompleted
+                                    ? 'border-amber-400/70 bg-amber-500/20 text-amber-200'
+                                    : 'border-white/30 bg-transparent text-transparent hover:border-emerald-300/60'
                               } ${isTaskBusy ? 'opacity-50 cursor-not-allowed' : ''}`}
-                              title={task.completed ? 'Mark as pending' : 'Mark as done'}
+                              title={
+                                task.completed
+                                  ? 'Mark as pending'
+                                  : task.partiallyCompleted
+                                    ? 'Right-click to adjust progress, click to complete'
+                                    : 'Mark as done (Right-click to set progress)'
+                              }
                             >
-                              ✓
+                              {task.completed ? '✓' : task.partiallyCompleted ? '◒' : '✓'}
                             </button>
 
                             {isPastDayTask && !task.completed && !isHabitTask ? (
@@ -3531,6 +3618,13 @@ const Dashboard = () => {
                               title="View full task"
                             >
                               {task.title || 'Untitled task'}
+                              {task.completionType && task.completionType !== 'boolean' && (
+                                <span className="ml-2 text-xs font-semibold text-cyan-300">
+                                  ({task.currentValue || 0} / {task.targetValue || 1}
+                                  {task.completionType === 'percent' && '%'}
+                                  {task.completionType === 'time' && 'm'})
+                                </span>
+                              )}
                             </button>
                             {task.description ? (
                               <p className="mt-0.5 text-xs text-gray-400 line-clamp-1">{task.description}</p>
@@ -3700,6 +3794,90 @@ const Dashboard = () => {
         topic={editingTopic}
         loading={topicsLoading}
       />
+
+      {/* Partial Task Completion Slider Modal */}
+      {isPartialModalOpen && partialModalTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md transition-opacity">
+          <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-slate-950/80 p-6 shadow-2xl backdrop-blur-xl animate-fade-in flex flex-col gap-5 text-white">
+            <button
+              type="button"
+              onClick={() => setIsPartialModalOpen(false)}
+              className="absolute right-4 top-4 text-gray-400 hover:text-white transition-colors"
+              title="Close modal"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div>
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Target className="h-5 w-5 text-amber-400" />
+                Adjust Progress
+              </h3>
+              <p className="mt-1.5 text-xs text-gray-400 line-clamp-2">
+                Update progress for: <strong className="text-gray-200">{partialModalTask.title}</strong>
+              </p>
+            </div>
+
+            <div className="flex flex-col items-center gap-4 bg-white/5 border border-white/10 rounded-xl p-5">
+              <span className="text-4xl font-extrabold text-cyan-300 select-none tracking-wider">
+                {partialModalValue} / {partialModalTask.targetValue}
+                {partialModalTask.completionType === 'percent' && '%'}
+                {partialModalTask.completionType === 'time' && 'm'}
+              </span>
+
+              <div className="flex w-full items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPartialModalValue(prev => Math.max(0, prev - 1))}
+                  className="h-10 w-10 shrink-0 border border-white/15 bg-white/5 rounded-lg flex items-center justify-center text-lg font-bold hover:bg-white/10 transition-all active:scale-95 text-gray-300 hover:text-white"
+                  title="Decrease"
+                >
+                  -
+                </button>
+
+                <input
+                  type="range"
+                  min="0"
+                  max={partialModalTask.targetValue}
+                  value={partialModalValue}
+                  onChange={(e) => setPartialModalValue(Math.max(0, Math.min(partialModalTask.targetValue, Number(e.target.value) || 0)))}
+                  className="w-full h-2 rounded-lg bg-white/10 accent-cyan-400 cursor-pointer focus:outline-none"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setPartialModalValue(prev => Math.min(partialModalTask.targetValue, prev + 1))}
+                  className="h-10 w-10 shrink-0 border border-white/15 bg-white/5 rounded-lg flex items-center justify-center text-lg font-bold hover:bg-white/10 transition-all active:scale-95 text-gray-300 hover:text-white"
+                  title="Increase"
+                >
+                  +
+                </button>
+              </div>
+
+              <p className="text-[10px] text-gray-500 text-center">
+                Tip: Use Left/Right Arrow keys on your keyboard to adjust, and Enter to submit.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-4">
+              <button
+                type="button"
+                onClick={() => setIsPartialModalOpen(false)}
+                className="rounded-lg border border-white/20 px-4 py-2 text-sm text-gray-300 transition-colors hover:border-white/40 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitPartialProgress}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-300/40 bg-cyan-500/15 px-4 py-2 text-sm font-medium text-cyan-100 transition-colors hover:bg-cyan-500/25"
+              >
+                Save Progress
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast Notifications */}
       <Toast

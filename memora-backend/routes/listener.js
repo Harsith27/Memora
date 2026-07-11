@@ -4,6 +4,7 @@ const path = require('path');
 const multer = require('multer');
 const mongoose = require('mongoose');
 const { Blob: NodeBlob } = require('buffer');
+const { fetchGroq, getApiKey } = require('../utils/groq');
 
 const { authenticateToken } = require('../middleware/auth');
 const Topic = require('../models/Topic');
@@ -108,7 +109,7 @@ const upload = multer({
 });
 
 const callGroqTranscription = async ({ filePath, mimeType, fileName, language }) => {
-  const apiKey = normalizeGroqApiKey(process.env.GROQ_API_KEY);
+  const apiKey = getApiKey();
   if (!apiKey) {
     throw new Error('GROQ_API_KEY is missing in backend environment variables');
   }
@@ -130,11 +131,8 @@ const callGroqTranscription = async ({ filePath, mimeType, fileName, language })
   body.append('response_format', 'json');
   body.append('file', fileBlob, fileName || 'listener-recording.webm');
 
-  const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+  const response = await fetchGroq('https://api.groq.com/openai/v1/audio/transcriptions', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`
-    },
     body
   });
 
@@ -154,17 +152,16 @@ const callGroqTranscription = async ({ filePath, mimeType, fileName, language })
 };
 
 const callGroqSummarization = async (transcript) => {
-  const apiKey = normalizeGroqApiKey(process.env.GROQ_API_KEY);
+  const apiKey = getApiKey();
   if (!apiKey) {
     throw new Error('GROQ_API_KEY is missing in backend environment variables');
   }
 
   const summaryModel = process.env.GROQ_MODEL || process.env.GROQ_SUMMARY_MODEL || 'llama-3.3-70b-versatile';
 
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  const response = await fetchGroq('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({

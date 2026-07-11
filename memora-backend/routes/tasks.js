@@ -1,6 +1,7 @@
 const express = require('express');
 const Task = require('../models/Task');
 const { authenticateToken } = require('../middleware/auth');
+const { fetchGroq } = require('../utils/groq');
 
 const router = express.Router();
 
@@ -56,6 +57,11 @@ const normalizeTaskInput = (rawTask) => {
     toNumberOrFallback(rawTask?.updatedAtMs ?? rawTask?.updatedAt, createdAtMs)
   );
 
+  const completionType = String(rawTask?.completionType || 'boolean');
+  const targetValue = toNumberOrFallback(rawTask?.targetValue, 1);
+  const currentValue = toNumberOrFallback(rawTask?.currentValue, 0);
+  const partiallyCompleted = Boolean(rawTask?.partiallyCompleted);
+
   return {
     clientId: id,
     title,
@@ -64,6 +70,10 @@ const normalizeTaskInput = (rawTask) => {
     taskType: normalizeTaskType(rawTask?.taskType),
     seriesId: rawTask?.seriesId ? String(rawTask.seriesId) : null,
     completed: Boolean(rawTask?.completed),
+    completionType,
+    targetValue,
+    currentValue,
+    partiallyCompleted,
     createdAtMs,
     updatedAtMs
   };
@@ -98,6 +108,10 @@ const mapTaskForResponse = (taskDoc) => {
     taskType: normalizeTaskType(taskDoc.taskType),
     seriesId: taskDoc.seriesId || null,
     completed: Boolean(taskDoc.completed),
+    completionType: taskDoc.completionType || 'boolean',
+    targetValue: Number(taskDoc.targetValue ?? 1),
+    currentValue: Number(taskDoc.currentValue ?? 0),
+    partiallyCompleted: Boolean(taskDoc.partiallyCompleted),
     createdAt: Number(taskDoc.createdAtMs) || Date.now(),
     updatedAt: Number(taskDoc.updatedAtMs) || Number(taskDoc.createdAtMs) || Date.now()
   };
@@ -175,6 +189,10 @@ router.post('/sync', authenticateToken, async (req, res) => {
               taskType: task.taskType,
               seriesId: task.seriesId,
               completed: task.completed,
+              completionType: task.completionType,
+              targetValue: task.targetValue,
+              currentValue: task.currentValue,
+              partiallyCompleted: task.partiallyCompleted,
               createdAtMs: task.createdAtMs,
               updatedAtMs: task.updatedAtMs
             }
@@ -199,6 +217,74 @@ router.post('/sync', authenticateToken, async (req, res) => {
       success: false,
       message: 'Failed to sync tasks'
     });
+  }
+});
+
+const systemPrompt = `You are a helper that classifies user study tasks and habits into one of four metric tracking types:
+- 'boolean' (tasks that are simple checkboxes/done-undone, e.g., "Read book chapters", "Write essay draft", "Check email")
+- 'quantity' (tasks that have a target numerical quantity, e.g., "Do 50 pushups", "Solve 5 math problems", "Read 5 articles")
+- 'percent' (tasks that target a percentage or completion ratio, e.g., "Complete 80% of project draft", "Review 100% of biology cards")
+- 'time' (tasks that specify a duration in minutes or hours, e.g., "Study Physics for 60 mins", "Revise React for 2 hrs", "Code for 1 hour")
+
+Return ONLY a valid JSON object with keys "completionType" and "targetValue".
+For 'boolean', targetValue should be 1.
+For 'quantity', targetValue is the numerical quantity target (e.g. 50, 5, etc).
+For 'percent', targetValue is the percentage target (e.g. 80, 100).
+For 'time', targetValue is the duration normalized into minutes (e.g., 60 for "60 mins", 120 for "2 hrs", 60 for "1 hour").
+Do not include any explanation or markdown formatting in your response. Return ONLY the raw JSON object.`;
+
+router.post('/classify', authenticateToken, async (req, res) => {
+  try {
+    const { title, description } = req.body;
+    if (!title || !String(title).trim()) {
+      return res.json({ success: true, completionType: 'boolean', targetValue: 1 });
+    }
+
+    const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+    const response = await fetchGroq('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.1,
+        max_tokens: 150,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Title: "${title}"\nDescription: "${description || ''}"` }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      console.warn(`Groq classification failed (${response.status})`);
+      return res.json({ success: true, completionType: 'boolean', targetValue: 1 });
+    }
+
+    const data = await response.json();
+    const rawText = data?.choices?.[0]?.message?.content || '';
+    
+    try {
+      const parsed = JSON.parse(rawText.trim());
+      const completionType = ['boolean', 'quantity', 'percent', 'time'].includes(parsed.completionType)
+        ? parsed.completionType
+        : 'boolean';
+      const targetValue = Math.max(1, Number(parsed.targetValue) || 1);
+      
+      return res.json({
+        success: true,
+        completionType,
+        targetValue
+      });
+    } catch (parseErr) {
+      console.warn('Failed to parse Groq classification JSON:', rawText, parseErr);
+      return res.json({ success: true, completionType: 'boolean', targetValue: 1 });
+    }
+  } catch (error) {
+    console.error('Classification error:', error);
+    return res.json({ success: true, completionType: 'boolean', targetValue: 1 });
   }
 });
 

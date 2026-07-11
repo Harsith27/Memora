@@ -42,7 +42,25 @@ const taskSchema = new mongoose.Schema({
     default: null,
     trim: true
   },
-  completed: {
+   completed: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  completionType: {
+    type: String,
+    enum: ['boolean', 'quantity', 'percent', 'time'],
+    default: 'boolean'
+  },
+  targetValue: {
+    type: Number,
+    default: 1
+  },
+  currentValue: {
+    type: Number,
+    default: 0
+  },
+  partiallyCompleted: {
     type: Boolean,
     default: false,
     index: true

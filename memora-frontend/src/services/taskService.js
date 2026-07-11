@@ -173,6 +173,10 @@ const normalizeTask = (task) => {
     taskType,
     seriesId: task?.seriesId ? String(task.seriesId) : null,
     completed: Boolean(task?.completed),
+    completionType: String(task?.completionType || 'boolean'),
+    targetValue: Number(task?.targetValue ?? 1),
+    currentValue: Number(task?.currentValue ?? 0),
+    partiallyCompleted: Boolean(task?.partiallyCompleted ?? false),
     createdAt,
     updatedAt
   };
@@ -312,6 +316,10 @@ const taskFingerprint = (tasks) => {
     taskType: task.taskType,
     seriesId: task.seriesId,
     completed: task.completed,
+    completionType: task.completionType,
+    targetValue: task.targetValue,
+    currentValue: task.currentValue,
+    partiallyCompleted: task.partiallyCompleted,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt
   })));
@@ -610,6 +618,22 @@ const searchTasks = (userOrKey, rawQuery, limit = 20) => {
   return [...startsWith, ...includes].slice(0, Math.max(1, Number(limit) || 20));
 };
 
+const classifyTaskTitle = async (title, description = '') => {
+  try {
+    const payload = await requestTaskApi('/tasks/classify', {
+      method: 'POST',
+      body: JSON.stringify({ title, description })
+    });
+    return {
+      completionType: payload?.completionType || 'boolean',
+      targetValue: payload?.targetValue ?? 1
+    };
+  } catch (error) {
+    console.warn('Failed to classify task title:', error);
+    return { completionType: 'boolean', targetValue: 1 };
+  }
+};
+
 const taskService = {
   TASK_EVENT_NAME,
   TASK_TYPES,
@@ -625,7 +649,8 @@ const taskService = {
   deleteTask,
   deleteTasks,
   getTasksByDate,
-  searchTasks
+  searchTasks,
+  classifyTaskTitle
 };
 
 export default taskService;

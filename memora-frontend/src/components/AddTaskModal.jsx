@@ -4,6 +4,7 @@ import DatePicker from 'react-datepicker';
 import Modal from './Modal';
 import ShadcnSelect from './ShadcnSelect';
 import { formatDateDDMMYYYY, getTodayIsoDateKey, parseDateInputToIso } from '../utils/dateFormat';
+import taskService from '../services/taskService';
 
 const getLocalDateKey = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value);
@@ -73,9 +74,13 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
     description: '',
     date: getDefaultDateInput(defaultDate),
     taskType: 'task',
+    completionType: 'boolean',
+    targetValue: 1,
     recurringWeekdays: [...DEFAULT_WEEKDAY_SELECTION]
   });
   const [errors, setErrors] = useState({});
+  const [isClassifying, setIsClassifying] = useState(false);
+  const [aiSuggestionMessage, setAiSuggestionMessage] = useState('');
   const formRef = useRef(null);
   const datePickerRef = useRef(null);
 
@@ -93,8 +98,11 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
     setFormData((prev) => ({
       ...prev,
       date: getDefaultDateInput(defaultDate),
+      completionType: 'boolean',
+      targetValue: 1,
       recurringWeekdays: [...DEFAULT_WEEKDAY_SELECTION]
     }));
+    setAiSuggestionMessage('');
   }, [isOpen, defaultDate]);
 
   const titleLength = useMemo(() => String(formData.title || '').trim().length, [formData.title]);
@@ -147,15 +155,48 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
     return true;
   };
 
+  const handleTitleBlur = async () => {
+    const titleVal = String(formData.title).trim();
+    if (!titleVal || titleVal.length < 3) return;
+
+    setIsClassifying(true);
+    try {
+      const result = await taskService.classifyTaskTitle(titleVal, formData.description);
+      if (result && result.completionType) {
+        setFormData((prev) => ({
+          ...prev,
+          completionType: result.completionType,
+          targetValue: result.targetValue
+        }));
+
+        const labelMap = {
+          boolean: 'Simple Checkbox',
+          quantity: `Quantity (${result.targetValue})`,
+          percent: `Percentage (${result.targetValue}%)`,
+          time: `Duration (${result.targetValue}m)`
+        };
+        setAiSuggestionMessage(`AI auto-detected type: ${labelMap[result.completionType]}`);
+        setTimeout(() => setAiSuggestionMessage(''), 4000);
+      }
+    } catch (e) {
+      console.warn('AI classification failed:', e);
+    } finally {
+      setIsClassifying(false);
+    }
+  };
+
   const handleClose = () => {
     setFormData({
       title: '',
       description: '',
       date: getDefaultDateInput(defaultDate),
       taskType: 'task',
+      completionType: 'boolean',
+      targetValue: 1,
       recurringWeekdays: [...DEFAULT_WEEKDAY_SELECTION]
     });
     setErrors({});
+    setAiSuggestionMessage('');
     onClose();
   };
 
@@ -193,6 +234,10 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
       description: String(formData.description || '').trim(),
       date: parsedDate,
       taskType: formData.taskType === 'habit' ? 'custom-recurring' : 'one-time',
+      completionType: formData.completionType,
+      targetValue: formData.completionType === 'boolean' ? 1 : Number(formData.targetValue || 1),
+      currentValue: 0,
+      partiallyCompleted: false,
       customDates: []
     };
 
@@ -236,13 +281,18 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
               data-error-field="title"
               value={formData.title}
               onChange={(event) => setFormData((prev) => ({ ...prev, title: event.target.value }))}
+              onBlur={handleTitleBlur}
               placeholder="What needs to be done?"
               className="h-11 w-full rounded-lg border border-white/15 bg-white/5 pl-10 pr-3 text-sm text-white outline-none transition-colors placeholder:text-gray-500 focus:border-cyan-300/60"
               maxLength={140}
             />
           </div>
           <div className="mt-1.5 flex items-center justify-between text-xs">
-            <span className="text-red-300">{errors.title || ''}</span>
+            <span className="text-red-300">
+              {errors.title || ''}
+              {isClassifying && <span className="text-cyan-400 animate-pulse ml-2">🤖 Classifying...</span>}
+              {!errors.title && aiSuggestionMessage && <span className="text-cyan-300 font-medium ml-2">✨ {aiSuggestionMessage}</span>}
+            </span>
             <span className={`${titleLength > 120 ? 'text-amber-300' : 'text-gray-500'}`}>{titleLength}/140</span>
           </div>
         </div>
@@ -326,6 +376,41 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
                 : 'Creates a single task for the selected date.'}
             </p>
           </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-200">Tracking Metric</label>
+            <ShadcnSelect
+              value={formData.completionType}
+              onChange={(value) => setFormData((prev) => ({ ...prev, completionType: value }))}
+              options={[
+                { value: 'boolean', label: 'Simple Checkbox' },
+                { value: 'quantity', label: 'Quantity Target' },
+                { value: 'percent', label: 'Percentage (%) Target' },
+                { value: 'time', label: 'Duration (minutes) Target' }
+              ]}
+              className="h-11 w-full"
+            />
+          </div>
+
+          {formData.completionType !== 'boolean' && (
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-200">
+                {formData.completionType === 'quantity' && 'Target Quantity'}
+                {formData.completionType === 'percent' && 'Target Percentage (%)'}
+                {formData.completionType === 'time' && 'Target Duration (mins)'}
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={formData.completionType === 'percent' ? 100 : 9999}
+                value={formData.targetValue}
+                onChange={(event) => setFormData((prev) => ({ ...prev, targetValue: Math.max(1, Number(event.target.value) || 1) }))}
+                className="h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-sm text-white outline-none transition-colors focus:border-cyan-300/60"
+              />
+            </div>
+          )}
         </div>
 
         {formData.taskType === 'habit' && (

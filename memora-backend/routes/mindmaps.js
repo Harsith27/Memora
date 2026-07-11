@@ -1,4 +1,5 @@
 const express = require('express');
+const { fetchGroq, getApiKey } = require('../utils/groq');
 
 const router = express.Router();
 
@@ -685,7 +686,7 @@ const generateMindmapWithGroq = async ({
   desiredNodeCount,
   useMixedNodeKinds
 }) => {
-  const apiKey = normalizeGroqApiKey(process.env.GROQ_API_KEY);
+  const apiKey = getApiKey();
   if (!apiKey) {
     throw new Error('groq-key-missing-or-expired');
   }
@@ -738,11 +739,10 @@ const generateMindmapWithGroq = async ({
         requestBody.response_format = prompts[attempt].responseFormat;
       }
 
-      const response = await fetch(endpoint, {
+      const response = await fetchGroq(endpoint, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestBody),
         signal: controller.signal
@@ -822,7 +822,7 @@ router.post('/generate-ai', async (req, res) => {
   }
 
   const aiProvider = String(process.env.AI_PROVIDER || '').trim().toLowerCase();
-  const hasGroqKey = Boolean(normalizeGroqApiKey(process.env.GROQ_API_KEY));
+  const hasGroqKey = Boolean(getApiKey());
   const hasGeminiKey = Boolean(clampText(process.env.GEMINI_API_KEY, 500));
 
   const shouldTryGroq = hasGroqKey && (aiProvider === '' || aiProvider === 'groq');
