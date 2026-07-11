@@ -3625,15 +3625,29 @@ const Dashboard = () => {
                             <button
                               type="button"
                               onClick={() => openTaskDetailsDialog(task)}
-                              className={`w-full text-left text-sm truncate hover:text-cyan-200 transition-colors ${task.completed ? 'text-gray-500 line-through' : 'text-gray-200'}`}
+                              className={`w-full text-left text-sm flex items-center gap-1.5 hover:text-cyan-200 transition-colors ${task.completed ? 'text-gray-500 line-through' : 'text-gray-200'}`}
                               title="View full task"
                             >
-                              {task.title || 'Untitled task'}
+                              {/* Metric type icon */}
+                              {(() => {
+                                const ct = String(task.completionType || 'boolean').toLowerCase();
+                                if (ct === 'quantity') return (
+                                  <span className="shrink-0 inline-flex items-center justify-center w-4 h-4 rounded border border-blue-400/40 bg-blue-500/10 text-blue-400 text-[9px] font-black leading-none select-none" title="Quantity">#</span>
+                                );
+                                if (ct === 'time') return (
+                                  <span className="shrink-0 inline-flex items-center justify-center w-4 h-4 rounded border border-orange-400/40 bg-orange-500/10 text-orange-400" title="Time">
+                                    <Clock className="w-2.5 h-2.5" />
+                                  </span>
+                                );
+                                if (ct === 'percent') return (
+                                  <span className="shrink-0 inline-flex items-center justify-center w-4 h-4 rounded border border-emerald-400/40 bg-emerald-500/10 text-emerald-400 text-[9px] font-black leading-none select-none" title="Percent">%</span>
+                                );
+                                return null;
+                              })()}
+                              <span className="truncate">{task.title || 'Untitled task'}</span>
                               {task.completionType && String(task.completionType).toLowerCase() !== 'boolean' && (
-                                <span className="ml-2 text-xs font-semibold text-cyan-300">
-                                  ({task.currentValue || 0} / {task.targetValue || 1}
-                                  {String(task.completionType).toLowerCase() === 'percent' && '%'}
-                                  {String(task.completionType).toLowerCase() === 'time' && 'm'})
+                                <span className="shrink-0 ml-1 text-xs font-semibold text-cyan-300">
+                                  ({task.currentValue || 0}/{task.targetValue || 1}{String(task.completionType).toLowerCase() === 'percent' && '%'}{String(task.completionType).toLowerCase() === 'time' && 'm'})
                                 </span>
                               )}
                             </button>
@@ -3814,72 +3828,58 @@ const Dashboard = () => {
         size="sm"
       >
         {partialModalTask && (
-          <div className="flex flex-col gap-6 text-white">
-            <div className="flex items-center gap-3 bg-white/[0.02] border border-white/[0.05] rounded-xl p-3">
-              <Target className="h-5 w-5 text-cyan-400 shrink-0" />
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">Active Target</p>
-                <p className="text-sm text-gray-100 font-semibold truncate leading-snug">{partialModalTask.title}</p>
-              </div>
+          <div className="flex flex-col gap-5 text-white">
+            {/* Task name row */}
+            <div>
+              <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-1">Task</p>
+              <p className="text-sm text-gray-100 font-medium leading-snug">{partialModalTask.title}</p>
             </div>
 
-            <div className="relative flex flex-col items-center gap-4 bg-gradient-to-b from-slate-900/60 to-slate-950/40 border border-white/10 rounded-2xl p-6 shadow-xl">
-              <div className="absolute inset-0 bg-cyan-500/[0.02] blur-xl rounded-2xl pointer-events-none" />
-              
-              <div className="flex flex-col items-center gap-1 select-none">
-                <span className="text-5xl font-black bg-gradient-to-r from-cyan-300 via-cyan-400 to-emerald-400 bg-clip-text text-transparent tracking-widest font-mono">
-                  {partialModalValue} / {partialModalTask.targetValue}
+            {/* Value display */}
+            <div className="flex flex-col gap-3">
+              <div className="flex items-baseline gap-2 select-none">
+                <span className="text-3xl font-bold text-white tracking-tight">
+                  {partialModalValue}
+                </span>
+                <span className="text-lg text-gray-400 font-medium">
+                  / {partialModalTask.targetValue}
                   {String(partialModalTask.completionType).toLowerCase() === 'percent' && '%'}
                   {String(partialModalTask.completionType).toLowerCase() === 'time' && 'm'}
                 </span>
-                <span className="text-[10px] text-gray-500 font-medium tracking-wide uppercase">
-                  {Math.round((partialModalValue / (partialModalTask.targetValue || 1)) * 100)}% Complete
-                </span>
               </div>
 
-              <div className="w-full flex items-center gap-3 mt-2">
+              {/* Slider row */}
+              <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => setPartialModalValue(prev => Math.max(0, prev - getIntelligentStep(partialModalTask.targetValue)))}
-                  className="h-10 w-10 shrink-0 border border-white/10 bg-white/5 hover:bg-cyan-500/10 hover:border-cyan-400/40 rounded-lg flex items-center justify-center text-lg font-bold transition-all active:scale-90 text-gray-300 hover:text-cyan-300 shadow-md shadow-black/30"
+                  className="h-9 w-9 shrink-0 border border-white/10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-base font-bold transition-all active:scale-90 text-gray-400 hover:text-white"
                   title="Decrease"
-                >
-                  -
-                </button>
+                >-</button>
 
-                <div className="flex-1 flex flex-col gap-1.5">
-                  <input
-                    type="range"
-                    min="0"
-                    max={partialModalTask.targetValue}
-                    value={partialModalValue}
-                    onChange={(e) => setPartialModalValue(Math.max(0, Math.min(partialModalTask.targetValue, Number(e.target.value) || 0)))}
-                    className="w-full h-1.5 rounded-lg bg-white/10 accent-cyan-400 cursor-pointer focus:outline-none"
-                  />
-                  <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-full transition-all duration-300 ease-out" 
-                      style={{ width: `${Math.round((partialModalValue / (partialModalTask.targetValue || 1)) * 100)}%` }}
-                    />
-                  </div>
-                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max={partialModalTask.targetValue}
+                  value={partialModalValue}
+                  onChange={(e) => setPartialModalValue(Math.max(0, Math.min(partialModalTask.targetValue, Number(e.target.value) || 0)))}
+                  className="flex-1 h-1.5 rounded-lg bg-white/10 accent-cyan-400 cursor-pointer focus:outline-none"
+                />
 
                 <button
                   type="button"
                   onClick={() => setPartialModalValue(prev => Math.min(partialModalTask.targetValue, prev + getIntelligentStep(partialModalTask.targetValue)))}
-                  className="h-10 w-10 shrink-0 border border-white/10 bg-white/5 hover:bg-cyan-500/10 hover:border-cyan-400/40 rounded-lg flex items-center justify-center text-lg font-bold transition-all active:scale-90 text-gray-300 hover:text-cyan-300 shadow-md shadow-black/30"
+                  className="h-9 w-9 shrink-0 border border-white/10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-base font-bold transition-all active:scale-90 text-gray-400 hover:text-white"
                   title="Increase"
-                >
-                  +
-                </button>
+                >+</button>
               </div>
 
-              <p className="text-[10px] text-gray-500 text-center leading-normal mt-1">
-                Tip: Press Arrow Left/Right to adjust (step is {getIntelligentStep(partialModalTask.targetValue)}), and Enter to save.
+              <p className="text-[10px] text-gray-500 leading-normal">
+                ← → Arrow keys to adjust (step {getIntelligentStep(partialModalTask.targetValue)}) · Enter to save
               </p>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
               <button
                 type="button"
                 onClick={() => setIsPartialModalOpen(false)}
@@ -3890,7 +3890,7 @@ const Dashboard = () => {
               <button
                 type="button"
                 onClick={handleSubmitPartialProgress}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/50 bg-gradient-to-r from-cyan-500/15 to-emerald-500/15 px-5 py-2 text-sm font-semibold text-cyan-200 transition-all hover:from-cyan-500/25 hover:to-emerald-500/25 hover:text-white shadow-lg shadow-cyan-500/5 active:scale-95"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/50 bg-cyan-500/15 px-5 py-2 text-sm font-semibold text-cyan-200 transition-all hover:bg-cyan-500/20 hover:text-white active:scale-95"
               >
                 Save Progress
               </button>
