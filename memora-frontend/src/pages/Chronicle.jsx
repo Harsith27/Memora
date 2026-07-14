@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Calendar, ChevronLeft, ChevronRight, Plus, Filter,
@@ -104,6 +104,7 @@ const Chronicle = () => {
   const [calendarEvents, setCalendarEvents] = useState({});
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+  const lastFetchIdRef = useRef(0);
 
   // Settings + Festival preferences
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -432,181 +433,232 @@ const Chronicle = () => {
     };
   }, [showDayDetails, showEventModal, showSettingsModal, showFilterModal]);
 
+  const processAllCalendarEvents = (dueResponse, upcomingResp, historyResp, targetYear, targetUser) => {
+    const revisionEvents = {};
+
+    if (dueResponse?.success && dueResponse.topics) {
+      dueResponse.topics.forEach(topic => {
+        if (topic?.isLearning === false) return;
+
+        const dateKey = new Date().toDateString(); // Today's date
+        if (!revisionEvents[dateKey]) {
+          revisionEvents[dateKey] = [];
+        }
+        revisionEvents[dateKey].push({
+          id: `revision-due-${topic._id}`,
+          title: topic.title,
+          description: `Due for review: ${topic.title}`,
+          type: 'revision',
+          color: getDifficultyColor(topic.difficulty),
+          difficulty: topic.difficulty,
+          time: '09:00',
+          topicId: topic._id,
+          isDue: true
+        });
+      });
+    }
+
+    if (upcomingResp?.success && upcomingResp.topics) {
+      upcomingResp.topics.forEach(topic => {
+        if (topic?.isLearning === false) return;
+
+        const dateKey = new Date(topic.nextReviewDate).toDateString();
+        if (!revisionEvents[dateKey]) {
+          revisionEvents[dateKey] = [];
+        }
+        revisionEvents[dateKey].push({
+          id: `revision-${topic._id}`,
+          title: topic.title,
+          description: '',
+          type: 'revision',
+          color: getDifficultyColor(topic.difficulty),
+          difficulty: topic.difficulty,
+          time: '09:00',
+          topicId: topic._id
+        });
+      });
+    }
+
+    if (historyResp?.success && Array.isArray(historyResp.entries)) {
+      historyResp.entries.forEach((entry) => {
+        const completedAt = entry?.completedAt ? new Date(entry.completedAt) : null;
+        if (!completedAt || Number.isNaN(completedAt.getTime())) return;
+
+        const dateKey = completedAt.toDateString();
+        if (!revisionEvents[dateKey]) {
+          revisionEvents[dateKey] = [];
+        }
+
+        const revisionNumber = Math.max(1, Number(entry?.revisionNumber || 1));
+
+        revisionEvents[dateKey].push({
+          id: `revision-completed-${entry.id}`,
+          title: entry.topicTitle || 'Untitled topic',
+          description: `Completed revision #${revisionNumber}`,
+          type: 'revision',
+          color: getDifficultyColor(entry.difficulty),
+          difficulty: Number(entry.difficulty) || 3,
+          time: toLocalTimeHHMM(completedAt),
+          topicId: entry.topicId,
+          completed: true,
+          isCompletedRevision: true,
+          revisionNumber,
+          quality: Number(entry.quality || 0),
+          wasCorrect: Boolean(entry.wasCorrect)
+        });
+      });
+    }
+
+    // Load festivals and holidays
+    const festivalEvents = generateFestivals(targetYear);
+
+    // Load custom events from localStorage (in a real app, this would be from API)
+    const customEvents = loadCustomEvents(targetUser?.id);
+
+    // Load task events from task manager storage
+    const taskEvents = {};
+    const userTaskStorageKey = taskService.resolveUserStorageKey(targetUser);
+    const userTasks = taskService.getTasks(userTaskStorageKey);
+    const todayTaskDate = taskService.normalizeDate(new Date());
+
+    userTasks.forEach((task) => {
+      const normalizedDate = taskService.normalizeDate(task?.date);
+      if (!normalizedDate) return;
+
+      const taskDate = new Date(`${normalizedDate}T00:00:00`);
+      if (Number.isNaN(taskDate.getTime())) return;
+
+      const dateKey = taskDate.toDateString();
+      if (!taskEvents[dateKey]) {
+        taskEvents[dateKey] = [];
+      }
+
+      const isMissed = Boolean(
+        !task.completed
+        && todayTaskDate
+        && normalizedDate < todayTaskDate
+      );
+
+      taskEvents[dateKey].push({
+        id: `task-${task.id}`,
+        title: task.title,
+        description: task.description,
+        type: 'task',
+        color: task.completed ? 'slate' : (isMissed ? 'rose' : 'teal'),
+        time: task.completed ? '23:59' : '20:00',
+        taskId: task.id,
+        completed: Boolean(task.completed),
+        isMissed,
+        taskType: task.taskType || taskService.TASK_TYPES.ONE_TIME
+      });
+    });
+
+    // Merge all events
+    const allEvents = { ...revisionEvents };
+
+    // Add task events
+    Object.keys(taskEvents).forEach(dateKey => {
+      if (!allEvents[dateKey]) {
+        allEvents[dateKey] = [];
+      }
+      allEvents[dateKey] = [...allEvents[dateKey], ...taskEvents[dateKey]];
+    });
+
+    // Add festivals
+    Object.keys(festivalEvents).forEach(dateKey => {
+      if (!allEvents[dateKey]) {
+        allEvents[dateKey] = [];
+      }
+      allEvents[dateKey] = [...allEvents[dateKey], ...festivalEvents[dateKey]];
+    });
+
+    // Add custom events
+    Object.keys(customEvents).forEach(dateKey => {
+      if (!allEvents[dateKey]) {
+        allEvents[dateKey] = [];
+      }
+      allEvents[dateKey] = [...allEvents[dateKey], ...customEvents[dateKey]];
+    });
+
+    Object.keys(allEvents).forEach((dateKey) => {
+      allEvents[dateKey] = sortEventsForDisplay(allEvents[dateKey]);
+    });
+
+    return allEvents;
+  };
+
   const loadCalendarData = async () => {
+    if (!user) return;
     setLoading(true);
+    lastFetchIdRef.current += 1;
+    const currentFetchId = lastFetchIdRef.current;
+
+    const targetYear = currentDate.getFullYear();
+    const targetUser = user;
+    const userId = user.id || user._id || user.email;
+
+    // Check if we have cached data in localStorage
+    const cachedDue = localStorage.getItem(`memora_chronicle_due_cache_${userId}`);
+    const cachedUpcoming = localStorage.getItem(`memora_chronicle_upcoming_cache_${userId}`);
+    const cachedHistory = localStorage.getItem(`memora_chronicle_history_cache_${userId}`);
+
+    let loadedFromCache = false;
+    let initialEvents = {};
+
+    if (cachedDue && cachedUpcoming && cachedHistory) {
+      try {
+        const dueResponse = JSON.parse(cachedDue);
+        const upcomingResponse = JSON.parse(cachedUpcoming);
+        const revisionHistoryResponse = JSON.parse(cachedHistory);
+
+        initialEvents = processAllCalendarEvents(dueResponse, upcomingResponse, revisionHistoryResponse, targetYear, targetUser);
+        setCalendarEvents(initialEvents);
+        setLoading(false);
+        loadedFromCache = true;
+      } catch (err) {
+        console.warn('Failed to load Chronicle data from cache:', err);
+      }
+    }
+
+    // If cache wasn't found or loaded, set the fallback synchronous state (tasks/festivals)
+    if (!loadedFromCache) {
+      const syncEvents = processAllCalendarEvents(null, null, null, targetYear, targetUser);
+      setCalendarEvents(syncEvents);
+    }
+
     try {
-      // Load today's due topics
-      const dueTopicsResponse = await apiService.getDueTopics();
-      const revisionEvents = {};
+      // Fetch fresh full ranges in the background (no separate lazy slice)
+      const [dueResponse, upcomingResponse, historyResponse] = await Promise.all([
+        apiService.getDueTopics(),
+        apiService.getUpcomingTopics(90, 500),
+        apiService.getRevisionHistory(180)
+      ]);
 
-      if (dueTopicsResponse.success && dueTopicsResponse.topics) {
-        dueTopicsResponse.topics.forEach(topic => {
-          if (topic?.isLearning === false) return;
+      if (lastFetchIdRef.current !== currentFetchId) return;
 
-          const dateKey = new Date().toDateString(); // Today's date
-          if (!revisionEvents[dateKey]) {
-            revisionEvents[dateKey] = [];
-          }
-          revisionEvents[dateKey].push({
-            id: `revision-due-${topic._id}`,
-            title: topic.title,
-            description: `Due for review: ${topic.title}`,
-            type: 'revision',
-            color: getDifficultyColor(topic.difficulty),
-            difficulty: topic.difficulty,
-            time: '09:00',
-            topicId: topic._id,
-            isDue: true
-          });
-        });
-      }
+      // Update cache in localStorage
+      localStorage.setItem(`memora_chronicle_due_cache_${userId}`, JSON.stringify(dueResponse));
+      localStorage.setItem(`memora_chronicle_upcoming_cache_${userId}`, JSON.stringify(upcomingResponse));
+      localStorage.setItem(`memora_chronicle_history_cache_${userId}`, JSON.stringify(historyResponse));
 
-      // Load upcoming revision schedules from topics
-      const upcomingResponse = await apiService.getUpcomingTopics(30, 100);
-      if (upcomingResponse.success && upcomingResponse.topics) {
-        upcomingResponse.topics.forEach(topic => {
-          if (topic?.isLearning === false) return;
+      const freshEvents = processAllCalendarEvents(dueResponse, upcomingResponse, historyResponse, targetYear, targetUser);
+      setCalendarEvents(freshEvents);
+      setLoading(false);
 
-          const dateKey = new Date(topic.nextReviewDate).toDateString();
-          if (!revisionEvents[dateKey]) {
-            revisionEvents[dateKey] = [];
-          }
-          revisionEvents[dateKey].push({
-            id: `revision-${topic._id}`,
-            title: topic.title,
-            description: '',
-            type: 'revision',
-            color: getDifficultyColor(topic.difficulty),
-            difficulty: topic.difficulty,
-            time: '09:00',
-            topicId: topic._id
-          });
-        });
-      }
-
-      // Load completed revisions from history so each day shows what was revised
-      const revisionHistoryResponse = await apiService.getRevisionHistory(180);
-      if (revisionHistoryResponse.success && Array.isArray(revisionHistoryResponse.entries)) {
-        revisionHistoryResponse.entries.forEach((entry) => {
-          const completedAt = entry?.completedAt ? new Date(entry.completedAt) : null;
-          if (!completedAt || Number.isNaN(completedAt.getTime())) return;
-
-          const dateKey = completedAt.toDateString();
-          if (!revisionEvents[dateKey]) {
-            revisionEvents[dateKey] = [];
-          }
-
-          const revisionNumber = Math.max(1, Number(entry?.revisionNumber || 1));
-
-          revisionEvents[dateKey].push({
-            id: `revision-completed-${entry.id}`,
-            title: entry.topicTitle || 'Untitled topic',
-            description: `Completed revision #${revisionNumber}`,
-            type: 'revision',
-            color: getDifficultyColor(entry.difficulty),
-            difficulty: Number(entry.difficulty) || 3,
-            time: toLocalTimeHHMM(completedAt),
-            topicId: entry.topicId,
-            completed: true,
-            isCompletedRevision: true,
-            revisionNumber,
-            quality: Number(entry.quality || 0),
-            wasCorrect: Boolean(entry.wasCorrect)
-          });
-        });
-      }
-
-      // Load festivals and holidays
-      const festivalEvents = generateFestivals(currentDate.getFullYear());
-
-      // Load custom events from localStorage (in a real app, this would be from API)
-      const customEvents = loadCustomEvents();
-
-      // Load task events from task manager storage
-      const taskEvents = {};
-      const userTaskStorageKey = taskService.resolveUserStorageKey(user);
-      const userTasks = taskService.getTasks(userTaskStorageKey);
-      const todayTaskDate = taskService.normalizeDate(new Date());
-
-      userTasks.forEach((task) => {
-        const normalizedDate = taskService.normalizeDate(task?.date);
-        if (!normalizedDate) return;
-
-        const taskDate = new Date(`${normalizedDate}T00:00:00`);
-        if (Number.isNaN(taskDate.getTime())) return;
-
-        const dateKey = taskDate.toDateString();
-        if (!taskEvents[dateKey]) {
-          taskEvents[dateKey] = [];
-        }
-
-        const isMissed = Boolean(
-          !task.completed
-          && todayTaskDate
-          && normalizedDate < todayTaskDate
-        );
-
-        taskEvents[dateKey].push({
-          id: `task-${task.id}`,
-          title: task.title,
-          description: task.description,
-          type: 'task',
-          color: task.completed ? 'slate' : (isMissed ? 'rose' : 'teal'),
-          time: task.completed ? '23:59' : '20:00',
-          taskId: task.id,
-          completed: Boolean(task.completed),
-          isMissed,
-          taskType: task.taskType || taskService.TASK_TYPES.ONE_TIME
-        });
-      });
-
-      // Merge all events
-      const allEvents = { ...revisionEvents };
-
-      // Add task events
-      Object.keys(taskEvents).forEach(dateKey => {
-        if (!allEvents[dateKey]) {
-          allEvents[dateKey] = [];
-        }
-        allEvents[dateKey] = [...allEvents[dateKey], ...taskEvents[dateKey]];
-      });
-
-      // Add festivals
-      Object.keys(festivalEvents).forEach(dateKey => {
-        if (!allEvents[dateKey]) {
-          allEvents[dateKey] = [];
-        }
-        allEvents[dateKey] = [...allEvents[dateKey], ...festivalEvents[dateKey]];
-      });
-
-      // Add custom events
-      Object.keys(customEvents).forEach(dateKey => {
-        if (!allEvents[dateKey]) {
-          allEvents[dateKey] = [];
-        }
-        allEvents[dateKey] = [...allEvents[dateKey], ...customEvents[dateKey]];
-      });
-
-      Object.keys(allEvents).forEach((dateKey) => {
-        allEvents[dateKey] = sortEventsForDisplay(allEvents[dateKey]);
-      });
-
-      setCalendarEvents(allEvents);
     } catch (error) {
       console.error('Failed to load calendar data:', error);
       showToast('Failed to load calendar data', 'error');
-    } finally {
       setLoading(false);
     }
   };
 
-  const loadCustomEvents = () => {
-    const saved = localStorage.getItem(`chronicle_events_${user?.id}`);
+  const loadCustomEvents = (userId = user?.id) => {
+    const saved = localStorage.getItem(`chronicle_events_${userId}`);
     return saved ? JSON.parse(saved) : {};
   };
 
-  const saveCustomEvents = (events) => {
-    localStorage.setItem(`chronicle_events_${user?.id}`, JSON.stringify(events));
+  const saveCustomEvents = (events, userId = user?.id) => {
+    localStorage.setItem(`chronicle_events_${userId}`, JSON.stringify(events));
   };
 
   const getDifficultyColor = (difficulty) => {

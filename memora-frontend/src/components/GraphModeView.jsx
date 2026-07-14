@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY } from 'd3-force';
 import { Search, ZoomIn, ZoomOut, RotateCcw, Plus, Link as LinkIcon, Circle, Sparkles, SlidersHorizontal, LocateFixed, X } from 'lucide-react';
 import ShadcnSelect from './ShadcnSelect';
@@ -9,6 +10,33 @@ import { formatDateDDMMYYYY } from '../utils/dateFormat';
 
 const normalizeText = (value) => String(value || '').toLowerCase().trim();
 
+const getFuzzyScore = (text, query) => {
+  const t = String(text || '').toLowerCase().trim();
+  const q = String(query || '').toLowerCase().trim();
+  if (!q) return 100;
+  if (!t) return 0;
+  if (t === q) return 150;
+  if (t.includes(q)) return 100 - t.indexOf(q);
+
+  let qIdx = 0;
+  let gaps = 0;
+  let lastMatchIdx = -1;
+
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] === q[qIdx]) {
+      if (lastMatchIdx !== -1) {
+        gaps += (i - lastMatchIdx - 1);
+      }
+      lastMatchIdx = i;
+      qIdx++;
+      if (qIdx === q.length) {
+        return Math.max(10, 80 - gaps - (t.length - q.length));
+      }
+    }
+  }
+  return 0;
+};
+
 const getGraphNodeSearchScore = (node, query) => {
   const normalizedQuery = normalizeText(query);
   if (!normalizedQuery) return 0;
@@ -17,18 +45,17 @@ const getGraphNodeSearchScore = (node, query) => {
   const category = normalizeText(node?.category);
   const tags = Array.isArray(node?.tags) ? node.tags.map((tag) => normalizeText(tag)).join(' ') : '';
   const summary = normalizeText(node?.summary);
-  const haystack = `${title} ${category} ${tags} ${summary}`.trim();
+
+  const titleScore = getFuzzyScore(title, normalizedQuery);
+  const categoryScore = getFuzzyScore(category, normalizedQuery);
+  const tagsScore = getFuzzyScore(tags, normalizedQuery);
+  const summaryScore = getFuzzyScore(summary, normalizedQuery);
 
   let score = 0;
-  if (title === normalizedQuery) score += 180;
-  if (title.startsWith(normalizedQuery)) score += 120;
-  if (title.includes(normalizedQuery)) score += 95;
-  if (category === normalizedQuery) score += 60;
-  if (category.includes(normalizedQuery)) score += 40;
-  if (tags.includes(normalizedQuery)) score += 34;
-  if (summary === normalizedQuery) score += 48;
-  if (summary.includes(normalizedQuery)) score += 24;
-  if (haystack.includes(normalizedQuery)) score += 12;
+  if (titleScore > 0) score += titleScore * 2.0;
+  if (categoryScore > 0) score += categoryScore * 0.8;
+  if (tagsScore > 0) score += tagsScore * 0.7;
+  if (summaryScore > 0) score += summaryScore * 0.5;
 
   return score;
 };
@@ -520,21 +547,48 @@ const GraphModeView = ({
   graphUiCommand = null,
   onGraphUiStateChange = null
 }) => {
+  const navigate = useNavigate();
   const { user } = useAuth();
-  const [query, setQuery] = useState('');
+  const userStorageKey = user?.id || user?._id || user?.email || 'guest';
+
+  // Persistence hooks to keep the graph mode state preserved
+  const [query, setQuery] = useState(() => {
+    return localStorage.getItem(`graph_query_${userStorageKey}`) || '';
+  });
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isSearchDropdownOpen, setIsSearchDropdownOpen] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [mode, setMode] = useState('global');
-  const [linkMode, setLinkMode] = useState('tags');
-  const [difficultyFilter, setDifficultyFilter] = useState('all');
-  const [dueFilter, setDueFilter] = useState('all');
-  const [minReviewsFilter, setMinReviewsFilter] = useState(0);
+  const [selectedCategory, setSelectedCategory] = useState(() => {
+    return localStorage.getItem(`graph_selected_category_${userStorageKey}`) || 'all';
+  });
+  const [mode, setMode] = useState(() => {
+    return localStorage.getItem(`graph_mode_${userStorageKey}`) || 'global';
+  });
+  const [linkMode, setLinkMode] = useState(() => {
+    return localStorage.getItem(`graph_link_mode_${userStorageKey}`) || 'tags';
+  });
+  const [difficultyFilter, setDifficultyFilter] = useState(() => {
+    return localStorage.getItem(`graph_difficulty_filter_${userStorageKey}`) || 'all';
+  });
+  const [dueFilter, setDueFilter] = useState(() => {
+    return localStorage.getItem(`graph_due_filter_${userStorageKey}`) || 'all';
+  });
+  const [minReviewsFilter, setMinReviewsFilter] = useState(() => {
+    const val = localStorage.getItem(`graph_min_reviews_filter_${userStorageKey}`);
+    return val ? Number(val) : 0;
+  });
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
-  const [selectedNodeId, setSelectedNodeId] = useState(null);
-  const [zoom, setZoom] = useState(DEFAULT_GRAPH_ZOOM);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [selectedNodeId, setSelectedNodeId] = useState(() => {
+    return localStorage.getItem(`graph_selected_node_id_${userStorageKey}`) || null;
+  });
+  const [zoom, setZoom] = useState(() => {
+    const val = localStorage.getItem(`graph_zoom_${userStorageKey}`);
+    return val ? Number(val) : DEFAULT_GRAPH_ZOOM;
+  });
+  const [pan, setPan] = useState(() => {
+    const val = localStorage.getItem(`graph_pan_${userStorageKey}`);
+    return val ? JSON.parse(val) : { x: 0, y: 0 };
+  });
   const [isPanning, setIsPanning] = useState(false);
   const [lastPoint, setLastPoint] = useState({ x: 0, y: 0 });
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
@@ -560,6 +614,7 @@ const GraphModeView = ({
   const linkCanvasRef = useRef(null);
   const linkCanvasFrameRef = useRef(null);
   const searchBlurTimerRef = useRef(null);
+  const searchInputRef = useRef(null);
   const lastGraphUiCommandTokenRef = useRef(null);
   const processedExternalSearchRequestRef = useRef(null);
   const lastGraphAutoFocusSignatureRef = useRef('');
@@ -569,8 +624,103 @@ const GraphModeView = ({
   const containerRef = useRef(null);
   const graphWrapperRef = useRef(null);
   const [viewport, setViewport] = useState({ width: 900, height: 560 });
-  const userStorageKey = user?.id || user?._id || user?.email || 'guest';
+
+  const getVisibleDimensions = useCallback(() => {
+    const rect = graphWrapperRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return { width: viewport.width, height: viewport.height };
+    }
+    const visibleWidth = Math.max(100, Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0));
+    const visibleHeight = Math.max(100, Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0));
+    return { width: visibleWidth, height: visibleHeight };
+  }, [viewport.width, viewport.height]);
+
   const nodePositionStorageKey = `graph_node_positions_${userStorageKey}`;
+
+  // Persist state variables to localStorage when they change
+  useEffect(() => {
+    localStorage.setItem(`graph_query_${userStorageKey}`, query);
+  }, [query, userStorageKey]);
+
+  useEffect(() => {
+    localStorage.setItem(`graph_selected_category_${userStorageKey}`, selectedCategory);
+  }, [selectedCategory, userStorageKey]);
+
+  useEffect(() => {
+    localStorage.setItem(`graph_mode_${userStorageKey}`, mode);
+  }, [mode, userStorageKey]);
+
+  useEffect(() => {
+    localStorage.setItem(`graph_link_mode_${userStorageKey}`, linkMode);
+  }, [linkMode, userStorageKey]);
+
+  useEffect(() => {
+    localStorage.setItem(`graph_difficulty_filter_${userStorageKey}`, difficultyFilter);
+  }, [difficultyFilter, userStorageKey]);
+
+  useEffect(() => {
+    localStorage.setItem(`graph_due_filter_${userStorageKey}`, dueFilter);
+  }, [dueFilter, userStorageKey]);
+
+  useEffect(() => {
+    localStorage.setItem(`graph_min_reviews_filter_${userStorageKey}`, String(minReviewsFilter));
+  }, [minReviewsFilter, userStorageKey]);
+
+  useEffect(() => {
+    if (selectedNodeId) {
+      localStorage.setItem(`graph_selected_node_id_${userStorageKey}`, selectedNodeId);
+    } else {
+      localStorage.removeItem(`graph_selected_node_id_${userStorageKey}`);
+    }
+  }, [selectedNodeId, userStorageKey]);
+
+  useEffect(() => {
+    localStorage.setItem(`graph_zoom_${userStorageKey}`, String(zoom));
+  }, [zoom, userStorageKey]);
+
+  useEffect(() => {
+    localStorage.setItem(`graph_pan_${userStorageKey}`, JSON.stringify(pan));
+  }, [pan, userStorageKey]);
+
+  const handleNodeShiftClick = useCallback((node) => {
+    if (!node) return;
+    if (node.nodeType === 'topic') {
+      navigate('/dashboard', {
+        state: {
+          focusTopicId: node.id
+        }
+      });
+    } else if (node.nodeType === 'mindmap') {
+      navigate('/mindmaps', {
+        state: {
+          globalSearch: {
+            source: 'graph-node-shift-click',
+            action: 'open-map',
+            mapId: node.id,
+            mapTitle: node.title
+          }
+        }
+      });
+    } else if (node.nodeType === 'listenerNote') {
+      navigate('/listener', {
+        state: {
+          noteId: node.id
+        }
+      });
+    } else if (node.nodeType === 'file') {
+      navigate('/doctags', {
+        state: {
+          globalSearch: {
+            source: 'graph-node-shift-click',
+            action: 'open-item',
+            itemType: 'file',
+            file: node.filePath || null,
+            item: node.id
+          }
+        }
+      });
+    }
+  }, [navigate]);
 
   const stopAutoArrange = useCallback(() => {
     const simulation = simulationRef.current;
@@ -840,16 +990,7 @@ const GraphModeView = ({
     }
 
     if (queryValue) {
-      nodes = nodes.filter((node) => {
-        const haystack = [
-          node.title,
-          node.category,
-          ...(Array.isArray(node.tags) ? node.tags : []),
-        ]
-          .join(' ')
-          .toLowerCase();
-        return haystack.includes(queryValue);
-      });
+      nodes = nodes.filter((node) => getGraphNodeSearchScore(node, queryValue) > 0);
 
       const matchingNodeIds = new Set(nodes.map((node) => node.id));
       const expandedNodeIds = new Set(matchingNodeIds);
@@ -924,27 +1065,33 @@ const GraphModeView = ({
       .map((node) => node.id);
   }, [filtered.nodes]);
 
-  const timeLapseIntervalMs = useMemo(() => {
-    const nodeCount = timeLapseNodeOrder.length;
-    if (nodeCount <= TIME_LAPSE_BASE_NODE_COUNT) {
-      return TIME_LAPSE_BASE_INTERVAL_MS;
+  const { timeLapseIntervalMs, timeLapseBatchSize } = useMemo(() => {
+    const N = timeLapseNodeOrder.length;
+    if (N === 0) {
+      return { timeLapseIntervalMs: 100, timeLapseBatchSize: 1 };
     }
 
-    if (nodeCount >= TIME_LAPSE_PEAK_NODE_COUNT) {
-      return TIME_LAPSE_PEAK_INTERVAL_MS;
+    // Target duration = 10000 ms (10 seconds)
+    const TARGET_DURATION_MS = 10000;
+    // Minimum safe interval for browsers (40 ms)
+    const MIN_INTERVAL_MS = 40;
+
+    // Maximum steps we can fit in 10 seconds with MIN_INTERVAL_MS (250 steps)
+    const MAX_STEPS = TARGET_DURATION_MS / MIN_INTERVAL_MS;
+
+    if (N <= MAX_STEPS) {
+      // Each step adds 1 node
+      const batchSize = 1;
+      const steps = N;
+      const interval = Math.round(TARGET_DURATION_MS / steps);
+      return { timeLapseIntervalMs: interval, timeLapseBatchSize: batchSize };
+    } else {
+      // Need to add multiple nodes per step (batching)
+      const batchSize = Math.ceil(N / MAX_STEPS);
+      const steps = Math.ceil(N / batchSize);
+      const interval = Math.round(TARGET_DURATION_MS / steps);
+      return { timeLapseIntervalMs: interval, timeLapseBatchSize: batchSize };
     }
-
-    const progress = (nodeCount - TIME_LAPSE_BASE_NODE_COUNT) / (TIME_LAPSE_PEAK_NODE_COUNT - TIME_LAPSE_BASE_NODE_COUNT);
-    return Math.round(TIME_LAPSE_BASE_INTERVAL_MS - (TIME_LAPSE_BASE_INTERVAL_MS - TIME_LAPSE_PEAK_INTERVAL_MS) * progress);
-  }, [timeLapseNodeOrder.length]);
-
-  const timeLapseBatchSize = useMemo(() => {
-    const nodeCount = timeLapseNodeOrder.length;
-    if (nodeCount <= TIME_LAPSE_PEAK_NODE_COUNT) {
-      return 1;
-    }
-
-    return Math.ceil(nodeCount / TIME_LAPSE_PEAK_NODE_COUNT);
   }, [timeLapseNodeOrder.length]);
 
   const visibleNodeIds = useMemo(() => {
@@ -1086,11 +1233,14 @@ const GraphModeView = ({
 
     let nextZoom = preferredZoom ?? zoom;
     if (fitToFrame) {
+      const dims = getVisibleDimensions();
       const graphWidth = Math.max(1, maxX - minX);
       const graphHeight = Math.max(1, maxY - minY);
-      const viewWidth = Math.max(80, viewport.width - fitPadding);
-      const viewHeight = Math.max(80, viewport.height - fitPadding);
-      const fitZoom = Math.min(viewWidth / graphWidth, viewHeight / graphHeight) * fitZoomScale;
+      const viewWidth = Math.max(80, dims.width - fitPadding);
+      const viewHeight = Math.max(80, dims.height - fitPadding);
+      let fitZoom = Math.min(viewWidth / graphWidth, viewHeight / graphHeight) * fitZoomScale;
+      // Clamp the auto-fit zoom to not be too small (avoid 4% zoom-out bug)
+      fitZoom = Math.max(0.25, fitZoom);
       nextZoom = preferredZoom ?? clampZoom(fitZoom);
       if (maxZoom !== null) {
         nextZoom = Math.min(nextZoom, maxZoom);
@@ -1136,10 +1286,13 @@ const GraphModeView = ({
       }))
       .filter((link) => nodeMap.has(link.source) && nodeMap.has(link.target));
 
+    const isSearchActive = Boolean(query.trim());
+
     const simulation = forceSimulation(nodeSnapshots)
       .alpha(0.9)
       .alphaDecay(0.055)
-      .velocityDecay(0.34)
+      // Lower velocity decay = nodes pull each other more strongly when dragged
+      .velocityDecay(0.28)
       .force('charge', forceManyBody().strength(-165))
       .force('center', forceCenter(0, 0))
       .force('x', forceX(0).strength(0.03))
@@ -1156,8 +1309,9 @@ const GraphModeView = ({
     if (simulationLinks.length > 0) {
       simulation.force('link', forceLink(simulationLinks)
         .id((node) => node.id)
-        .distance((link) => 54 + Math.max(0, 8 - (Number(link.weight) || 1) * 2.8))
-        .strength(() => 0.045)
+        // Shorter rest distance = stiffer spring, neighbours follow immediately when dragging
+        .distance((link) => 28 + Math.max(0, 6 - (Number(link.weight) || 1) * 1.8))
+        .strength(() => 0.35)
       );
     }
 
@@ -1166,12 +1320,17 @@ const GraphModeView = ({
       dragged.fx = dragged.x;
       dragged.fy = dragged.y;
       simulation.alphaTarget(0.2);
+    } else if (!isSearchActive) {
+      // Set a low alpha target so the simulation keeps ticking slowly (alive motion) for the whole graph
+      simulation.alphaTarget(0.018);
     }
 
     let tickCount = 0;
     simulation.on('tick', () => {
       tickCount += 1;
-      if (tickCount % 3 !== 0) return;
+      // Throttle ticks: update React state less frequently when idle to prevent lag
+      const throttleTicks = draggingNodeId ? 3 : 6;
+      if (tickCount % throttleTicks !== 0) return;
 
       setPositionOverrides((prev) => {
         let changed = false;
@@ -1181,10 +1340,11 @@ const GraphModeView = ({
           if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return;
 
           const current = prev[node.id];
-          const roundedX = Number(node.x.toFixed(2));
-          const roundedY = Number(node.y.toFixed(2));
+          const roundedX = Number(node.x.toFixed(1));
+          const roundedY = Number(node.y.toFixed(1));
 
-          if (!current || Math.abs(current.x - roundedX) > 0.9 || Math.abs(current.y - roundedY) > 0.9) {
+          // Use a smaller precision threshold (0.15) for smooth movement, while rounding to 1 decimal place to avoid lag
+          if (!current || Math.abs(current.x - roundedX) > 0.15 || Math.abs(current.y - roundedY) > 0.15) {
             next[node.id] = { x: roundedX, y: roundedY };
             changed = true;
           }
@@ -1193,7 +1353,8 @@ const GraphModeView = ({
         return changed ? next : prev;
       });
 
-      if (!draggingNodeId && simulation.alpha() < 0.045) {
+      // Only settle and stop the simulation if we are in active search mode
+      if (!draggingNodeId && isSearchActive && simulation.alpha() < 0.045) {
         simulation.stop();
         if (simulationRef.current === simulation) {
           simulationRef.current = null;
@@ -1215,7 +1376,7 @@ const GraphModeView = ({
         simulationRef.current = null;
       }
     };
-  }, [filtered.nodes, filtered.links, showLabels, draggingNodeId, isTimeLapsePlaying]);
+  }, [filtered.nodes, filtered.links, showLabels, draggingNodeId, isTimeLapsePlaying, query]);
 
   useEffect(() => {
     return () => {
@@ -1473,6 +1634,13 @@ const GraphModeView = ({
     if (isTimeLapsePlaying) return;
     event.preventDefault();
     event.stopPropagation();
+
+    const node = getNodeById(nodeId);
+    if (event.shiftKey && node) {
+      handleNodeShiftClick(node);
+      return;
+    }
+
     stopAutoArrange();
 
     const simulation = simulationRef.current;
@@ -1638,9 +1806,10 @@ const GraphModeView = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    const dims = getVisibleDimensions();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const width = Math.max(1, Math.floor(viewport.width || 1));
-    const height = Math.max(1, Math.floor(viewport.height || 1));
+    const width = Math.max(1, Math.floor(dims.width || 1));
+    const height = Math.max(1, Math.floor(dims.height || 1));
 
     canvas.width = Math.floor(width * dpr);
     canvas.height = Math.floor(height * dpr);
@@ -1742,7 +1911,7 @@ const GraphModeView = ({
         linkCanvasFrameRef.current = null;
       }
     };
-  }, [displayedLinks, displayedNodeMap, focusNodeId, loading, pan.x, pan.y, viewport.height, viewport.width, zoom]);
+  }, [displayedLinks, displayedNodeMap, focusNodeId, loading, pan.x, pan.y, getVisibleDimensions, zoom]);
 
   useEffect(() => {
     if (!fitAfterSimulation) return;
@@ -1760,12 +1929,12 @@ const GraphModeView = ({
     // Center and fit to frame after initial layout settles
     centerGraphToNodes(filtered.nodes, {
       fitToFrame: true,
-      fitPadding: Math.max(240, Math.min(360, viewport.width * 0.2)),
-      fitZoomScale: 0.72,
-      maxZoom: 0.86
+      fitPadding: 110,
+      fitZoomScale: 0.85,
+      maxZoom: 0.95
     });
     setFitAfterSimulation(false);
-  }, [fitAfterSimulation, filtered.nodes, centerGraphToNodes, viewport.width]);
+  }, [fitAfterSimulation, filtered.nodes, centerGraphToNodes]);
 
   const focusNodeFromSearch = useCallback((node, options = {}) => {
     if (!node) return;
@@ -1785,21 +1954,56 @@ const GraphModeView = ({
 
     setSelectedNodeId(node.id);
     suppressPostSimulationFitRef.current = true;
-    requestAnimationFrame(() => {
-      const relatedNodes = [node];
-      const directNeighbors = neighborMap.get(node.id);
-      if (directNeighbors) {
-        directNeighbors.forEach((neighborId) => {
-          const neighborNode = graph.nodes.find((candidate) => candidate.id === neighborId);
-          if (neighborNode) relatedNodes.push(neighborNode);
-        });
-      }
 
-      centerGraphToNodes(relatedNodes, {
-        fitToFrame: true,
-        fitPadding: Math.max(260, Math.min(360, viewport.width * 0.22)),
-        fitZoomScale: 0.72,
-        maxZoom: 0.82
+    // Capture the target node id for use in rAF closure
+    const targetNodeId = node.id;
+
+    // Double-rAF: first rAF lets React flush state + simulation tick, second rAF reads settled positions
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        // Prefer live simulation positions from simulationNodeMapRef (updated every tick)
+        // Fall back to positionOverridesRef, then node's original x/y
+        const getLivePos = (n) => {
+          const simNode = simulationNodeMapRef.current.get(n.id);
+          if (simNode && Number.isFinite(simNode.x) && Number.isFinite(simNode.y)) {
+            return { x: simNode.x, y: simNode.y };
+          }
+          const override = positionOverridesRef.current[n.id];
+          if (override && Number.isFinite(override.x) && Number.isFinite(override.y)) {
+            return { x: override.x, y: override.y };
+          }
+          return { x: Number(n.x) || 0, y: Number(n.y) || 0 };
+        };
+
+        const relatedNodes = [];
+
+        // Find the target node in graph.nodes and enrich with live position
+        const targetGraphNode = graph.nodes.find((n) => n.id === targetNodeId);
+        if (targetGraphNode) {
+          const pos = getLivePos(targetGraphNode);
+          relatedNodes.push({ ...targetGraphNode, ...pos });
+        }
+
+        // Add direct neighbours with live positions
+        const directNeighbors = neighborMap.get(targetNodeId);
+        if (directNeighbors) {
+          directNeighbors.forEach((neighborId) => {
+            const neighborNode = graph.nodes.find((n) => n.id === neighborId);
+            if (neighborNode) {
+              const pos = getLivePos(neighborNode);
+              relatedNodes.push({ ...neighborNode, ...pos });
+            }
+          });
+        }
+
+        if (relatedNodes.length === 0) return;
+
+        centerGraphToNodes(relatedNodes, {
+          fitToFrame: true,
+          fitPadding: Math.max(200, Math.min(300, viewport.width * 0.16)),
+          fitZoomScale: 0.78,
+          maxZoom: 0.92
+        });
       });
     });
   }, [centerGraphToNodes, graph.nodes, neighborMap, viewport.width, isTimeLapsePlaying]);
@@ -1861,6 +2065,9 @@ const GraphModeView = ({
     focusNodeFromSearch(topMatch, { updateQuery: true });
   }, [externalSearchRequest, graph.nodes, focusNodeFromSearch, isTimeLapsePlaying]);
 
+  // (Query-change auto-centering is handled inside focusNodeFromSearch using live positions
+  //  to avoid double-centering jitter. The generic auto-fit below handles idle graph only.)
+
   useEffect(() => {
     if (isTimeLapsePlaying) return;
     if (filtered.nodes.length === 0) return;
@@ -1874,272 +2081,15 @@ const GraphModeView = ({
     suppressPostSimulationFitRef.current = true;
     centerGraphToNodes(filtered.nodes, {
       fitToFrame: true,
-      fitPadding: Math.max(300, Math.min(440, viewport.width * 0.26)),
-      fitZoomScale: 0.56,
-      maxZoom: 0.66
+      fitPadding: 110,
+      fitZoomScale: 0.85,
+      maxZoom: 0.95
     });
-  }, [filtered.nodes, filtered.links.length, isTimeLapsePlaying, mode, query, selectedNodeId, centerGraphToNodes, viewport.width, viewport.height]);
+  }, [filtered.nodes, filtered.links.length, isTimeLapsePlaying, mode, query, selectedNodeId, centerGraphToNodes]);
 
   return (
     <div ref={containerRef} className={`h-full grid grid-cols-1 gap-5 ${isMaximizedView ? '' : 'xl:grid-cols-12'}`}>
       <div className={isMaximizedView ? 'space-y-4' : 'xl:col-span-9 space-y-4'}>
-        {!isMaximizedView ? (
-        <div className="bg-black border border-white/20 rounded-xl p-4 sm:p-5">
-          <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-              <input
-                type="text"
-                value={query}
-                onFocus={() => {
-                  if (searchBlurTimerRef.current) {
-                    clearTimeout(searchBlurTimerRef.current);
-                    searchBlurTimerRef.current = null;
-                  }
-                  setIsSearchFocused(true);
-                  setIsSearchDropdownOpen(true);
-                }}
-                onBlur={() => {
-                  setIsSearchFocused(false);
-                  if (searchBlurTimerRef.current) {
-                    clearTimeout(searchBlurTimerRef.current);
-                  }
-                  searchBlurTimerRef.current = setTimeout(() => {
-                    setIsSearchDropdownOpen(false);
-                    searchBlurTimerRef.current = null;
-                  }, 120);
-                }}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                  if (!isSearchDropdownOpen) {
-                    setIsSearchDropdownOpen(true);
-                  }
-                }}
-                placeholder="Search topics, files, mindmaps, or tags"
-                className="w-full bg-black border border-white/15 rounded-lg pl-10 pr-10 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-rose-400/70"
-              />
-
-              {query.trim().length > 0 ? (
-                <button
-                  type="button"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    setQuery('');
-                    setIsSearchDropdownOpen(false);
-                  }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors flex items-center justify-center"
-                  aria-label="Clear graph search"
-                  title="Clear search"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              ) : null}
-
-              {isSearchDropdownOpen && (isSearchFocused || query.trim().length > 0) && searchSuggestions.length > 0 ? (
-                <div className="absolute left-0 right-0 top-[calc(100%+0.4rem)] z-30 rounded-lg border border-white/20 bg-black/95 backdrop-blur p-1.5 shadow-2xl max-h-60 overflow-y-auto">
-                  {searchSuggestions.map((node) => (
-                    <button
-                      key={`search_option_${node.id}`}
-                      type="button"
-                      onMouseDown={(event) => {
-                        event.preventDefault();
-                        focusNodeFromSearch(node, { updateQuery: true });
-                        setIsSearchDropdownOpen(false);
-                      }}
-                      className="w-full px-2.5 py-2 rounded-md text-left hover:bg-white/8 transition-colors"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm text-white truncate">{node.title}</p>
-                        <span className="text-[10px] uppercase tracking-wide text-rose-100 border border-rose-400/35 bg-rose-500/15 rounded px-1.5 py-0.5">
-                          {node.nodeType}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-gray-400 truncate mt-0.5">
-                        {node.nodeType === 'topic'
-                          ? `${node.category || 'General'} • ${getDifficultyLabel(node.difficulty)}`
-                          : node.nodeType === 'file'
-                            ? 'Linked file node'
-                            : 'Linked mindmap node'}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="flex items-center gap-2 w-full lg:w-auto min-w-0">
-              <ShadcnSelect
-                value={selectedCategory}
-                onChange={setSelectedCategory}
-                options={[
-                  { value: 'all', label: 'All categories' },
-                  { value: 'files', label: 'Files' },
-                  { value: 'mindmaps', label: 'Mindmaps' },
-                  { value: 'listenerNotes', label: 'Listener notes' }
-                ]}
-                className="flex-1 lg:w-[190px] shrink-0"
-              />
-
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={() => setMode('global')}
-                  className={`px-3 py-2 text-xs rounded-lg border transition-colors ${
-                    mode === 'global'
-                      ? 'border-rose-400/45 text-rose-100 bg-rose-500/18'
-                      : 'border-white/15 text-gray-300 hover:text-white'
-                  }`}
-                >
-                  Global
-                </button>
-                <button
-                  onClick={() => setMode('local')}
-                  className={`px-3 py-2 text-xs rounded-lg border transition-colors ${
-                    mode === 'local'
-                      ? 'border-rose-400/45 text-rose-100 bg-rose-500/18'
-                      : 'border-white/15 text-gray-300 hover:text-white'
-                  }`}
-                >
-                  Local
-                </button>
-              </div>
-            </div>
-
-            <ShadcnSelect
-              value={linkMode}
-              onChange={setLinkMode}
-              options={[
-                { value: 'hybrid', label: 'Links: Tags + Day' },
-                { value: 'tags', label: 'Links: Tags only' },
-                { value: 'day', label: 'Links: Day only' }
-              ]}
-              className="w-full lg:w-[180px] shrink-0"
-            />
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setZoom((prev) => clampZoom(prev * 1.15))}
-              className="p-2 rounded-lg border border-white/15 text-gray-300 hover:text-white hover:bg-white/5"
-              title="Zoom in"
-            >
-              <ZoomIn className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setZoom((prev) => clampZoom(prev / 1.15))}
-              className="p-2 rounded-lg border border-white/15 text-gray-300 hover:text-white hover:bg-white/5"
-              title="Zoom out"
-            >
-              <ZoomOut className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => {
-                setZoom(DEFAULT_GRAPH_ZOOM);
-                centerGraphToNodes(filtered.nodes, { preferredZoom: DEFAULT_GRAPH_ZOOM });
-              }}
-              className="p-2 rounded-lg border border-white/15 text-gray-300 hover:text-white hover:bg-white/5"
-              title="Reset view"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => centerGraphToNodes(filtered.nodes, { fitToFrame: true })}
-              className="p-2 rounded-lg border border-white/15 text-gray-300 hover:text-white hover:bg-white/5"
-              title="Center and fit graph"
-            >
-              <LocateFixed className="w-4 h-4" />
-            </button>
-            <span className="text-xs text-gray-400 ml-1">{Math.round(zoom * 100)}%</span>
-
-            <div className="ml-auto flex items-center gap-2">
-              <span className="hidden xl:inline text-xs text-gray-400">
-                Tip: drag nodes to reshape and use filters for focused analysis.
-              </span>
-              <button
-                onClick={() => setShowFilterPanel((prev) => !prev)}
-                className={`px-3 py-2 rounded-lg border text-xs transition-colors inline-flex items-center gap-1.5 ${
-                  showFilterPanel
-                    ? 'border-white/25 text-white bg-black'
-                    : 'border-white/15 text-gray-300 hover:text-white hover:bg-white/5'
-                }`}
-                title="Show or hide graph filters"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>{showFilterPanel ? 'Hide Filters' : 'Filters'}</span>
-              </button>
-            </div>
-          </div>
-
-          {showFilterPanel && (
-            <div className="mt-3 flex flex-col sm:flex-row sm:items-stretch gap-2 min-w-0">
-              <ShadcnSelect
-                value={difficultyFilter}
-                onChange={setDifficultyFilter}
-                options={[
-                  { value: 'all', label: 'Difficulty: All' },
-                  { value: '1', label: 'Very Easy' },
-                  { value: '2', label: 'Easy' },
-                  { value: '3', label: 'Medium' },
-                  { value: '4', label: 'Hard' },
-                  { value: '5', label: 'Very Hard' }
-                ]}
-                className="h-10 w-full sm:flex-[0.9] min-w-0"
-              />
-
-              <ShadcnSelect
-                value={dueFilter}
-                onChange={setDueFilter}
-                options={[
-                  { value: 'all', label: 'Due: Any time' },
-                  { value: 'overdue', label: 'Overdue' },
-                  { value: 'today', label: 'Due today' },
-                  { value: '3d', label: 'Due in 3 days' },
-                  { value: '7d', label: 'Due in 7 days' },
-                  { value: 'unscheduled', label: 'Unscheduled' }
-                ]}
-                className="h-10 w-full sm:flex-[0.9] min-w-0"
-              />
-
-              <div className="h-10 w-full sm:flex-[1.28] min-w-0 bg-black border border-white/15 rounded-lg px-3 flex items-center gap-1.5">
-                <span className="text-xs text-gray-400 shrink-0">Min reviews</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="15"
-                  value={minReviewsFilter}
-                  onChange={(event) => setMinReviewsFilter(Number(event.target.value))}
-                  className="flex-1 min-w-0 accent-rose-300"
-                />
-                <span className="text-xs text-white min-w-[20px] text-right">{minReviewsFilter}+</span>
-              </div>
-
-              <button
-                onClick={() => setShowLabels((prev) => !prev)}
-                className={`h-10 w-full sm:flex-[0.84] min-w-0 px-3 rounded-lg border text-xs whitespace-nowrap transition-colors ${
-                  showLabels
-                    ? 'border-rose-400/45 text-rose-100 bg-rose-500/20'
-                    : 'border-rose-400/35 text-rose-100 bg-rose-500/10 hover:bg-rose-500/18'
-                }`}
-              >
-                Labels {showLabels ? 'On' : 'Off'}
-              </button>
-
-              <button
-                onClick={() => {
-                  setQuery('');
-                  setSelectedCategory('all');
-                  setDifficultyFilter('all');
-                  setDueFilter('all');
-                  setMinReviewsFilter(0);
-                }}
-                className="h-10 w-full sm:flex-[0.88] min-w-0 px-3 rounded-lg border border-white/15 text-xs whitespace-nowrap text-gray-300 hover:text-white hover:bg-white/5"
-              >
-                Clear Filters
-              </button>
-            </div>
-          )}
-        </div>
-        ) : null}
-
         <div
           ref={graphWrapperRef}
           onWheel={onWheelGraph}
@@ -2172,227 +2122,276 @@ const GraphModeView = ({
                 className="absolute inset-0 w-full h-full pointer-events-none"
                 aria-hidden="true"
               />
-            <svg
-              className={`w-full h-full ${draggingNodeId ? 'cursor-grabbing' : 'cursor-grab active:cursor-grabbing'}`}
-              onMouseDown={onMouseDownBackground}
-              role="img"
-              aria-label="Graph mode topic network"
-            >
-              <defs>
-                <filter id="nodeGlow" x="-80%" y="-80%" width="260%" height="260%">
-                  <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="rgba(244,63,94,0.55)" />
-                </filter>
-              </defs>
+              <svg
+                className={`w-full h-full ${draggingNodeId ? 'cursor-grabbing' : 'cursor-grab active:cursor-grabbing'}`}
+                onMouseDown={onMouseDownBackground}
+                role="img"
+                aria-label="Graph mode topic network"
+              >
+                <defs>
+                  <filter id="nodeGlow" x="-80%" y="-80%" width="260%" height="260%">
+                    <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="rgba(244,63,94,0.55)" />
+                  </filter>
+                </defs>
 
-              <g transform={`translate(${viewport.width / 2 + pan.x}, ${viewport.height / 2 + pan.y}) scale(${zoom})`}>
-                {displayedNodes.map((node) => {
-                  const isSelected = selectedNodeId === node.id;
-                  const isFocused = focusNodeId === node.id;
-                  const isRelated = relatedNodeIds ? relatedNodeIds.has(node.id) : true;
-                  const shouldDim = Boolean(focusNodeId && !isRelated);
-                  const newestNodeId = isTimeLapsePlaying && timeLapseCount > 0
-                    ? timeLapseNodeOrder[Math.min(timeLapseCount - 1, timeLapseNodeOrder.length - 1)]
-                    : null;
-                  const isNewestTimeLapseNode = newestNodeId === node.id;
-                  const isListenerNote = node.nodeType === 'listenerNote';
-                  const baseFill = node.nodeType === 'file'
-                    ? FILE_NODE_COLOR
-                    : node.nodeType === 'mindmap'
-                      ? MINDMAP_NODE_COLOR
-                      : isListenerNote
-                        ? LISTENER_NOTE_NODE_COLOR
-                      : getDifficultyNodeColor(node.difficulty);
-                  const fill = isSelected
-                    ? 'rgba(168, 85, 247, 0.95)'
-                    : baseFill;
-                  const isCompletedTopic = node.nodeType === 'topic' && node.isCompleted;
-                  const topicFill = isCompletedTopic ? 'transparent' : fill;
-                  const topicStroke = isListenerNote
-                    ? (isFocused
-                      ? LISTENER_NOTE_NODE_STROKE
-                      : isSelected
-                        ? 'rgba(255,255,255,0.95)'
-                        : 'rgba(255,255,255,0.28)')
-                    : isFocused
-                      ? 'rgba(216,180,254,0.98)'
-                      : isSelected
-                        ? 'rgba(255,255,255,0.95)'
-                        : isCompletedTopic
-                          ? baseFill
-                          : 'rgba(255,255,255,0.28)';
-                  const topicStrokeWidth = isFocused
-                    ? 2.2
-                    : isSelected
-                      ? 2
-                      : isCompletedTopic
-                        ? 1.8
-                        : 1;
-                  const shapeSize = node.nodeType === 'topic'
-                    ? node.radius * 2
-                    : isListenerNote
-                      ? node.radius * 2.75
-                      : node.radius * 2.2;
-                  const halfSize = shapeSize / 2;
-                  const symbolHalfHeight = node.nodeType === 'topic' ? node.radius : isListenerNote ? halfSize * 0.95 : halfSize;
-                  const nodeLabel = getVisibleNodeTitle(node);
-
+                {(() => {
+                  const dims = getVisibleDimensions();
                   return (
-                    <g key={node.id}>
-                      <circle
-                        data-node="true"
-                        data-node-id={node.id}
-                        cx={node.x}
-                        cy={node.y}
-                        r={node.radius + 2}
-                        fill="transparent"
-                        onMouseDown={(event) => onMouseDownNode(event, node.id)}
-                        onMouseEnter={() => setHoveredNodeId(node.id)}
-                        onMouseLeave={() => setHoveredNodeId(null)}
-                        onClick={() => setSelectedNodeId(node.id)}
-                      />
-                      <g
-                        style={{
-                          transformOrigin: `${node.x}px ${node.y}px`,
-                          transformBox: 'fill-box',
-                          transform: isNewestTimeLapseNode ? 'scale(1.15)' : 'scale(1)',
-                          transition: 'transform 220ms ease-out, opacity 220ms ease-out'
-                        }}
-                      >
-                      {node.nodeType === 'topic' ? (
-                        <circle
-                          data-node="true"
-                          data-node-id={node.id}
-                          cx={node.x}
-                          cy={node.y}
-                          r={node.radius}
-                          fill={topicFill}
-                          opacity={shouldDim ? 0.24 : 1}
-                          stroke={topicStroke}
-                          strokeWidth={topicStrokeWidth}
-                          filter={isFocused || isSelected ? 'url(#nodeGlow)' : undefined}
-                          onMouseDown={(event) => onMouseDownNode(event, node.id)}
-                          onMouseEnter={() => setHoveredNodeId(node.id)}
-                          onMouseLeave={() => setHoveredNodeId(null)}
-                          onClick={() => setSelectedNodeId(node.id)}
-                        >
-                          {isPhoneViewport ? <title>{node.title}</title> : null}
-                        </circle>
-                      ) : node.nodeType === 'file' ? (
-                        <rect
-                          data-node="true"
-                          data-node-id={node.id}
-                          x={node.x - halfSize}
-                          y={node.y - halfSize}
-                          width={shapeSize}
-                          height={shapeSize}
-                          rx={2}
-                          fill={fill}
-                          opacity={shouldDim ? 0.24 : 1}
-                          stroke={isFocused ? 'rgba(216,180,254,0.98)' : isSelected ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.28)'}
-                          strokeWidth={isFocused ? 2.2 : isSelected ? 2 : 1}
-                          filter={isFocused || isSelected ? 'url(#nodeGlow)' : undefined}
-                          onMouseDown={(event) => onMouseDownNode(event, node.id)}
-                          onMouseEnter={() => setHoveredNodeId(node.id)}
-                          onMouseLeave={() => setHoveredNodeId(null)}
-                          onClick={() => setSelectedNodeId(node.id)}
-                        >
-                          {isPhoneViewport ? <title>{node.title}</title> : null}
-                        </rect>
-                      ) : isListenerNote ? (
-                        <polygon
-                          data-node="true"
-                          data-node-id={node.id}
-                          points={getListenerNoteStarPoints(node, halfSize)}
-                          fill={fill}
-                          opacity={shouldDim ? 0.24 : 1}
-                          stroke={topicStroke}
-                          strokeWidth={topicStrokeWidth}
-                          filter={isFocused || isSelected ? 'url(#nodeGlow)' : undefined}
-                          onMouseDown={(event) => onMouseDownNode(event, node.id)}
-                          onMouseEnter={() => setHoveredNodeId(node.id)}
-                          onMouseLeave={() => setHoveredNodeId(null)}
-                          onClick={() => setSelectedNodeId(node.id)}
-                        >
-                          {isPhoneViewport ? <title>{node.title}</title> : null}
-                        </polygon>
-                      ) : (
-                        <polygon
-                          data-node="true"
-                          data-node-id={node.id}
-                          points={`${node.x},${node.y - halfSize} ${node.x + halfSize},${node.y} ${node.x},${node.y + halfSize} ${node.x - halfSize},${node.y}`}
-                          fill={fill}
-                          opacity={shouldDim ? 0.24 : 1}
-                          stroke={isFocused ? 'rgba(216,180,254,0.98)' : isSelected ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.28)'}
-                          strokeWidth={isFocused ? 2.2 : isSelected ? 2 : 1}
-                          filter={isFocused || isSelected ? 'url(#nodeGlow)' : undefined}
-                          onMouseDown={(event) => onMouseDownNode(event, node.id)}
-                          onMouseEnter={() => setHoveredNodeId(node.id)}
-                          onMouseLeave={() => setHoveredNodeId(null)}
-                          onClick={() => setSelectedNodeId(node.id)}
-                        >
-                          {isPhoneViewport ? <title>{node.title}</title> : null}
-                        </polygon>
-                      )}
-                      {showLabels && zoom >= 0.8 && (
-                        <text
-                          x={node.x}
-                          y={node.y + symbolHalfHeight + LABEL_GAP + LABEL_HEIGHT * 0.8}
-                          fill="rgba(226,232,240,0.92)"
-                          opacity={shouldDim ? 0.2 : 1}
-                          fontSize="11"
-                          textAnchor="middle"
-                          style={{ pointerEvents: 'none' }}
-                        >
-                          {nodeLabel}
-                        </text>
-                      )}
-                      </g>
+                    <g transform={`translate(${dims.width / 2 + pan.x}, ${dims.height / 2 + pan.y}) scale(${zoom})`}>
+                      {displayedNodes.map((node) => {
+                        const isSelected = selectedNodeId === node.id;
+                        const isFocused = focusNodeId === node.id;
+                        const isRelated = relatedNodeIds ? relatedNodeIds.has(node.id) : true;
+                        const shouldDim = Boolean(focusNodeId && !isRelated);
+                        const newestNodeId = isTimeLapsePlaying && timeLapseCount > 0
+                          ? timeLapseNodeOrder[Math.min(timeLapseCount - 1, timeLapseNodeOrder.length - 1)]
+                          : null;
+                        const isNewestTimeLapseNode = newestNodeId === node.id;
+                        const isListenerNote = node.nodeType === 'listenerNote';
+                        const baseFill = node.nodeType === 'file'
+                          ? FILE_NODE_COLOR
+                          : node.nodeType === 'mindmap'
+                            ? MINDMAP_NODE_COLOR
+                            : isListenerNote
+                              ? LISTENER_NOTE_NODE_COLOR
+                            : getDifficultyNodeColor(node.difficulty);
+                        const fill = isSelected
+                          ? 'rgba(168, 85, 247, 0.95)'
+                          : baseFill;
+                        const isCompletedTopic = node.nodeType === 'topic' && node.isCompleted;
+                        const topicFill = isCompletedTopic ? 'transparent' : fill;
+                        const topicStroke = isListenerNote
+                          ? (isFocused
+                            ? LISTENER_NOTE_NODE_STROKE
+                            : isSelected
+                              ? 'rgba(255,255,255,0.95)'
+                              : 'rgba(255,255,255,0.28)')
+                          : isFocused
+                            ? 'rgba(216,180,254,0.98)'
+                            : isSelected
+                              ? 'rgba(255,255,255,0.95)'
+                              : isCompletedTopic
+                                ? baseFill
+                                : 'rgba(255,255,255,0.28)';
+                        const topicStrokeWidth = isFocused
+                          ? 2.2
+                          : isSelected
+                            ? 2
+                            : isCompletedTopic
+                              ? 1.8
+                              : 1;
+                        const shapeSize = node.nodeType === 'topic'
+                          ? node.radius * 2
+                          : isListenerNote
+                            ? node.radius * 2.75
+                            : node.radius * 2.2;
+                        const halfSize = shapeSize / 2;
+                        const symbolHalfHeight = node.nodeType === 'topic' ? node.radius : isListenerNote ? halfSize * 0.95 : halfSize;
+                        const nodeLabel = getVisibleNodeTitle(node);
+
+                        return (
+                          <g key={node.id}>
+                            <circle
+                              data-node="true"
+                              data-node-id={node.id}
+                              cx={node.x}
+                              cy={node.y}
+                              r={node.radius + 2}
+                              fill="transparent"
+                              className="cursor-pointer"
+                              onMouseDown={(event) => onMouseDownNode(event, node.id)}
+                              onMouseEnter={() => setHoveredNodeId(node.id)}
+                              onMouseLeave={() => setHoveredNodeId(null)}
+                              onClick={(event) => {
+                                if (!event.shiftKey) {
+                                  setSelectedNodeId(node.id);
+                                }
+                              }}
+                            />
+                            <g
+                              style={{
+                                transformOrigin: `${node.x}px ${node.y}px`,
+                                transformBox: 'fill-box',
+                                transform: isNewestTimeLapseNode ? 'scale(1.15)' : 'scale(1)',
+                                transition: 'transform 220ms ease-out, opacity 220ms ease-out'
+                              }}
+                            >
+                            {node.nodeType === 'topic' ? (
+                              <circle
+                                data-node="true"
+                                data-node-id={node.id}
+                                cx={node.x}
+                                cy={node.y}
+                                r={node.radius}
+                                fill={topicFill}
+                                opacity={shouldDim ? 0.24 : 1}
+                                stroke={topicStroke}
+                                strokeWidth={topicStrokeWidth}
+                                filter={isFocused || isSelected ? 'url(#nodeGlow)' : undefined}
+                                onMouseDown={(event) => onMouseDownNode(event, node.id)}
+                                onMouseEnter={() => setHoveredNodeId(node.id)}
+                                onMouseLeave={() => setHoveredNodeId(null)}
+                                onClick={() => setSelectedNodeId(node.id)}
+                              >
+                                {isPhoneViewport ? <title>{node.title}</title> : null}
+                              </circle>
+                            ) : node.nodeType === 'file' ? (
+                              <rect
+                                data-node="true"
+                                data-node-id={node.id}
+                                x={node.x - halfSize}
+                                y={node.y - halfSize}
+                                width={shapeSize}
+                                height={shapeSize}
+                                rx={2}
+                                fill={fill}
+                                opacity={shouldDim ? 0.24 : 1}
+                                stroke={isFocused ? 'rgba(216,180,254,0.98)' : isSelected ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.28)'}
+                                strokeWidth={isFocused ? 2.2 : isSelected ? 2 : 1}
+                                filter={isFocused || isSelected ? 'url(#nodeGlow)' : undefined}
+                                onMouseDown={(event) => onMouseDownNode(event, node.id)}
+                                onMouseEnter={() => setHoveredNodeId(node.id)}
+                                onMouseLeave={() => setHoveredNodeId(null)}
+                                onClick={() => setSelectedNodeId(node.id)}
+                              >
+                                {isPhoneViewport ? <title>{node.title}</title> : null}
+                              </rect>
+                            ) : isListenerNote ? (
+                              <polygon
+                                data-node="true"
+                                data-node-id={node.id}
+                                points={getListenerNoteStarPoints(node, halfSize)}
+                                fill={fill}
+                                opacity={shouldDim ? 0.24 : 1}
+                                stroke={topicStroke}
+                                strokeWidth={topicStrokeWidth}
+                                filter={isFocused || isSelected ? 'url(#nodeGlow)' : undefined}
+                                onMouseDown={(event) => onMouseDownNode(event, node.id)}
+                                onMouseEnter={() => setHoveredNodeId(node.id)}
+                                onMouseLeave={() => setHoveredNodeId(null)}
+                                onClick={() => setSelectedNodeId(node.id)}
+                              >
+                                {isPhoneViewport ? <title>{node.title}</title> : null}
+                              </polygon>
+                            ) : (
+                              <polygon
+                                data-node="true"
+                                data-node-id={node.id}
+                                points={`${node.x},${node.y - halfSize} ${node.x + halfSize},${node.y} ${node.x},${node.y + halfSize} ${node.x - halfSize},${node.y}`}
+                                fill={fill}
+                                opacity={shouldDim ? 0.24 : 1}
+                                stroke={isFocused ? 'rgba(216,180,254,0.98)' : isSelected ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.28)'}
+                                strokeWidth={isFocused ? 2.2 : isSelected ? 2 : 1}
+                                filter={isFocused || isSelected ? 'url(#nodeGlow)' : undefined}
+                                onMouseDown={(event) => onMouseDownNode(event, node.id)}
+                                onMouseEnter={() => setHoveredNodeId(node.id)}
+                                onMouseLeave={() => setHoveredNodeId(null)}
+                                onClick={() => setSelectedNodeId(node.id)}
+                              >
+                                {isPhoneViewport ? <title>{node.title}</title> : null}
+                              </polygon>
+                            )}
+                            {showLabels && zoom >= 0.8 && (
+                              <text
+                                x={node.x}
+                                y={node.y + symbolHalfHeight + LABEL_GAP + LABEL_HEIGHT * 0.8}
+                                fill="rgba(226,232,240,0.92)"
+                                opacity={shouldDim ? 0.2 : 1}
+                                fontSize="11"
+                                textAnchor="middle"
+                                style={{ pointerEvents: 'none' }}
+                              >
+                                {nodeLabel}
+                              </text>
+                            )}
+                            </g>
+                          </g>
+                        );
+                      })}
                     </g>
                   );
-                })}
-              </g>
-            </svg>
+                })()}
+              </svg>
 
-            {isPhoneViewport && selectedNode && !draggingNodeId && selectedNodeCanvasCardStyle ? (
-              <div
-                className="absolute z-20 rounded-xl border border-rose-400/35 bg-black/92 backdrop-blur p-2.5 shadow-xl"
-                style={selectedNodeCanvasCardStyle}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-white truncate">{selectedNode.title}</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5 truncate">
-                      {selectedNode.nodeType === 'topic'
-                        ? `${selectedNode.category} • ${getDifficultyLabel(selectedNode.difficulty)}`
-                        : selectedNode.nodeType === 'file'
-                          ? 'File node'
-                          : selectedNode.nodeType === 'listenerNote'
-                            ? 'Listener note'
-                            : 'Mindmap node'}
-                    </p>
+              {isPhoneViewport && selectedNode && !draggingNodeId && selectedNodeCanvasCardStyle ? (
+                <div
+                  className="absolute z-20 rounded-xl border border-rose-400/35 bg-black/92 backdrop-blur p-2.5 shadow-xl"
+                  style={selectedNodeCanvasCardStyle}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-white truncate">{selectedNode.title}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                        {selectedNode.nodeType === 'topic'
+                          ? `${selectedNode.category} • ${getDifficultyLabel(selectedNode.difficulty)}`
+                          : selectedNode.nodeType === 'file'
+                            ? 'File node'
+                            : selectedNode.nodeType === 'listenerNote'
+                              ? 'Listener note'
+                              : 'Mindmap node'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedNodeId(null)}
+                      className="h-6 w-6 shrink-0 rounded-md border border-white/20 text-gray-300 hover:bg-white/10 inline-flex items-center justify-center cursor-pointer"
+                      aria-label="Close node details"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedNodeId(null)}
-                    className="h-6 w-6 shrink-0 rounded-md border border-white/20 text-gray-300 hover:bg-white/10 inline-flex items-center justify-center"
-                    aria-label="Close node details"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
 
-                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px]">
-                  <span className="px-1.5 py-0.5 rounded bg-white/10 text-gray-200">Links {selectedNode.degree}</span>
-                  {selectedNode.nodeType === 'topic' && selectedNode.nextReviewDate ? (
-                    <span className="px-1.5 py-0.5 rounded bg-white/10 text-gray-200">
-                      Due {formatDateDDMMYYYY(selectedNode.nextReviewDate)}
-                    </span>
-                  ) : null}
-                  <span className="px-1.5 py-0.5 rounded bg-white/10 text-gray-200">Neighbors {neighbors.length}</span>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px]">
+                    <span className="px-1.5 py-0.5 rounded bg-white/10 text-gray-200">Links {selectedNode.degree}</span>
+                    {selectedNode.nodeType === 'topic' && selectedNode.nextReviewDate ? (
+                      <span className="px-1.5 py-0.5 rounded bg-white/10 text-gray-200">
+                        Due {formatDateDDMMYYYY(selectedNode.nextReviewDate)}
+                      </span>
+                    ) : null}
+                    <span className="px-1.5 py-0.5 rounded bg-white/10 text-gray-200">Neighbors {neighbors.length}</span>
+                  </div>
                 </div>
+              ) : null}
+
+              {/* Vertical Zoom Controls in top-right corner of Graph Panel */}
+              <div className="absolute top-4 right-4 flex flex-col items-center gap-1.5 border border-white/15 bg-black/85 backdrop-blur rounded-xl p-2 z-10 select-none">
+                <button
+                  type="button"
+                  onClick={() => setZoom((prev) => clampZoom(prev * 1.15))}
+                  className="p-1.5 rounded-lg border border-white/10 text-gray-300 hover:text-white hover:bg-white/5 cursor-pointer transition-colors"
+                  title="Zoom in"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setZoom((prev) => clampZoom(prev / 1.15))}
+                  className="p-1.5 rounded-lg border border-white/10 text-gray-300 hover:text-white hover:bg-white/5 cursor-pointer transition-colors"
+                  title="Zoom out"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setZoom(DEFAULT_GRAPH_ZOOM);
+                    centerGraphToNodes(filtered.nodes, { preferredZoom: DEFAULT_GRAPH_ZOOM });
+                  }}
+                  className="p-1.5 rounded-lg border border-white/10 text-gray-300 hover:text-white hover:bg-white/5 cursor-pointer transition-colors"
+                  title="Reset view"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => centerGraphToNodes(filtered.nodes, { fitToFrame: true })}
+                  className="p-1.5 rounded-lg border border-white/10 text-gray-300 hover:text-white hover:bg-white/5 cursor-pointer transition-colors"
+                  title="Center and fit graph"
+                >
+                  <LocateFixed className="w-4 h-4" />
+                </button>
+                <span className="text-[10px] font-semibold text-gray-400 mt-1 select-none">{Math.round(zoom * 100)}%</span>
               </div>
-            ) : null}
-
             </>
           )}
         </div>
@@ -2400,56 +2399,305 @@ const GraphModeView = ({
 
       {!isMaximizedView && !isPhoneViewport && (
       <div className="xl:col-span-3 space-y-4">
-        <div className="bg-black border border-white/20 rounded-xl p-4">
-          <h3 className="text-sm uppercase tracking-wide text-gray-400 mb-3">Graph Stats</h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex items-center justify-between text-gray-300">
-              <span className="flex items-center gap-2"><Circle className="w-3 h-3 text-rose-300" />Nodes</span>
-              <span className="text-white font-medium">{filtered.nodes.length}</span>
-            </div>
-            <div className="flex items-center justify-between text-gray-300">
-              <span className="flex items-center gap-2"><LinkIcon className="w-3 h-3 text-purple-300" />Links</span>
-              <span className="text-white font-medium">{filtered.links.length}</span>
-            </div>
-            <div className="flex items-center justify-between text-gray-300">
-              <span>Density</span>
-              <span className="text-white font-medium">{connectionDensity}%</span>
-            </div>
-            <div className="flex items-center justify-between text-gray-300">
-              <span>Link basis</span>
-              <span className="text-white font-medium capitalize">{linkMode}</span>
-            </div>
-            <div className="flex items-center justify-between text-gray-300">
-              <span>Due soon (3d)</span>
-              <span className="text-white font-medium">{graphInsights.dueSoon}</span>
-            </div>
-            <div className="flex items-center justify-between text-gray-300">
-              <span>Hard + Very Hard</span>
-              <span className="text-white font-medium">{graphInsights.hardTopics}</span>
-            </div>
-            <div className="flex items-center justify-between text-gray-300">
-              <span>Listener notes</span>
-              <span className="text-white font-medium">{graphInsights.listenerNotes}</span>
-            </div>
+        {/* Section 1: Search & Filter (Always Visible) */}
+        <div className="bg-black border border-white/20 rounded-xl p-4 space-y-3.5">
+          <h3 className="text-sm uppercase tracking-wide text-gray-400 font-semibold">Search & Filter</h3>
+          
+          {/* Search input with suggestions dropdown */}
+          <div className="relative w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={query}
+              onFocus={() => {
+                if (searchBlurTimerRef.current) {
+                  clearTimeout(searchBlurTimerRef.current);
+                  searchBlurTimerRef.current = null;
+                }
+                setIsSearchFocused(true);
+                setIsSearchDropdownOpen(true);
+              }}
+              onBlur={() => {
+                setIsSearchFocused(false);
+                if (searchBlurTimerRef.current) {
+                  clearTimeout(searchBlurTimerRef.current);
+                }
+                searchBlurTimerRef.current = setTimeout(() => {
+                  setIsSearchDropdownOpen(false);
+                  searchBlurTimerRef.current = null;
+                }, 120);
+              }}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                if (!isSearchDropdownOpen) {
+                  setIsSearchDropdownOpen(true);
+                }
+              }}
+              placeholder="Search graph..."
+              className="w-full bg-black border border-white/15 rounded-lg pl-9 pr-9 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-rose-400/70"
+            />
+
+            {query.trim().length > 0 ? (
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  setQuery('');
+                  // Keep / re-open the suggestion dropdown and restore focus so suggestions appear immediately
+                  setIsSearchDropdownOpen(true);
+                  setIsSearchFocused(true);
+                  if (searchBlurTimerRef.current) {
+                    clearTimeout(searchBlurTimerRef.current);
+                    searchBlurTimerRef.current = null;
+                  }
+                  requestAnimationFrame(() => searchInputRef.current?.focus());
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 rounded text-gray-400 hover:text-white hover:bg-white/10 transition-colors flex items-center justify-center cursor-pointer"
+                aria-label="Clear graph search"
+                title="Clear search"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            ) : null}
+
+            {isSearchDropdownOpen && (isSearchFocused || query.trim().length > 0) && searchSuggestions.length > 0 ? (
+              <div className="absolute left-0 right-0 top-[calc(100%+0.4rem)] z-30 rounded-lg border border-white/20 bg-black/95 backdrop-blur p-1.5 shadow-2xl max-h-60 overflow-y-auto">
+                {searchSuggestions.map((node) => (
+                  <button
+                    key={`search_option_${node.id}`}
+                    type="button"
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      focusNodeFromSearch(node, { updateQuery: true });
+                      setIsSearchDropdownOpen(false);
+                    }}
+                    className="w-full px-2.5 py-2 rounded-md text-left hover:bg-white/8 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-white truncate font-semibold">{node.title}</p>
+                      <span className="text-[9px] uppercase tracking-wide text-rose-100 border border-rose-400/35 bg-rose-500/15 rounded px-1 py-0.5">
+                        {node.nodeType}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 truncate mt-0.5">
+                      {node.nodeType === 'topic'
+                        ? `${node.category || 'General'} • ${getDifficultyLabel(node.difficulty)}`
+                        : node.nodeType === 'file'
+                          ? 'Linked file node'
+                          : 'Linked mindmap node'}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
 
-          <button
-            onClick={onAddTopic}
-            className="mt-4 w-full px-3 py-2.5 rounded-lg border border-rose-400/35 bg-rose-500/12 text-rose-100 hover:bg-rose-500/22 text-sm font-medium inline-flex items-center justify-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Add Topic
-          </button>
+          {/* Category Select */}
+          <div>
+            <ShadcnSelect
+              value={selectedCategory}
+              onChange={setSelectedCategory}
+              options={[
+                { value: 'all', label: 'All categories' },
+                { value: 'files', label: 'Files' },
+                { value: 'mindmaps', label: 'Mindmaps' },
+                { value: 'listenerNotes', label: 'Listener notes' }
+              ]}
+              className="w-full text-xs"
+            />
+          </div>
+
+          {/* Global/Local toggle & Link mode selection */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 shrink-0 bg-white/5 border border-white/10 rounded-lg p-0.5">
+              <button
+                onClick={() => setMode('global')}
+                className={`px-2 py-1 text-[11px] rounded transition-colors cursor-pointer ${
+                  mode === 'global'
+                    ? 'bg-rose-500/25 text-rose-100 font-semibold'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Global
+              </button>
+              <button
+                onClick={() => setMode('local')}
+                className={`px-2 py-1 text-[11px] rounded transition-colors cursor-pointer ${
+                  mode === 'local'
+                    ? 'bg-rose-500/25 text-rose-100 font-semibold'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Local
+              </button>
+            </div>
+
+            <ShadcnSelect
+              value={linkMode}
+              onChange={setLinkMode}
+              options={[
+                { value: 'hybrid', label: 'Links: Hybrid' },
+                { value: 'tags', label: 'Links: Tags only' },
+                { value: 'day', label: 'Links: Day only' }
+              ]}
+              className="flex-1 text-xs"
+            />
+          </div>
+
+          {/* Filters toggle */}
+          <div>
+            <button
+              onClick={() => setShowFilterPanel((prev) => !prev)}
+              className={`w-full px-2.5 py-1.5 rounded-lg border text-xs transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer ${
+                showFilterPanel
+                  ? 'border-white/25 text-white bg-white/10'
+                  : 'border-white/15 text-gray-300 hover:text-white hover:bg-white/5'
+              }`}
+              title="Show or hide graph filters"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>{showFilterPanel ? 'Hide Filters' : 'Filters'}</span>
+            </button>
+          </div>
+
+          {/* Filters panel contents */}
+          {showFilterPanel && (
+            <div className="p-3 rounded-lg border border-white/10 bg-white/[0.02] space-y-2.5">
+              <div className="flex gap-2 min-w-0">
+                <ShadcnSelect
+                  value={difficultyFilter}
+                  onChange={setDifficultyFilter}
+                  options={[
+                    { value: 'all', label: 'Difficulty: All' },
+                    { value: '1', label: 'Very Easy' },
+                    { value: '2', label: 'Easy' },
+                    { value: '3', label: 'Medium' },
+                    { value: '4', label: 'Hard' },
+                    { value: '5', label: 'Very Hard' }
+                  ]}
+                  className="flex-1 min-w-0 text-xs"
+                />
+
+                <ShadcnSelect
+                  value={dueFilter}
+                  onChange={setDueFilter}
+                  options={[
+                    { value: 'all', label: 'Due: Any time' },
+                    { value: 'overdue', label: 'Overdue' },
+                    { value: 'today', label: 'Due today' },
+                    { value: '3d', label: 'Due in 3 days' },
+                    { value: '7d', label: 'Due in 7 days' },
+                    { value: 'unscheduled', label: 'Unscheduled' }
+                  ]}
+                  className="flex-1 min-w-0 text-xs"
+                />
+              </div>
+
+              <div className="bg-black border border-white/15 rounded-lg p-2 flex flex-col gap-1.5">
+                <div className="flex items-center justify-between text-[11px] text-gray-400">
+                  <span>Min reviews</span>
+                  <span className="text-white font-medium">{minReviewsFilter}+</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="15"
+                  value={minReviewsFilter}
+                  onChange={(event) => setMinReviewsFilter(Number(event.target.value))}
+                  className="w-full accent-rose-300"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowLabels((prev) => !prev)}
+                  className={`flex-1 py-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
+                    showLabels
+                      ? 'border-rose-400/45 text-rose-100 bg-rose-500/20'
+                      : 'border-rose-400/35 text-rose-100 bg-rose-500/10 hover:bg-rose-500/18'
+                  }`}
+                >
+                  Labels {showLabels ? 'On' : 'Off'}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setQuery('');
+                    setSelectedCategory('all');
+                    setDifficultyFilter('all');
+                    setDueFilter('all');
+                    setMinReviewsFilter(0);
+                  }}
+                  className="flex-1 py-1.5 rounded-lg border border-white/15 text-xs text-gray-300 hover:text-white hover:bg-white/5 cursor-pointer"
+                >
+                  Clear Filters
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="bg-black border border-white/20 rounded-xl p-4 min-h-[338px] flex flex-col">
-          <h3 className="text-sm uppercase tracking-wide text-gray-400 mb-3">Node Details</h3>
-
-          {!selectedNode ? (
-            <div className="flex-1 flex items-center justify-center">
-              <p className="text-sm text-gray-400 text-center px-3">Click a node to inspect topic metadata and linked resources.</p>
+        {/* Section 2: Graph Stats OR Node Details Panel */}
+        {!selectedNode ? (
+          /* Graph Stats Panel */
+          <div className="bg-black border border-white/20 rounded-xl p-4">
+            <h3 className="text-sm uppercase tracking-wide text-gray-400 mb-3 font-semibold">Graph Stats</h3>
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center justify-between text-gray-300">
+                <span className="flex items-center gap-2"><Circle className="w-2.5 h-2.5 text-rose-300" />Nodes</span>
+                <span className="text-white font-semibold">{filtered.nodes.length}</span>
+              </div>
+              <div className="flex items-center justify-between text-gray-300">
+                <span className="flex items-center gap-2"><LinkIcon className="w-2.5 h-2.5 text-purple-300" />Links</span>
+                <span className="text-white font-semibold">{filtered.links.length}</span>
+              </div>
+              <div className="flex items-center justify-between text-gray-300">
+                <span>Density</span>
+                <span className="text-white font-semibold">{connectionDensity}%</span>
+              </div>
+              <div className="flex items-center justify-between text-gray-300">
+                <span>Link basis</span>
+                <span className="text-white font-semibold capitalize">{linkMode}</span>
+              </div>
+              <div className="flex items-center justify-between text-gray-300">
+                <span>Due soon (3d)</span>
+                <span className="text-white font-semibold">{graphInsights.dueSoon}</span>
+              </div>
+              <div className="flex items-center justify-between text-gray-300">
+                <span>Hard + Very Hard</span>
+                <span className="text-white font-semibold">{graphInsights.hardTopics}</span>
+              </div>
+              <div className="flex items-center justify-between text-gray-300">
+                <span>Listener notes</span>
+                <span className="text-white font-semibold">{graphInsights.listenerNotes}</span>
+              </div>
             </div>
-          ) : (
+
+            <button
+              onClick={onAddTopic}
+              className="mt-4 w-full px-3 py-2 rounded-lg border border-rose-400/35 bg-rose-500/12 text-rose-100 hover:bg-rose-500/22 text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            >
+              <Plus className="w-4.5 h-4.5" />
+              Add Topic
+            </button>
+          </div>
+        ) : (
+          /* Node Details Panel (shows Close X button on top right) */
+          <div className="bg-black border border-white/20 rounded-xl p-4 min-h-[338px] flex flex-col space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm uppercase tracking-wide text-gray-400 font-semibold">Node Details</h3>
+              <button
+                type="button"
+                onClick={() => setSelectedNodeId(null)}
+                className="h-6 w-6 rounded-md border border-white/20 text-gray-300 hover:bg-white/10 inline-flex items-center justify-center cursor-pointer transition-colors"
+                aria-label="Close node details"
+                title="Close details"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
             <div className="space-y-3">
               <div>
                 <p className="text-white font-semibold leading-tight">{selectedNode.title}</p>
@@ -2507,6 +2755,16 @@ const GraphModeView = ({
                 </div>
               ) : null}
 
+              <div className="pt-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleNodeShiftClick(selectedNode)}
+                  className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-cyan-400/35 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-100 transition-all duration-200 cursor-pointer"
+                >
+                  Source &rarr;
+                </button>
+              </div>
+
               <div>
                 <p className="text-xs uppercase tracking-wide text-gray-500 mb-1.5">Neighbors</p>
                 <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
@@ -2514,7 +2772,7 @@ const GraphModeView = ({
                     <button
                       key={node.id}
                       onClick={() => setSelectedNodeId(node.id)}
-                      className="w-full text-left text-xs px-2 py-1.5 rounded-md border border-white/10 text-gray-300 hover:text-white hover:border-rose-400/45"
+                      className="w-full text-left text-xs px-2 py-1.5 rounded-md border border-white/10 text-gray-300 hover:text-white hover:border-rose-400/45 cursor-pointer transition-colors"
                     >
                       {node.title}
                     </button>
@@ -2522,24 +2780,24 @@ const GraphModeView = ({
                 </div>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
+        {/* Section 3: Legend */}
         <div className="bg-black border border-white/20 rounded-xl p-4">
-          <h3 className="text-sm uppercase tracking-wide text-gray-400 mb-3">Legend</h3>
-          <div className="space-y-2 text-xs text-gray-300">
-            <div className="flex items-center gap-2"><span className="w-3 h-3 bg-rose-400" />Files (square)</div>
-            <div className="flex items-center gap-2"><span className="w-3 h-3 bg-violet-500 rotate-45" />Mindmaps (rhombus)</div>
-            <div className="flex items-center gap-2"><span className="inline-flex h-3.5 w-3.5 items-center justify-center text-amber-300">✦</span>Listener notes (four-corner star)</div>
-            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-green-400" />Very Easy (difficulty 1)</div>
-            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-blue-400" />Easy (difficulty 2)</div>
-            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-yellow-400" />Medium (difficulty 3)</div>
-            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-orange-400" />Hard (difficulty 4)</div>
-            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-red-400" />Very Hard (difficulty 5)</div>
-            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-violet-400" />Selected node</div>
+          <h3 className="text-sm uppercase tracking-wide text-gray-400 mb-3 font-semibold">Legend</h3>
+          <div className="grid grid-cols-2 gap-2 text-xs text-gray-300">
+            <div className="flex items-center gap-2"><span className="w-3 h-3 bg-rose-400 rounded-sm shrink-0" />Files (square)</div>
+            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 bg-violet-500 rotate-45 shrink-0" />Mindmaps (rhombus)</div>
+            <div className="flex items-center gap-2"><span className="inline-flex h-3.5 w-3.5 items-center justify-center text-amber-300 shrink-0">✦</span>Listener notes</div>
+            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-green-400 shrink-0" />Very Easy (diff 1)</div>
+            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-blue-400 shrink-0" />Easy (diff 2)</div>
+            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 shrink-0" />Medium (diff 3)</div>
+            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-orange-400 shrink-0" />Hard (diff 4)</div>
+            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-red-400 shrink-0" />Very Hard (diff 5)</div>
+            <div className="flex items-center gap-2 col-span-2"><span className="w-2.5 h-2.5 rounded-full bg-violet-400 shrink-0" />Selected node</div>
           </div>
         </div>
-
       </div>
       )}
     </div>

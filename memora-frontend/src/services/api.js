@@ -490,6 +490,18 @@ class ApiService {
     return this.delete(`/journal/${date}`);
   }
 
+  async getJournalAiPrompt(date) {
+    return this.get(`/journal/ai/prompt?date=${date}`);
+  }
+
+  async summarizeJournalEntry(content) {
+    return this.post('/journal/ai/summarize', { content });
+  }
+
+  async extractTasksFromJournal(content) {
+    return this.post('/journal/ai/extract-tasks', { content });
+  }
+
   // Mindmaps AI generation
   async generateMindmapWithAI(topic, options = {}) {
     return this.post('/mindmaps/generate-ai', {

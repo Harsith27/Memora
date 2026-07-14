@@ -123,6 +123,7 @@ const DocTags = () => {
 
   const itemCardRefs = useRef(new Map());
   const itemSpotlightTimerRef = useRef(null);
+  const lastFetchIdRef = useRef(0);
 
   // Sidebar state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -488,19 +489,72 @@ const DocTags = () => {
   const fetchDocTags = async (parentId = null) => {
     if (!user) return;
 
-    setLoading(true);
-    try {
-      const data = await docTagsService.getDocTags({
-        parentId: parentId ?? null,
-        type: filterType !== 'all' ? filterType : undefined,
-        search: searchQuery || undefined
+    lastFetchIdRef.current += 1;
+    const currentFetchId = lastFetchIdRef.current;
+    const userId = user.id || user._id || user.email;
+
+    // Load from cache first if available
+    const cacheKey = `memora_doctags_cache_${userId}`;
+    const cachedData = localStorage.getItem(cacheKey);
+    let allDocTags = [];
+    if (cachedData) {
+      try {
+        allDocTags = JSON.parse(cachedData) || [];
+      } catch (e) {
+        console.warn('Failed to parse doctags cache:', e);
+      }
+    }
+
+    const filterCached = (items) => {
+      const pid = parentId ?? null;
+      return items.filter(item => {
+        // Match parentId (null or ObjectId string)
+        const itemPid = item.parentId || null;
+        const parentMatch = pid === null ? itemPid === null : String(itemPid) === String(pid);
+        if (!parentMatch) return false;
+
+        // Match type filter
+        if (filterType !== 'all' && item.type !== filterType) return false;
+
+        // Match search query
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase();
+          const nameMatch = String(item.name || '').toLowerCase().includes(query);
+          const descMatch = String(item.description || '').toLowerCase().includes(query);
+          const tagMatch = Array.isArray(item.tags) && item.tags.some(t => String(t).toLowerCase().includes(query));
+          if (!nameMatch && !descMatch && !tagMatch) return false;
+        }
+
+        return true;
       });
-      setDocTags(data.docTags || []);
+    };
+
+    if (allDocTags.length > 0) {
+      setDocTags(filterCached(allDocTags));
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
+    try {
+      // Fetch ALL doctags for this user in a single request (no type/parentId filtering) to cache it
+      const response = await docTagsService.getDocTags({});
+      const freshDocTags = response?.docTags || [];
+
+      if (lastFetchIdRef.current !== currentFetchId) return;
+
+      // Update localStorage cache
+      localStorage.setItem(cacheKey, JSON.stringify(freshDocTags));
+
+      // Filter and set the display state
+      setDocTags(filterCached(freshDocTags));
     } catch (error) {
       console.error('Failed to fetch documents:', error);
       showToast(`Failed to load documents: ${error.message}`, 'error');
     } finally {
-      setLoading(false);
+      if (lastFetchIdRef.current === currentFetchId) {
+        setLoading(false);
+      }
     }
   };
 

@@ -418,3 +418,241 @@ html, body {
 .rotate-phone-ring {
   animation: rotate-phone-ring 2.2s ease-in-out infinite;
 }
+
+/* Tiptap Block Editor Styling (Microsoft Loop / Notion Style) */
+.ProseMirror {
+  outline: none;
+  min-height: 24rem;
+  color: #d1d5db; /* text-gray-300 */
+  font-size: 15px;
+  line-height: 1.625;
+}
+
+.ProseMirror p {
+  margin-bottom: 0.75rem;
+}
+
+.ProseMirror h1 {
+  font-size: 1.85rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.ProseMirror h2 {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: #f3f4f6;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.ProseMirror h3 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #e5e7eb;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.ProseMirror ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.ProseMirror li {
+  margin-bottom: 0.25rem;
+}
+
+.ProseMirror blockquote {
+  border-left: 3px solid #38bdf8; /* sky-400 */
+  background-color: rgba(56, 189, 248, 0.05);
+  color: #9ca3af;
+  padding: 0.5rem 1rem;
+  margin: 1rem 0;
+  border-radius: 0 6px 6px 0;
+}
+
+.ProseMirror pre {
+  background-color: #0b0f19;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #34d399; /* emerald-400 */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+
+.ProseMirror pre code {
+  color: inherit;
+  font-size: 0.875rem;
+  background: none;
+  padding: 0;
+}
+
+.ProseMirror code {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #38bdf8; /* sky-400 */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  padding: 0.125rem 0.25rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
+
+.ProseMirror hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  margin: 1.5rem 0;
+}
+
+/* Task list / checkboxes */
+.ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0.5rem;
+}
+
+.ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label {
+  user-select: none;
+  margin-top: 0.2rem;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
+  accent-color: #10b981; /* emerald-500 */
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.ProseMirror ul[data-type="taskList"] li > div {
+  flex: 1;
+}
+
+.ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div {
+  text-decoration: line-through;
+  color: #6b7280; /* text-gray-500 */
+}
+
+/* Callout blocks */
+.ProseMirror div.callout {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 8px;
+  margin: 1rem 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ProseMirror div.callout.info {
+  background-color: rgba(56, 189, 248, 0.06);
+  border-left: 4px solid #38bdf8;
+}
+
+.ProseMirror div.callout.warning {
+  background-color: rgba(245, 158, 11, 0.06);
+  border-left: 4px solid #f59e0b;
+}
+
+.ProseMirror div.callout.tip {
+  background-color: rgba(16, 185, 129, 0.06);
+  border-left: 4px solid #10b981;
+}
+
+.ProseMirror div.callout-emoji {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.ProseMirror div.callout-content {
+  flex: 1;
+  font-size: 0.925rem;
+}
+
+/* Tables */
+.ProseMirror table {
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  width: 100%;
+  table-layout: fixed;
+  overflow: hidden;
+}
+
+.ProseMirror th, .ProseMirror td {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  vertical-align: top;
+  min-width: 1rem;
+}
+
+.ProseMirror th {
+  background-color: rgba(255, 255, 255, 0.05);
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.ProseMirror tr:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Link */
+.ProseMirror a {
+  color: #38bdf8;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ProseMirror a:hover {
+  color: #7dd3fc;
+}
+
+/* Highlight */
+.ProseMirror mark {
+  background-color: rgba(250, 204, 21, 0.25); /* yellow opacity */
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 0.125rem;
+}
+
+/* Drag and Drop Reordering Guide Styles */
+.ProseMirror > *.dragging-block {
+  opacity: 0.35 !important;
+  outline: 1px dashed rgba(16, 185, 129, 0.3) !important;
+  background-color: rgba(16, 185, 129, 0.02) !important;
+  border-radius: 6px;
+  transition: opacity 0.15s ease;
+}
+
+.ProseMirror > *.drag-target-block {
+  background-color: rgba(16, 185, 129, 0.02) !important;
+  border-radius: 6px;
+}
+
+/* View Streak Grid striped style overlays for non-active or non-scheduled days */
+.bg-striped {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.15),
+    rgba(255, 255, 255, 0.15) 1.5px,
+    rgba(255, 255, 255, 0.02) 1.5px,
+    rgba(255, 255, 255, 0.02) 5px
+  ) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+

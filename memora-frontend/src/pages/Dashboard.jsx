@@ -27,6 +27,7 @@ import { useTopics } from '../hooks/useTopics';
 import apiService from '../services/api';
 import journalService from '../services/journalService';
 import taskService from '../services/taskService';
+import docTagsService from '../services/docTagsService';
 import { formatDateDDMMYYYY, formatDateWithWeekday } from '../utils/dateFormat';
 
 const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -196,7 +197,15 @@ const getEndOfMonth = (date) => {
   return result;
 };
 
-const buildStreakContributionGrid = (rows = [], rangeMode = 'year') => {
+const buildStreakContributionGrid = (
+  rows = [],
+  rangeMode = 'year',
+  customRangeStart = null,
+  customRangeEnd = null,
+  isPercentageMode = false,
+  earliestDateKey = null,
+  scheduledKeys = null
+) => {
   const countsByDay = new Map();
 
   if (Array.isArray(rows)) {
@@ -213,25 +222,30 @@ const buildStreakContributionGrid = (rows = [], rangeMode = 'year') => {
 
   const focusStart = new Date(today);
   const focusEnd = new Date(today);
-  let rangeStart = new Date(today);
-  let rangeEnd = new Date(today);
+  let rangeStart = customRangeStart ? new Date(customRangeStart) : new Date(today);
+  let rangeEnd = customRangeEnd ? new Date(customRangeEnd) : new Date(today);
 
-  if (rangeMode === 'month') {
-    const currentMonthStart = getStartOfMonth(today);
-    focusStart.setTime(currentMonthStart.getTime());
-    focusEnd.setTime(today.getTime());
-    rangeStart = getStartOfMonth(new Date(today.getFullYear(), today.getMonth() - 3, 1));
-    rangeEnd = new Date(today);
-  } else if (rangeMode === 'week') {
-    const startOfWeek = getStartOfWeek(today);
-    focusStart.setTime(startOfWeek.getTime());
-    focusEnd.setTime(today.getTime());
-    rangeStart = new Date(startOfWeek);
-    rangeStart.setDate(rangeStart.getDate() - 21);
-    rangeEnd = new Date(today);
+  if (!customRangeStart && !customRangeEnd) {
+    if (rangeMode === 'month') {
+      const currentMonthStart = getStartOfMonth(today);
+      focusStart.setTime(currentMonthStart.getTime());
+      focusEnd.setTime(today.getTime());
+      rangeStart = getStartOfMonth(new Date(today.getFullYear(), today.getMonth() - 3, 1));
+      rangeEnd = new Date(today);
+    } else if (rangeMode === 'week') {
+      const startOfWeek = getStartOfWeek(today);
+      focusStart.setTime(startOfWeek.getTime());
+      focusEnd.setTime(today.getTime());
+      rangeStart = new Date(startOfWeek);
+      rangeStart.setDate(rangeStart.getDate() - 21);
+      rangeEnd = new Date(today);
+    } else {
+      rangeStart = getStartOfMonth(new Date(today.getFullYear(), today.getMonth() - 11, 1));
+      rangeEnd = new Date(today);
+      focusStart.setTime(rangeStart.getTime());
+      focusEnd.setTime(rangeEnd.getTime());
+    }
   } else {
-    rangeStart = getStartOfMonth(new Date(today.getFullYear(), today.getMonth() - 11, 1));
-    rangeEnd = new Date(today);
     focusStart.setTime(rangeStart.getTime());
     focusEnd.setTime(rangeEnd.getTime());
   }
@@ -275,21 +289,37 @@ const buildStreakContributionGrid = (rows = [], rangeMode = 'year') => {
 
   const cells = rawCells.map((cell) => {
     let level = 0;
-    if (cell.isVisible && cell.count > 0) {
-      if (maxCount <= 1) {
-        level = 4;
-      } else {
-        const ratio = cell.count / maxCount;
-        if (ratio <= 0.25) level = 1;
-        else if (ratio <= 0.5) level = 2;
-        else if (ratio <= 0.75) level = 3;
-        else level = 4;
+    let isStriped = false;
+
+    if (cell.isVisible) {
+      if (earliestDateKey && cell.dayKey < earliestDateKey) {
+        isStriped = true;
+      } else if (scheduledKeys && !scheduledKeys.has(cell.dayKey)) {
+        isStriped = true;
+      } else if (cell.count > 0) {
+        if (isPercentageMode) {
+          if (cell.count <= 25) level = 1;
+          else if (cell.count <= 50) level = 2;
+          else if (cell.count <= 75) level = 3;
+          else level = 4;
+        } else {
+          if (maxCount <= 1) {
+            level = 4;
+          } else {
+            const ratio = cell.count / maxCount;
+            if (ratio <= 0.25) level = 1;
+            else if (ratio <= 0.5) level = 2;
+            else if (ratio <= 0.75) level = 3;
+            else level = 4;
+          }
+        }
       }
     }
 
     return {
       ...cell,
-      level
+      level,
+      isStriped
     };
   });
 
@@ -329,29 +359,414 @@ const buildStreakContributionGrid = (rows = [], rangeMode = 'year') => {
   };
 };
 
-const StreakActivityDialogContent = ({ rows = [], currentStreak = 0 }) => {
-  const contribution = useMemo(() => buildStreakContributionGrid(rows, 'year'), [rows]);
+const PALETTE_CLASS_MAPS = {
+  cyan: {
+    0: 'bg-white/[0.08] border border-white/[0.05]',
+    1: 'bg-cyan-950/70 border border-cyan-900/30',
+    2: 'bg-cyan-800/80 border border-cyan-700/30',
+    3: 'bg-cyan-600/85 border border-cyan-500/30',
+    4: 'bg-cyan-400/95 border border-cyan-300/30'
+  },
+  orange: {
+    0: 'bg-white/[0.08] border border-white/[0.05]',
+    1: 'bg-orange-950/70 border border-orange-900/30',
+    2: 'bg-orange-800/80 border border-orange-700/30',
+    3: 'bg-orange-600/85 border border-orange-500/30',
+    4: 'bg-orange-400/95 border border-orange-300/30'
+  },
+  green: {
+    0: 'bg-white/[0.08] border border-white/[0.05]',
+    1: 'bg-emerald-950/70 border border-emerald-900/30',
+    2: 'bg-emerald-800/80 border border-emerald-700/30',
+    3: 'bg-emerald-600/85 border border-emerald-500/30',
+    4: 'bg-emerald-400/95 border border-emerald-300/30'
+  },
+  red: {
+    0: 'bg-white/[0.08] border border-white/[0.05]',
+    1: 'bg-rose-950/70 border border-rose-900/30',
+    2: 'bg-rose-800/80 border border-rose-700/30',
+    3: 'bg-rose-600/85 border border-rose-500/30',
+    4: 'bg-rose-400/95 border border-rose-300/30'
+  },
+  purple: {
+    0: 'bg-white/[0.08] border border-white/[0.05]',
+    1: 'bg-violet-950/70 border border-violet-900/30',
+    2: 'bg-violet-800/80 border border-violet-700/30',
+    3: 'bg-violet-600/85 border border-violet-500/30',
+    4: 'bg-violet-400/95 border border-violet-300/30'
+  },
+  yellow: {
+    0: 'bg-white/[0.08] border border-white/[0.05]',
+    1: 'bg-yellow-950/70 border border-yellow-900/30',
+    2: 'bg-yellow-800/80 border border-yellow-700/30',
+    3: 'bg-yellow-600/85 border border-yellow-500/30',
+    4: 'bg-yellow-400/95 border border-yellow-300/30'
+  }
+};
+
+const getHabitPalette = (title) => {
+  if (!title || title === 'All Habits') return 'cyan';
+  let hash = 0;
+  for (let i = 0; i < title.length; i++) {
+    hash = title.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const palettes = ['cyan', 'orange', 'green', 'red', 'purple', 'yellow'];
+  const index = Math.abs(hash) % palettes.length;
+  return palettes[index];
+};
+
+const StreakActivityDialogContent = ({
+  rows = [],
+  tasks = [],
+  currentStreak = 0,
+  mode = 'study',
+  selectedHabitSeriesId = 'all',
+  setSelectedHabitSeriesId
+}) => {
+  const dropdownRef = useRef(null);
+  const [habitSearchInput, setHabitSearchInput] = useState('All Habits');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
   const viewLabel = STREAK_VIEW_OPTIONS[0];
-  const dayLabels = ['Mon', '', 'Wed', '', 'Fri', '', ''];
+      const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  const uniqueHabitsMap = useMemo(() => {
+    const map = new Map();
+    tasks.forEach((t) => {
+      const isHabit = t.seriesId && ['recurring', 'custom-recurring'].includes(String(t.taskType || '').toLowerCase());
+      if (!isHabit) return;
+      const key = t.seriesId;
+      if (!map.has(key)) {
+        map.set(key, {
+          seriesId: t.seriesId,
+          title: t.title,
+          tasks: []
+        });
+      }
+      map.get(key).tasks.push(t);
+    });
+    return map;
+  }, [tasks]);
+
+  const habitsList = useMemo(() => Array.from(uniqueHabitsMap.values()), [uniqueHabitsMap]);
+
+  const activePalette = useMemo(() => {
+    if (mode === 'study') return 'cyan';
+    if (selectedHabitSeriesId === 'all') return 'cyan';
+    const habitGroup = habitsList.find((h) => h.seriesId === selectedHabitSeriesId);
+    return habitGroup ? getHabitPalette(habitGroup.title) : 'cyan';
+  }, [mode, selectedHabitSeriesId, habitsList]);
+
+  useEffect(() => {
+    if (selectedHabitSeriesId === 'all') {
+      setHabitSearchInput('All Habits');
+    } else {
+      const match = habitsList.find((h) => h.seriesId === selectedHabitSeriesId);
+      if (match) {
+        setHabitSearchInput(match.title);
+      }
+    }
+  }, [selectedHabitSeriesId, habitsList]);
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setDropdownOpen(false);
+      }
+    };
+    window.addEventListener('click', handleOutsideClick);
+    return () => window.removeEventListener('click', handleOutsideClick);
+  }, []);
+
+  const filteredHabitSuggestions = useMemo(() => {
+    if (!habitSearchInput) return habitsList;
+    const cleanQuery = habitSearchInput.toLowerCase().trim();
+    return habitsList.filter((h) => h.title.toLowerCase().includes(cleanQuery));
+  }, [habitSearchInput, habitsList]);
+
+  const earliestStudyDateKey = useMemo(() => {
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+    const sorted = rows
+      .map((r) => toIsoDateKey(r.date || r.day || r.dateKey))
+      .filter(Boolean)
+      .sort();
+    return sorted[0] || null;
+  }, [rows]);
+
+  const earliestHabitDateKey = useMemo(() => {
+    const habitTasks = tasks.filter((t) => t.seriesId && ['recurring', 'custom-recurring'].includes(String(t.taskType || '').toLowerCase()));
+    if (habitTasks.length === 0) return null;
+    const sorted = habitTasks.map((t) => t.date).sort();
+    return sorted[0] || null;
+  }, [tasks]);
+
+  const selectedHabitEarliestDateKey = useMemo(() => {
+    if (selectedHabitSeriesId === 'all') return null;
+    const habitGroup = habitsList.find((h) => h.seriesId === selectedHabitSeriesId);
+    if (!habitGroup || habitGroup.tasks.length === 0) return null;
+    const sorted = habitGroup.tasks.map((t) => t.date).sort();
+    return sorted[0] || null;
+  }, [selectedHabitSeriesId, habitsList]);
+
+  const selectedHabitScheduledKeys = useMemo(() => {
+    if (selectedHabitSeriesId === 'all') return null;
+    const habitGroup = habitsList.find((h) => h.seriesId === selectedHabitSeriesId);
+    if (!habitGroup) return null;
+    return new Set(habitGroup.tasks.map((t) => t.date));
+  }, [selectedHabitSeriesId, habitsList]);
+
+  const habitStatsRows = useMemo(() => {
+    if (mode !== 'habit') return [];
+
+    const countsByDay = new Map();
+
+    if (selectedHabitSeriesId === 'all') {
+      const dayTasks = new Map();
+      tasks.forEach((t) => {
+        const isHabit = t.seriesId && ['recurring', 'custom-recurring'].includes(String(t.taskType || '').toLowerCase());
+        if (!isHabit) return;
+        const dayKey = t.date;
+        if (!dayTasks.has(dayKey)) {
+          dayTasks.set(dayKey, { total: 0, completed: 0 });
+        }
+        const stats = dayTasks.get(dayKey);
+        stats.total += 1;
+        if (t.completed) {
+          stats.completed += 1;
+        }
+      });
+
+      dayTasks.forEach((value, dayKey) => {
+        const percentage = value.total > 0 ? (value.completed / value.total) * 100 : 0;
+        countsByDay.set(dayKey, percentage);
+      });
+    } else {
+      const habitGroup = habitsList.find((h) => h.seriesId === selectedHabitSeriesId);
+      if (habitGroup) {
+        habitGroup.tasks.forEach((t) => {
+          let value = 0;
+          const compType = String(t.completionType || 'boolean').toLowerCase();
+          if (compType === 'boolean') {
+            value = t.completed ? 100 : 0;
+          } else {
+            const target = Number(t.targetValue) || 1;
+            const current = Number(t.currentValue) || 0;
+            const ratio = Math.min(1, Math.max(0, current / target));
+            value = ratio * 100;
+          }
+          countsByDay.set(t.date, value);
+        });
+      }
+    }
+
+    return Array.from(countsByDay.entries()).map(([date, count]) => ({
+      date,
+      count
+    }));
+  }, [mode, selectedHabitSeriesId, habitsList, tasks]);
+
+  const customRange = useMemo(() => {
+    if (mode !== 'habit' || selectedHabitSeriesId === 'all') return { start: null, end: null };
+    const habitGroup = habitsList.find((h) => h.seriesId === selectedHabitSeriesId);
+    if (!habitGroup || habitGroup.tasks.length === 0) return { start: null, end: null };
+
+    const sortedDates = habitGroup.tasks
+      .map((t) => new Date(`${t.date}T00:00:00`))
+      .filter((d) => !Number.isNaN(d.getTime()))
+      .sort((a, b) => a - b);
+
+    if (sortedDates.length === 0) return { start: null, end: null };
+
+    let start = new Date(sortedDates[0]);
+    const end = new Date(sortedDates[sortedDates.length - 1]);
+
+    const minDurationMs = 90 * 24 * 60 * 60 * 1000;
+    const actualDurationMs = end.getTime() - start.getTime();
+    if (actualDurationMs < minDurationMs) {
+      start = new Date(end.getTime() - minDurationMs);
+    }
+
+    start.setDate(start.getDate() - 7);
+    end.setDate(end.getDate() + 7);
+
+    return { start, end };
+  }, [mode, selectedHabitSeriesId, habitsList]);
+
+  const contribution = useMemo(() => {
+    if (mode === 'study') {
+      return buildStreakContributionGrid(
+        rows,
+        'year',
+        null,
+        null,
+        false,
+        earliestStudyDateKey,
+        null
+      );
+    } else {
+      const earliestKey = selectedHabitSeriesId === 'all' ? earliestHabitDateKey : selectedHabitEarliestDateKey;
+      const schedKeys = selectedHabitSeriesId === 'all' ? null : selectedHabitScheduledKeys;
+
+      return buildStreakContributionGrid(
+        habitStatsRows,
+        'year',
+        customRange.start,
+        customRange.end,
+        true,
+        earliestKey,
+        schedKeys
+      );
+    }
+  }, [mode, rows, habitStatsRows, customRange, earliestStudyDateKey, earliestHabitDateKey, selectedHabitEarliestDateKey, selectedHabitScheduledKeys, selectedHabitSeriesId]);
+
+  const getTooltipText = (cell) => {
+    if (mode === 'study') {
+      return `${cell.count} topic${cell.count === 1 ? '' : 's'} revised on ${formatLongDateWithOrdinal(cell.dayKey)}`;
+    } else {
+      if (selectedHabitSeriesId === 'all') {
+        return `${Math.round(cell.count)}% habits completed on ${formatLongDateWithOrdinal(cell.dayKey)}`;
+      } else {
+        const habitGroup = habitsList.find((h) => h.seriesId === selectedHabitSeriesId);
+        const habitTitle = habitGroup ? habitGroup.title : 'Habit';
+        return `${cell.count >= 100 ? 'Completed' : `Partially completed (${Math.round(cell.count)}%)`} "${habitTitle}" on ${formatLongDateWithOrdinal(cell.dayKey)}`;
+      }
+    }
+  };
+
+  const getCellColorClass = (cell, palette) => {
+    if (!cell.isVisible) return 'bg-transparent';
+    if (cell.isStriped) return 'bg-striped';
+    if (!cell.isFocus) return 'opacity-35 bg-white/[0.08] border border-white/[0.05]';
+
+    const map = PALETTE_CLASS_MAPS[palette] || PALETTE_CLASS_MAPS.cyan;
+    return map[cell.level] || map[0];
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm text-gray-300">Your contribution-style study activity.</p>
-          <p className="mt-1 text-xs text-gray-500">Showing the last 12 months in the same heat style.</p>
+          <p className="text-sm text-gray-300">
+            {mode === 'study' ? 'Your contribution-style study activity.' : 'Your contribution-style habits compliance logs.'}
+          </p>
+          <p className="mt-1 text-xs text-gray-500">
+            {mode === 'study' ? 'Showing the last 12 months in the same heat style.' : 'Showing habit frequencies based on completion rates.'}
+          </p>
         </div>
 
-        <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-cyan-100">
-          {viewLabel.label}
+        <div className="flex items-center gap-3">
+          {mode === 'study' ? (
+            <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-cyan-100">
+              {viewLabel.label}
+            </div>
+          ) : (
+            <div className="relative" ref={dropdownRef}>
+              <div className="flex items-center gap-1.5 bg-[#101010] border border-white/15 rounded-lg px-2.5 py-1.5 text-xs">
+                <input
+                  type="text"
+                  value={habitSearchInput}
+                  onChange={(e) => {
+                    setHabitSearchInput(e.target.value);
+                    setDropdownOpen(true);
+                  }}
+                  onFocus={() => {
+                    setDropdownOpen(true);
+                    setHabitSearchInput('');
+                  }}
+                  onBlur={() => {
+                    setTimeout(() => {
+                      if (selectedHabitSeriesId === 'all') {
+                        setHabitSearchInput('All Habits');
+                      } else {
+                        const match = habitsList.find((h) => h.seriesId === selectedHabitSeriesId);
+                        setHabitSearchInput(match ? match.title : 'All Habits');
+                      }
+                    }, 200);
+                  }}
+                  placeholder="Search habits..."
+                  className="bg-transparent border-none text-white outline-none w-32 placeholder-gray-500 font-medium cursor-text"
+                />
+                {selectedHabitSeriesId !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedHabitSeriesId('all');
+                      setHabitSearchInput('All Habits');
+                    }}
+                    className="text-gray-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {dropdownOpen && (
+                <div className="absolute right-0 mt-1.5 w-60 bg-[#090909] border border-white/10 rounded-lg shadow-2xl p-1 max-h-48 overflow-y-auto scrollbar-themed z-50 flex flex-col">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedHabitSeriesId('all');
+                      setHabitSearchInput('All Habits');
+                      setDropdownOpen(false);
+                    }}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs cursor-pointer transition-colors hover:bg-white/5 ${selectedHabitSeriesId === 'all' ? 'text-cyan-400 bg-white/5 font-semibold' : 'text-gray-300'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-cyan-400" />
+                      <span>✨ All Habits</span>
+                    </div>
+                  </button>
+                  <div className="h-px bg-white/5 my-1" />
+                  {filteredHabitSuggestions.length === 0 ? (
+                    <span className="text-[10px] text-gray-500 px-2.5 py-1.5 italic select-none">No habits found</span>
+                  ) : (
+                    filteredHabitSuggestions.map((h) => {
+                      const pal = getHabitPalette(h.title);
+                      const bgDot = pal === 'cyan' ? 'bg-cyan-400' :
+                                    pal === 'orange' ? 'bg-orange-400' :
+                                    pal === 'green' ? 'bg-emerald-400' :
+                                    pal === 'red' ? 'bg-rose-400' :
+                                    pal === 'purple' ? 'bg-violet-400' :
+                                    'bg-yellow-400';
+                      const isActive = selectedHabitSeriesId === h.seriesId;
+                      return (
+                        <button
+                          type="button"
+                          key={h.seriesId}
+                          onClick={() => {
+                            setSelectedHabitSeriesId(h.seriesId);
+                            setHabitSearchInput(h.title);
+                            setDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs cursor-pointer transition-colors hover:bg-white/5 ${isActive ? 'text-emerald-400 bg-white/5 font-semibold' : 'text-gray-300'}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className={`h-2 w-2 rounded-full ${bgDot}`} />
+                            <div className="truncate font-semibold">{h.title}</div>
+                          </div>
+                          <div className="text-[9px] text-gray-500 truncate leading-snug mt-0.5 ml-4">
+                            {h.tasks.length} entries scheduled
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
       <div className="rounded-2xl border border-white/15 bg-black p-4 sm:p-6 overflow-hidden">
         <div className="w-full space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-[11px] uppercase tracking-[0.2em] text-cyan-100/70">{viewLabel.label}</div>
-            <div className="text-[11px] text-gray-500">{viewLabel.caption}</div>
+            <div className="text-[11px] uppercase tracking-[0.2em] text-cyan-100/70">
+              {mode === 'study' ? viewLabel.label : (selectedHabitSeriesId === 'all' ? 'All Habits streak' : 'Habit timeline')}
+            </div>
+            <div className="text-[11px] text-gray-500">
+              {mode === 'study' ? viewLabel.caption : 'Habit consistency log'}
+            </div>
           </div>
 
           <div className="ml-8 grid gap-1">
@@ -387,7 +802,7 @@ const StreakActivityDialogContent = ({ rows = [], currentStreak = 0 }) => {
               {contribution.weeks.map((week, weekIndex) => (
                 <div key={`week-${weekIndex}`} className="grid grid-rows-7 gap-1 min-w-0">
                   {week.map((cell) => {
-                    const tooltipText = `${cell.count} topic${cell.count === 1 ? '' : 's'} revised on ${formatLongDateWithOrdinal(cell.dayKey)}`;
+                    const tooltipText = getTooltipText(cell);
                     const isNearRightEdge = weekIndex >= contribution.weeks.length - 6;
                     const isNearLeftEdge = weekIndex <= 2;
                     const tooltipPositionClass = isNearRightEdge
@@ -395,13 +810,12 @@ const StreakActivityDialogContent = ({ rows = [], currentStreak = 0 }) => {
                       : isNearLeftEdge
                         ? 'left-0 translate-x-0'
                         : 'left-1/2 -translate-x-1/2';
-                    const isContextCell = !cell.isFocus;
 
                     return (
                       <button
                         key={cell.dayKey}
                         type="button"
-                        className={`group relative h-3.5 w-full rounded-[3px] transition-opacity ${isContextCell ? 'opacity-35' : ''} ${cell.isVisible ? (STREAK_LEVEL_CLASS_MAP[cell.level] || STREAK_LEVEL_CLASS_MAP[0]) : 'bg-transparent'}`}
+                        className={`group relative h-3.5 w-full rounded-[3px] transition-all duration-100 cursor-pointer ${getCellColorClass(cell, activePalette)}`}
                         title={cell.isVisible ? tooltipText : ''}
                         disabled={!cell.isVisible}
                       >
@@ -419,22 +833,32 @@ const StreakActivityDialogContent = ({ rows = [], currentStreak = 0 }) => {
           </div>
         </div>
 
-      <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-300">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span>Active days: {contribution.activeDays}/{contribution.totalDays}</span>
-          <span>Topics revised: {contribution.totalRevisions}</span>
-          <span>Current streak: {currentStreak}</span>
-        </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-300 font-medium">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>Active days: {contribution.activeDays}/{contribution.totalDays}</span>
+            {mode === 'study' ? (
+              <>
+                <span>Topics revised: {contribution.totalRevisions}</span>
+                <span>Current streak: {currentStreak}</span>
+              </>
+            ) : (
+              <span>Habits logged: {habitStatsRows.filter(c => c.count > 0).length} days</span>
+            )}
+          </div>
 
-        <div className="ml-auto flex items-center justify-end gap-2 whitespace-nowrap">
-          <span className="inline-flex items-center gap-1"><span>None</span><span className="h-2.5 w-2.5 rounded-[2px] bg-white/[0.08] border border-white/[0.1]" /></span>
-          <span className="inline-flex items-center gap-1"><span>Low</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-900/70" /></span>
-          <span className="inline-flex items-center gap-1"><span>Medium</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-700/80" /></span>
-          <span className="inline-flex items-center gap-1"><span>High</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-500/85" /></span>
-          <span className="inline-flex items-center gap-1"><span>Peak</span><span className="h-2.5 w-2.5 rounded-[2px] bg-cyan-300/95" /></span>
+          <div className="ml-auto flex items-center gap-1.5 whitespace-nowrap select-none text-[10px] text-gray-400 font-semibold uppercase tracking-wider">
+            <span>less</span>
+            <div className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-[2px] bg-white/[0.08] border border-white/[0.1]" title="None" />
+              <span className={`h-2.5 w-2.5 rounded-[2px] ${mode === 'study' ? 'bg-cyan-900/70' : PALETTE_CLASS_MAPS[activePalette][1]}`} title="Low" />
+              <span className={`h-2.5 w-2.5 rounded-[2px] ${mode === 'study' ? 'bg-cyan-700/80' : PALETTE_CLASS_MAPS[activePalette][2]}`} title="Medium" />
+              <span className={`h-2.5 w-2.5 rounded-[2px] ${mode === 'study' ? 'bg-cyan-500/85' : PALETTE_CLASS_MAPS[activePalette][3]}`} title="High" />
+              <span className={`h-2.5 w-2.5 rounded-[2px] ${mode === 'study' ? 'bg-cyan-300/95' : PALETTE_CLASS_MAPS[activePalette][4]}`} title="Peak" />
+            </div>
+            <span>high</span>
+          </div>
         </div>
       </div>
-    </div>
     </div>
   );
 };
@@ -552,7 +976,8 @@ const Dashboard = () => {
       confirmText: options.confirmText || 'OK',
       cancelText: options.cancelText || 'Cancel',
       showCancel: options.showCancel || false,
-      size: options.size || 'md'
+      size: options.size || 'md',
+      leftAction: options.leftAction || null
     });
   };
 
@@ -573,6 +998,8 @@ const Dashboard = () => {
     return `${year}-${month}-${day}`;
   });
   const [tasks, setTasks] = useState([]);
+  const [streakDialogMode, setStreakDialogMode] = useState('study');
+  const [selectedHabitSeriesId, setSelectedHabitSeriesId] = useState('all');
   const [isPartialModalOpen, setIsPartialModalOpen] = useState(false);
   const [partialModalTask, setPartialModalTask] = useState(null);
   const [partialModalValue, setPartialModalValue] = useState(0);
@@ -635,6 +1062,7 @@ const Dashboard = () => {
   const topicSpotlightTimerRef = useRef(null);
   const taskSpotlightTimerRef = useRef(null);
   const lastAutoRescheduleToastSignatureRef = useRef('');
+  const lastDashboardFetchIdRef = useRef(0);
 
   const recordRedistributionDetails = (event) => {
     if (!event || !event.count || event.count <= 0) return;
@@ -651,7 +1079,6 @@ const Dashboard = () => {
     });
   };
 
-  // Dialog state
   const [dialog, setDialog] = useState({
     isOpen: false,
     type: 'info',
@@ -662,7 +1089,8 @@ const Dashboard = () => {
     confirmText: 'OK',
     cancelText: 'Cancel',
     showCancel: false,
-    size: 'md'
+    size: 'md',
+    leftAction: null
   });
 
   // Function to refresh user data from backend
@@ -812,11 +1240,11 @@ const Dashboard = () => {
     }
   };
 
-  // Fetch upcoming topics for future revisions (ALL future topics)
-  const fetchUpcomingTopics = async () => {
+  // Fetch upcoming topics for future revisions
+  const fetchUpcomingTopics = async (days = 365, limit = 100) => {
     setLoadingUpcoming(true);
     try {
-      const response = await apiService.getUpcomingTopics(365, 100); // Get all topics for next year
+      const response = await apiService.getUpcomingTopics(days, limit);
       if (response.success) {
         const filteredTopics = filterLearningTopics(response.topics);
         setUpcomingTopics(filteredTopics);
@@ -844,23 +1272,118 @@ const Dashboard = () => {
     }
   };
 
-  // Fetch both due and upcoming topics, then calculate 7-day view
+  // Fetch both due and upcoming topics, then calculate 7-day view (optimized non-blocking with local caching)
   const fetchAllTopicsAndCalculate = async (options = {}) => {
+    if (!user) return;
     const { recordRedistributionDetails: shouldRecordRedistributionDetails = true } = options;
+    
+    lastDashboardFetchIdRef.current += 1;
+    const currentFetchId = lastDashboardFetchIdRef.current;
+    const userId = user.id || user._id || user.email;
+
+    // Load from cache first if available
+    const cacheKeyDue = `memora_dashboard_due_cache_${userId}`;
+    const cacheKeyUpcoming = `memora_dashboard_upcoming_cache_${userId}`;
+    const cacheKeyWorkload = `memora_dashboard_workload_cache_${userId}`;
+
+    const cachedDue = localStorage.getItem(cacheKeyDue);
+    const cachedUpcoming = localStorage.getItem(cacheKeyUpcoming);
+    const cachedWorkload = localStorage.getItem(cacheKeyWorkload);
+
+    let loadedFromCache = false;
+    let initialDueTopics = [];
+    let initialUpcomingTopics = [];
+    let initialWorkload = [];
+
+    if (cachedDue && cachedUpcoming && cachedWorkload) {
+      try {
+        initialDueTopics = filterLearningTopics(JSON.parse(cachedDue) || []);
+        initialUpcomingTopics = filterLearningTopics(JSON.parse(cachedUpcoming) || []);
+        initialWorkload = JSON.parse(cachedWorkload) || [];
+
+        setDueTopics(initialDueTopics);
+        setUpcomingTopics(initialUpcomingTopics);
+        setWorkloadData(initialWorkload);
+        setHasLoadedDueTopics(true);
+
+        const initialAllTopics = [...initialDueTopics, ...initialUpcomingTopics];
+        calculateNextSevenDays(initialAllTopics, initialWorkload);
+        loadedFromCache = true;
+      } catch (err) {
+        console.warn('Failed to parse dashboard cached data:', err);
+      }
+    }
+
     try {
-      const [dueTopicsData, upcomingTopicsData, workloadData] = await Promise.all([
-        fetchDueTopics({ recordRedistributionDetails: shouldRecordRedistributionDetails }),
-        fetchUpcomingTopics(),
-        fetchWorkloadData()
+      // Step 1: Fetch fresh due topics first
+      const dueTopicsResponse = await apiService.getDueTopics(10);
+      if (lastDashboardFetchIdRef.current !== currentFetchId) return;
+
+      let freshDueTopics = [];
+      if (dueTopicsResponse?.success) {
+        freshDueTopics = filterLearningTopics(dueTopicsResponse.topics);
+        setDueTopics(freshDueTopics);
+        setHasLoadedDueTopics(true);
+        localStorage.setItem(cacheKeyDue, JSON.stringify(dueTopicsResponse.topics || []));
+
+        // Auto-redistribute toaster logic
+        const autoReschedule = dueTopicsResponse.autoRescheduledDeferred;
+        if (shouldRecordRedistributionDetails && autoReschedule?.moved > 0) {
+          const movedIds = Array.isArray(autoReschedule.movedTopics)
+            ? autoReschedule.movedTopics.map((item) => item?.id).filter(Boolean)
+            : [];
+          const signature = `${autoReschedule.moved}:${movedIds.join('|')}`;
+
+          if (signature && lastAutoRescheduleToastSignatureRef.current !== signature) {
+            lastAutoRescheduleToastSignatureRef.current = signature;
+            const names = (autoReschedule.movedTopics || [])
+              .map((item) => item?.title)
+              .filter(Boolean)
+              .slice(0, 2)
+              .join(', ');
+            const suffix = names ? ` (${names}${autoReschedule.moved > 2 ? ', ...' : ''})` : '';
+            showToast(`${autoReschedule.moved} due topic${autoReschedule.moved === 1 ? '' : 's'} auto-redistributed${suffix}`, 'info');
+            recordRedistributionDetails({
+              source: 'Auto redistribution after due refresh',
+              count: autoReschedule.moved,
+              movedTopics: autoReschedule.movedTopics,
+              unresolvedCount: autoReschedule.unresolved,
+              unresolvedTopicIds: autoReschedule.unresolvedTopicIds,
+              preservedCount: autoReschedule.skippedMandatoryTopicIds?.length || 0,
+              note: 'These topics were moved so today stays within capacity.'
+            });
+          }
+        }
+      }
+
+      // Step 2: Fetch upcoming and workload data in parallel
+      const [upcomingResponse, workloadResponse] = await Promise.all([
+        apiService.getUpcomingTopics(365, 100),
+        apiService.getWorkload(14)
       ]);
 
-      // No deduplication needed - backend queries are now separate
-      const allTopics = [...dueTopicsData, ...upcomingTopicsData];
+      if (lastDashboardFetchIdRef.current !== currentFetchId) return;
 
-      // Calculate with combined data
-      calculateNextSevenDays(allTopics, workloadData);
+      let freshUpcoming = [];
+      if (upcomingResponse?.success) {
+        freshUpcoming = filterLearningTopics(upcomingResponse.topics);
+        setUpcomingTopics(freshUpcoming);
+        localStorage.setItem(cacheKeyUpcoming, JSON.stringify(upcomingResponse.topics || []));
+      }
+
+      let freshWorkload = [];
+      if (workloadResponse?.success) {
+        freshWorkload = workloadResponse.workload || [];
+        setWorkloadData(freshWorkload);
+        localStorage.setItem(cacheKeyWorkload, JSON.stringify(freshWorkload));
+      }
+
+      // Recalculate 7-day view with fresh data
+      const finalAllTopics = [...freshDueTopics, ...freshUpcoming];
+      calculateNextSevenDays(finalAllTopics, freshWorkload);
+
     } catch (error) {
-      console.error('Failed to fetch topics and calculate 7-day view:', error);
+      console.error('Failed to fetch fresh dashboard data:', error);
     }
   };
 
@@ -1656,6 +2179,9 @@ const Dashboard = () => {
   };
 
   const openStreakContributionDialog = async () => {
+    setStreakDialogMode('study');
+    setSelectedHabitSeriesId('all');
+
     let statsRows = [];
 
     try {
@@ -1669,8 +2195,28 @@ const Dashboard = () => {
       type: 'info',
       title: 'Streak Activity',
       size: 'xl',
-      message: <StreakActivityDialogContent rows={statsRows} currentStreak={user?.currentStreak || 0} />,
-      confirmText: 'Close'
+      message: (
+        <StreakActivityDialogContent
+          rows={statsRows}
+          tasks={tasks}
+          currentStreak={user?.currentStreak || 0}
+          mode="study"
+          selectedHabitSeriesId="all"
+          setSelectedHabitSeriesId={setSelectedHabitSeriesId}
+        />
+      ),
+      confirmText: 'Close',
+      leftAction: (
+        <button
+          type="button"
+          onClick={() => {
+            setStreakDialogMode((prev) => (prev === 'study' ? 'habit' : 'study'));
+          }}
+          className="px-4 py-2 border border-white/10 hover:border-cyan-300 bg-white/5 hover:bg-cyan-500/10 text-gray-300 hover:text-cyan-300 rounded-lg text-xs font-semibold cursor-pointer transition-all"
+        >
+          Switch to Habits
+        </button>
+      )
     });
   };
 
@@ -1687,6 +2233,129 @@ const Dashboard = () => {
       refreshUserData();
     }
   }, []); // Run only once
+
+  useEffect(() => {
+    if (dialog.isOpen && dialog.title === 'Streak Activity') {
+      // Reevaluate parameters reactively on state updates
+      showDialog({
+        type: 'info',
+        title: 'Streak Activity',
+        size: 'xl',
+        message: (
+          <StreakActivityDialogContent
+            rows={dialog.message.props?.rows || []}
+            tasks={tasks}
+            currentStreak={user?.currentStreak || 0}
+            mode={streakDialogMode}
+            selectedHabitSeriesId={selectedHabitSeriesId}
+            setSelectedHabitSeriesId={setSelectedHabitSeriesId}
+          />
+        ),
+        confirmText: 'Close',
+        leftAction: (
+          <button
+            type="button"
+            onClick={() => {
+              setStreakDialogMode((prev) => (prev === 'study' ? 'habit' : 'study'));
+            }}
+            className="px-4 py-2 border border-white/10 hover:border-cyan-300 bg-white/5 hover:bg-cyan-500/10 text-gray-300 hover:text-cyan-300 rounded-lg text-xs font-semibold cursor-pointer transition-all"
+          >
+            {streakDialogMode === 'study' ? 'Switch to Habits' : 'Switch to Study'}
+          </button>
+        )
+      });
+    }
+  }, [streakDialogMode, selectedHabitSeriesId, tasks]);
+
+  // Client-side auto-seeding for lucky@gmail.com
+  useEffect(() => {
+    if (user && String(user.email).toLowerCase() === 'lucky@gmail.com' && userTaskStorageKey) {
+      const alreadySeeded = localStorage.getItem(`memora_habits_seeded_${userTaskStorageKey}`);
+      if (alreadySeeded === 'true') return;
+
+      const hasRecurring = tasks.some(t => t.seriesId && ['recurring', 'custom-recurring'].includes(String(t.taskType || '').toLowerCase()));
+      if (!hasRecurring) {
+        console.log('Seeding demo habits for lucky@gmail.com...');
+
+        const habitsDefs = [
+          { title: 'Morning Meditation', completionType: 'boolean', targetValue: 1, weekdays: [0, 1, 2, 3, 4, 5, 6], successRate: 0.85 },
+          { title: 'Drink Water (8 cups)', completionType: 'quantity', targetValue: 8, weekdays: [0, 1, 2, 3, 4, 5, 6], successRate: 0.90 },
+          { title: 'Read 20 pages', completionType: 'quantity', targetValue: 20, weekdays: [0, 1, 2, 3, 4, 5, 6], successRate: 0.70 },
+          { title: 'Gym Workout', completionType: 'boolean', targetValue: 1, weekdays: [1, 3, 5], successRate: 0.80 },
+          { title: 'Coding practice', completionType: 'time', targetValue: 60, weekdays: [1, 2, 3, 4, 5], successRate: 0.75 },
+          { title: 'Stretch & Mobility', completionType: 'boolean', targetValue: 1, weekdays: [0, 1, 2, 3, 4, 5, 6], successRate: 0.65 },
+          { title: 'No Sugar Challenge', completionType: 'percent', targetValue: 100, weekdays: [0, 1, 2, 3, 4, 5, 6], successRate: 0.60 },
+          { title: 'Journal Reflection', completionType: 'boolean', targetValue: 1, weekdays: [0, 1, 2, 3, 4, 5, 6], successRate: 0.50 },
+          { title: 'Walk 10k Steps', completionType: 'quantity', targetValue: 10000, weekdays: [0, 1, 2, 3, 4, 5, 6], successRate: 0.80 },
+          { title: 'Sleep by 11 PM', completionType: 'boolean', targetValue: 1, weekdays: [0, 1, 2, 3, 4, 5, 6], successRate: 0.45 },
+          { title: 'Call family/friend', completionType: 'boolean', targetValue: 1, weekdays: [0, 6], successRate: 0.90 }
+        ];
+
+        const startDate = new Date('2026-04-13T00:00:00');
+        const endDate = new Date('2026-07-12T00:00:00');
+        const seedTasksList = [];
+        const timestampSeed = Date.now();
+        const habitSeriesIds = habitsDefs.map((_, idx) => `series_seed_${timestampSeed}_${idx}`);
+
+        let currentDay = new Date(startDate);
+        while (currentDay <= endDate) {
+          const year = currentDay.getFullYear();
+          const month = String(currentDay.getMonth() + 1).padStart(2, '0');
+          const day = String(currentDay.getDate()).padStart(2, '0');
+          const dateKey = `${year}-${month}-${day}`;
+          const weekday = currentDay.getDay();
+
+          habitsDefs.forEach((def, idx) => {
+            if (def.weekdays.includes(weekday)) {
+              const seriesId = habitSeriesIds[idx];
+              const id = `task_seed_${dateKey}_${idx}`;
+              const rand = Math.random();
+
+              let completed = false;
+              let partiallyCompleted = false;
+              let currentValue = 0;
+
+              if (rand < def.successRate) {
+                completed = true;
+                currentValue = def.targetValue;
+              } else if (def.completionType !== 'boolean' && rand < def.successRate + 0.15) {
+                partiallyCompleted = true;
+                const fraction = 0.3 + Math.random() * 0.5;
+                currentValue = Math.round(def.targetValue * fraction);
+                if (currentValue >= def.targetValue) currentValue = def.targetValue - 1;
+                if (currentValue <= 0) currentValue = 1;
+              }
+
+              seedTasksList.push({
+                id,
+                title: def.title,
+                description: 'Auto-seeded demo habit.',
+                date: dateKey,
+                taskType: 'custom-recurring',
+                seriesId,
+                completed,
+                completionType: def.completionType,
+                targetValue: def.targetValue,
+                currentValue,
+                partiallyCompleted,
+                createdAt: timestampSeed,
+                updatedAt: timestampSeed
+              });
+            }
+          });
+
+          currentDay.setDate(currentDay.getDate() + 1);
+        }
+
+        const updatedTasks = [...tasks, ...seedTasksList];
+        taskService.saveTasks(userTaskStorageKey, updatedTasks);
+        setTasks(updatedTasks);
+        localStorage.setItem(`memora_habits_seeded_${userTaskStorageKey}`, 'true');
+        showToast('Demo habits seeded successfully!', 'success');
+      }
+    }
+  }, [user, tasks, userTaskStorageKey]);
+
 
   // Scroll to top when component mounts
   useEffect(() => {
@@ -1738,6 +2407,36 @@ const Dashboard = () => {
       // Keep overdue balancing in scheduling endpoints instead of force-moving everything to today.
       fetchTopics();
       fetchAllTopicsAndCalculate();
+
+      // Prefetch Chronicle and DocTags data in the background after mount
+      setTimeout(async () => {
+        const userId = user.id || user._id || user.email;
+        if (!userId) return;
+
+        try {
+          const [dueResponse, upcomingResponse, historyResponse] = await Promise.all([
+            apiService.getDueTopics(),
+            apiService.getUpcomingTopics(90, 500),
+            apiService.getRevisionHistory(180)
+          ]);
+          if (dueResponse?.success && upcomingResponse?.success && historyResponse?.success) {
+            localStorage.setItem(`memora_chronicle_due_cache_${userId}`, JSON.stringify(dueResponse));
+            localStorage.setItem(`memora_chronicle_upcoming_cache_${userId}`, JSON.stringify(upcomingResponse));
+            localStorage.setItem(`memora_chronicle_history_cache_${userId}`, JSON.stringify(historyResponse));
+          }
+        } catch (err) {
+          console.warn('Failed to prefetch Chronicle cache:', err);
+        }
+
+        try {
+          const response = await docTagsService.getDocTags({});
+          if (response && Array.isArray(response.docTags)) {
+            localStorage.setItem(`memora_doctags_cache_${userId}`, JSON.stringify(response.docTags));
+          }
+        } catch (err) {
+          console.warn('Failed to prefetch DocTags cache:', err);
+        }
+      }, 1000);
     }
   }, [user, fetchTopics]);
 
@@ -1786,6 +2485,22 @@ const Dashboard = () => {
       state: Object.keys(restState).length > 0 ? restState : null
     });
   }, [location, navigate]);
+
+  useEffect(() => {
+    const focusTopicId = location.state?.focusTopicId;
+    if (!focusTopicId || topics.length === 0) return;
+
+    const topic = topics.find((t) => String(t._id) === String(focusTopicId));
+    if (topic) {
+      handleTopicSearchFocus(topic);
+    }
+
+    const { focusTopicId: _focusTopicId, ...restState } = location.state || {};
+    navigate(location.pathname, {
+      replace: true,
+      state: Object.keys(restState).length > 0 ? restState : null
+    });
+  }, [location.state, topics, navigate]);
 
   const isGraphMode = location.pathname === '/graph';
 
@@ -3943,6 +4658,7 @@ const Dashboard = () => {
         cancelText={dialog.cancelText}
         showCancel={dialog.showCancel}
         size={dialog.size}
+        leftAction={dialog.leftAction}
       />
     </div>
   );

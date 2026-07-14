@@ -470,6 +470,23 @@ const Listener = () => {
   }, [fetchTopicsAndNotes]);
 
   useEffect(() => {
+    const noteId = location.state?.noteId;
+    if (!noteId || notes.length === 0) return;
+
+    const exists = notes.some((n) => String(n.id) === String(noteId));
+    if (exists) {
+      setPanelNoteId(noteId);
+      setActiveModal('notes');
+    }
+
+    const { noteId: _noteId, ...restState } = location.state || {};
+    navigate(location.pathname, {
+      replace: true,
+      state: Object.keys(restState).length > 0 ? restState : null
+    });
+  }, [location.state, notes, navigate]);
+
+  useEffect(() => {
     if (!filteredNotes.length) {
       setPanelNoteId('');
       return;

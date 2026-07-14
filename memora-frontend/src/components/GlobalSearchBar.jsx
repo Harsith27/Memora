@@ -344,24 +344,46 @@ const getResultTheme = (result) => {
 
 const getSearchableText = (value) => String(value || '').toLowerCase();
 
+const getFuzzyScore = (text, query) => {
+  const t = String(text || '').toLowerCase().trim();
+  const q = String(query || '').toLowerCase().trim();
+  if (!q) return 100;
+  if (!t) return 0;
+  if (t === q) return 150;
+  if (t.includes(q)) return 100 - t.indexOf(q);
+
+  let qIdx = 0;
+  let gaps = 0;
+  let lastMatchIdx = -1;
+
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] === q[qIdx]) {
+      if (lastMatchIdx !== -1) {
+        gaps += (i - lastMatchIdx - 1);
+      }
+      lastMatchIdx = i;
+      qIdx++;
+      if (qIdx === q.length) {
+        return Math.max(10, 80 - gaps - (t.length - q.length));
+      }
+    }
+  }
+  return 0;
+};
+
 const scoreTextMatch = (query, title = '', subtitle = '') => {
   const q = getSearchableText(query).trim();
   if (!q) return 0;
 
   const primary = getSearchableText(title);
   const secondary = getSearchableText(subtitle);
+
+  const primaryScore = getFuzzyScore(primary, q);
+  const secondaryScore = getFuzzyScore(secondary, q);
+
   let score = 0;
-
-  if (primary === q) score += 200;
-  if (primary.startsWith(q)) score += 120;
-  if (primary.includes(q)) score += 80;
-  if (secondary.includes(q)) score += 30;
-
-  const words = q.split(/\s+/).filter(Boolean);
-  const allPrimary = words.every((word) => primary.includes(word));
-  const allSecondary = words.every((word) => secondary.includes(word));
-  if (allPrimary) score += 20;
-  if (allSecondary) score += 10;
+  if (primaryScore > 0) score += primaryScore * 1.5;
+  if (secondaryScore > 0) score += secondaryScore * 0.5;
 
   return score;
 };
@@ -974,20 +996,20 @@ const GlobalSearchBar = ({
     catalog.topics.forEach((topic) => {
       const subtitle = `${topic.category || 'General'} • Difficulty ${topic.difficulty || 3}`;
       const haystack = [
-        topic.title,
         topic.content,
         subtitle,
         Array.isArray(topic.tags) ? topic.tags.join(' ') : ''
       ].join(' ');
 
-      if (!getSearchableText(haystack).includes(q)) return;
+      const score = scoreTextMatch(trimmedQuery, topic.title, haystack);
+      if (score <= 0) return;
 
       composedResults.push({
         id: `topic_${topic._id}`,
         type: 'topic',
         title: topic.title || 'Untitled Topic',
         subtitle,
-        score: scoreTextMatch(trimmedQuery, topic.title, subtitle),
+        score,
         payload: { topic }
       });
     });
@@ -995,19 +1017,19 @@ const GlobalSearchBar = ({
     catalog.docTags.forEach((item) => {
       const subtitle = item.type === 'folder' ? 'Folder' : 'Document';
       const text = [
-        item.name,
         item.description,
         subtitle,
         Array.isArray(item.tags) ? item.tags.join(' ') : ''
       ].join(' ');
 
-      if (getSearchableText(text).includes(q)) {
+      const score = scoreTextMatch(trimmedQuery, item.name, text);
+      if (score > 0) {
         composedResults.push({
           id: `doctag_${item._id}`,
           type: item.type === 'folder' ? 'folder' : 'document',
           title: item.name || 'Untitled',
           subtitle,
-          score: scoreTextMatch(trimmedQuery, item.name, subtitle),
+          score,
           payload: { item }
         });
       }
@@ -1021,14 +1043,15 @@ const GlobalSearchBar = ({
 
       attachments.forEach((attachment, index) => {
         const fileTitle = attachment.originalName || attachment.filename || `File ${index + 1}`;
-        if (!getSearchableText(fileTitle).includes(q)) return;
+        const score = scoreTextMatch(trimmedQuery, fileTitle, item.name);
+        if (score <= 0) return;
 
         composedResults.push({
           id: `file_attach_${item._id}_${attachment.filename || index}`,
           type: 'file',
           title: fileTitle,
           subtitle: `File in ${item.name}`,
-          score: scoreTextMatch(trimmedQuery, fileTitle, item.name),
+          score,
           payload: {
             item,
             file: {
@@ -1043,14 +1066,15 @@ const GlobalSearchBar = ({
 
       fileLinks.forEach((link, index) => {
         const fileTitle = link.title || link.url || `Linked file ${index + 1}`;
-        if (!getSearchableText(fileTitle).includes(q)) return;
+        const score = scoreTextMatch(trimmedQuery, fileTitle, item.name);
+        if (score <= 0) return;
 
         composedResults.push({
           id: `file_link_${item._id}_${index}`,
           type: 'file',
           title: fileTitle,
           subtitle: `Linked file in ${item.name}`,
-          score: scoreTextMatch(trimmedQuery, fileTitle, item.name),
+          score,
           payload: {
             item,
             file: {
@@ -1069,15 +1093,15 @@ const GlobalSearchBar = ({
         ? `Linked to ${map.linkedTopicTitle} • ${map.nodeCount} nodes`
         : `${map.nodeCount} nodes`;
 
-      const text = `${map.title} ${map.linkedTopicTitle}`;
-      if (!getSearchableText(text).includes(q)) return;
+      const score = scoreTextMatch(trimmedQuery, map.title, map.linkedTopicTitle || '');
+      if (score <= 0) return;
 
       composedResults.push({
         id: `mindmap_${map.id}`,
         type: 'mindmap',
         title: map.title,
         subtitle,
-        score: scoreTextMatch(trimmedQuery, map.title, subtitle),
+        score,
         payload: { map }
       });
     });
@@ -1086,14 +1110,16 @@ const GlobalSearchBar = ({
       const displayDate = formatDateForDisplay(entry.date);
       const subtitle = `${displayDate} • ${entry.title}`;
       const text = `${entry.date} ${displayDate} ${entry.title} ${entry.contentPreview}`;
-      if (!getSearchableText(text).includes(q)) return;
+      
+      const score = scoreTextMatch(trimmedQuery, `${entry.date} ${displayDate} ${entry.title}`, entry.contentPreview);
+      if (score <= 0) return;
 
       composedResults.push({
         id: `journal_${entry.date}`,
         type: 'journal',
         title: `Journal ${displayDate}`,
         subtitle,
-        score: scoreTextMatch(trimmedQuery, `${entry.date} ${displayDate}`, entry.title),
+        score,
         payload: { date: entry.date }
       });
     });
@@ -1101,15 +1127,17 @@ const GlobalSearchBar = ({
     catalog.tasks.forEach((task) => {
       const displayDate = formatDateForDisplay(task.date);
       const subtitle = `${displayDate}${task.completed ? ' • done' : ' • pending'}`;
-      const text = `${task.title} ${task.description} ${task.date} ${displayDate}`;
-      if (!getSearchableText(text).includes(q)) return;
+      const text = `${task.description} ${task.date} ${displayDate}`;
+      
+      const score = scoreTextMatch(trimmedQuery, task.title, text);
+      if (score <= 0) return;
 
       composedResults.push({
         id: `task_${task.id}`,
         type: 'task',
         title: task.title || 'Untitled task',
         subtitle,
-        score: scoreTextMatch(trimmedQuery, task.title, subtitle),
+        score,
         payload: {
           task
         }
@@ -1119,18 +1147,21 @@ const GlobalSearchBar = ({
     catalog.calendarEvents.forEach((event) => {
       const displayDate = formatDateForDisplay(event.date);
       const subtitle = `${displayDate} • ${event.type}`;
-      const text = `${event.title} ${event.description} ${event.date} ${displayDate}`;
-      if (!getSearchableText(text).includes(q)) return;
+      const text = `${event.description} ${event.date} ${displayDate}`;
+      
+      const score = scoreTextMatch(trimmedQuery, event.title, text);
+      if (score <= 0) return;
 
       composedResults.push({
         id: `calendar_${event.id}`,
         type: 'calendar',
         title: event.title,
         subtitle,
-        score: scoreTextMatch(trimmedQuery, event.title, subtitle),
+        score,
         payload: { event }
       });
     });
+
 
     const deduped = [];
     const seenIds = new Set();

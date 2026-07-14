@@ -126,3 +126,7 @@ memora-backend/uploads/
 
 # Local deployment notes with sensitive infra details
 # DEPLOYMENT_RUNBOOK.md
+
+# Private architecture planning docs
+Planning/
+Future Plans/

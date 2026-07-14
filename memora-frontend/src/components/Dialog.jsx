@@ -12,7 +12,8 @@ const Dialog = ({
   confirmText = 'OK',
   cancelText = 'Cancel',
   showCancel = false,
-  size = 'md'
+  size = 'md',
+  leftAction = null
 }) => {
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -104,27 +105,32 @@ const Dialog = ({
         </div>
 
         {/* Actions */}
-        <div className="flex space-x-3 justify-end">
-          {showCancel && (
+        <div className="flex items-center justify-between">
+          <div>
+            {leftAction}
+          </div>
+          <div className="flex space-x-3 justify-end">
+            {showCancel && (
+              <button
+                onClick={handleCancel}
+                className="px-4 py-2 border border-white/20 text-gray-300 hover:text-white hover:border-white/40 rounded-lg transition-colors"
+              >
+                {cancelText}
+              </button>
+            )}
             <button
-              onClick={handleCancel}
-              className="px-4 py-2 border border-white/20 text-gray-300 hover:text-white hover:border-white/40 rounded-lg transition-colors"
+              onClick={handleConfirm}
+              className={`px-4 py-2 rounded-lg border transition-colors ${
+                type === 'warning' || type === 'confirm'
+                  ? 'border-red-400/35 bg-red-500/14 text-red-100 hover:bg-red-500/24'
+                  : type === 'success'
+                  ? 'border-emerald-400/35 bg-emerald-500/14 text-emerald-100 hover:bg-emerald-500/24'
+                  : 'border-cyan-400/35 bg-cyan-500/14 text-cyan-100 hover:bg-cyan-500/24'
+              }`}
             >
-              {cancelText}
+              {confirmText}
             </button>
-          )}
-          <button
-            onClick={handleConfirm}
-            className={`px-4 py-2 rounded-lg border transition-colors ${
-              type === 'warning' || type === 'confirm'
-                ? 'border-red-400/35 bg-red-500/14 text-red-100 hover:bg-red-500/24'
-                : type === 'success'
-                ? 'border-emerald-400/35 bg-emerald-500/14 text-emerald-100 hover:bg-emerald-500/24'
-                : 'border-cyan-400/35 bg-cyan-500/14 text-cyan-100 hover:bg-cyan-500/24'
-            }`}
-          >
-            {confirmText}
-          </button>
+          </div>
         </div>
       </div>
     </div>
