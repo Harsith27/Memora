@@ -455,15 +455,6 @@ const defaultJournalTemplates = {
 - What do I want to complete today?
 - What is the most important thing to learn?
 
-## Reflection
-- What went well today?
-- What was difficult?
-- What should I revisit tomorrow?
-
-## Habits
-- Which habit did I keep?
-- Which habit needs attention?
-
 ## Notes
 - Add anything important here.
 
@@ -662,6 +653,23 @@ const formatDate = (dateString) => {
   }
 };
 
+const isSelectionLocked = (state) => {
+  const { selection, doc } = state;
+  const { $from, $to } = selection;
+  
+  const checkPos = (pos) => {
+    let lastHeadingText = '';
+    doc.nodesBetween(0, pos, (node) => {
+      if (node.type.name === 'heading' && node.attrs.level === 2) {
+        lastHeadingText = node.textContent.trim();
+      }
+    });
+    return lastHeadingText === 'Overview' || lastHeadingText === 'Activities';
+  };
+  
+  return checkPos($from.pos) || checkPos($to.pos);
+};
+
 const Journal = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -793,6 +801,14 @@ const Journal = () => {
     content: '',
     editorProps: {
       handleKeyDown: (view, event) => {
+        if (isSelectionLocked(view.state)) {
+          const allowedKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End', 'Tab'];
+          if (!allowedKeys.includes(event.key)) {
+            event.preventDefault();
+            return true;
+          }
+        }
+
         if (slashMenuOpen && filteredCommands.length > 0) {
           if (event.key === 'ArrowDown') {
             event.preventDefault();
@@ -817,6 +833,20 @@ const Journal = () => {
             setSlashMenuOpen(false);
             return true;
           }
+        }
+        return false;
+      },
+      handlePaste: (view, event, slice) => {
+        if (isSelectionLocked(view.state)) {
+          event.preventDefault();
+          return true;
+        }
+        return false;
+      },
+      handleDrop: (view, event, slice, moved) => {
+        if (isSelectionLocked(view.state)) {
+          event.preventDefault();
+          return true;
         }
         return false;
       }
@@ -1655,6 +1685,7 @@ const Journal = () => {
 
     const { title, body = '' } = extractTitleAndBody(contentText, `Learning Journal - ${formatDateDDMMYYYY(currentDate)}`);
     setEntryTitle(title);
+    setCurrentEntry(contentText);
 
     if (editor && !editor.isDestroyed) {
       editor.commands.setContent(markdownToHtml(body));
@@ -1698,6 +1729,10 @@ const Journal = () => {
     const topicsReviewed = [];
     const topicsAdded = [];
     const focusSessions = [];
+    const habitsCompleted = [];
+    const habitsPending = [];
+    const tasksCompleted = [];
+    const tasksPending = [];
     const other = [];
 
     items.forEach((item) => {
@@ -1717,6 +1752,18 @@ const Journal = () => {
         topicsAdded.push(`- ${name}`);
       } else if (act.startsWith('Focus session:')) {
         focusSessions.push(`- ${act.replace(/^Focus session: /, '')}`);
+      } else if (act.startsWith('Completed Habit:')) {
+        habitsCompleted.push(`- ${act.replace(/^Completed Habit: /, '')}`);
+      } else if (act.startsWith('Progress on Habit:')) {
+        habitsCompleted.push(`- ${act.replace(/^Progress on Habit: /, '')} (In Progress)`);
+      } else if (act.startsWith('Pending Habit:')) {
+        habitsPending.push(`- ${act.replace(/^Pending Habit: /, '')}`);
+      } else if (act.startsWith('Completed Task:')) {
+        tasksCompleted.push(`- ${act.replace(/^Completed Task: /, '')}`);
+      } else if (act.startsWith('Progress on Task:')) {
+        tasksCompleted.push(`- ${act.replace(/^Progress on Task: /, '')} (In Progress)`);
+      } else if (act.startsWith('Pending Task:')) {
+        tasksPending.push(`- ${act.replace(/^Pending Task: /, '')}`);
       } else {
         other.push(`- ${act}`);
       }
@@ -1732,6 +1779,31 @@ const Journal = () => {
     if (focusSessions.length > 0) {
       result += `### Focus Sessions\n${focusSessions.join('\n')}\n\n`;
     }
+    
+    // Habits Subsection
+    if (habitsCompleted.length > 0 || habitsPending.length > 0) {
+      result += `### Habits\n`;
+      if (habitsCompleted.length > 0) {
+        result += `**Completed:**\n${habitsCompleted.join('\n')}\n`;
+      }
+      if (habitsPending.length > 0) {
+        result += `**Pending:**\n${habitsPending.join('\n')}\n`;
+      }
+      result += `\n`;
+    }
+
+    // Tasks Subsection
+    if (tasksCompleted.length > 0 || tasksPending.length > 0) {
+      result += `### Tasks\n`;
+      if (tasksCompleted.length > 0) {
+        result += `**Completed:**\n${tasksCompleted.join('\n')}\n`;
+      }
+      if (tasksPending.length > 0) {
+        result += `**Pending:**\n${tasksPending.join('\n')}\n`;
+      }
+      result += `\n`;
+    }
+
     if (other.length > 0) {
       result += `### Other Activities\n${other.join('\n')}\n\n`;
     }
@@ -1853,16 +1925,16 @@ const Journal = () => {
     showToast('Journal refreshed!');
   };
 
-  const loadTodayActivities = async () => {
+  const loadTodayActivities = async (targetDate = null) => {
     try {
-      const todayKey = getLocalDateString();
-      const response = await apiService.getRevisionHistory(1);
+      const activeDate = targetDate || currentDate || getLocalDateString();
+      const response = await apiService.getRevisionHistory(30);
       if (response.success && Array.isArray(response.entries)) {
         const activities = [];
         const uniqueRevs = new Set();
         response.entries.forEach((rev) => {
           const revDate = getLocalDateString(rev.completedAt);
-          if (revDate !== todayKey) return;
+          if (revDate !== activeDate) return;
 
           const key = `${rev.topicId}_${rev.completedAt}`;
           if (uniqueRevs.has(key)) return;
@@ -1882,7 +1954,7 @@ const Journal = () => {
               parsedSessions.forEach((sess) => {
                 if (!sess.date) return;
                 const sessDate = getLocalDateString(sess.date);
-                if (sessDate === todayKey) {
+                if (sessDate === activeDate) {
                   const durationMins = Math.round(sess.duration / 60000);
                   if (durationMins > 0) {
                     activities.push(`Focus session: ${durationMins} minutes on task "${sess.topicTitle || 'Study'}"`);
@@ -1895,15 +1967,42 @@ const Journal = () => {
           console.warn('Failed to parse focus sessions from localStorage:', storageErr);
         }
 
-        if (activities.length > 0) {
-          localStorage.setItem(getUserStorageKey(`activities_${todayKey}`), JSON.stringify(activities));
-          if (currentDate === todayKey) {
-            setTodayActivities(activities);
+        // Fetch completed/pending habits & tasks from taskService
+        try {
+          const dateTasks = taskService.getTasksByDate(user, activeDate);
+          if (Array.isArray(dateTasks)) {
+            dateTasks.forEach((task) => {
+              const isRecurring = task.taskType === 'recurring' || task.taskType === 'custom-recurring';
+              const label = isRecurring ? 'Habit' : 'Task';
+              
+              if (task.completed) {
+                if (task.completionType === 'boolean' || !task.completionType) {
+                  activities.push(`Completed ${label}: "${task.title}"`);
+                } else if (task.completionType === 'quantity') {
+                  activities.push(`Completed ${label}: "${task.title}" (${task.currentValue}/${task.targetValue})`);
+                } else if (task.completionType === 'percent') {
+                  activities.push(`Completed ${label}: "${task.title}" (${task.currentValue}%)`);
+                } else if (task.completionType === 'time') {
+                  activities.push(`Completed ${label}: "${task.title}" (${task.currentValue} mins)`);
+                }
+              } else if (task.partiallyCompleted || (task.currentValue > 0 && !task.completed)) {
+                activities.push(`Progress on ${label}: "${task.title}" (${task.currentValue}/${task.targetValue})`);
+              } else {
+                activities.push(`Pending ${label}: "${task.title}"`);
+              }
+            });
           }
+        } catch (taskErr) {
+          console.warn('Failed to fetch tasks for activities logging:', taskErr);
+        }
+
+        localStorage.setItem(getUserStorageKey(`activities_${activeDate}`), JSON.stringify(activities));
+        if (activeDate === currentDate) {
+          setTodayActivities(activities);
         }
       }
     } catch (err) {
-      console.warn('Failed to load today activities details:', err);
+      console.warn('Failed to load activities details:', err);
     }
   };
 
@@ -2231,7 +2330,11 @@ const templateEditorLockedSections = useMemo(() => {
 
   useEffect(() => {
     if (activeView === 'daily') {
-      loadEntry(currentDate);
+      const fetchAndLoad = async () => {
+        await loadTodayActivities(currentDate);
+        loadEntry(currentDate);
+      };
+      fetchAndLoad();
     } else if (activeView === 'weekly') {
       loadWeeklySummary();
     } else if (activeView === 'monthly') {
@@ -2889,15 +2992,6 @@ const templateEditorLockedSections = useMemo(() => {
                             >
                               <PanelLeft className="w-3.5 h-3.5" />
                               My Explorer
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleAISummarize}
-                              disabled={isSummarizing}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/5 hover:border-white/10 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white text-xs font-semibold transition-all disabled:opacity-50"
-                            >
-                              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                              {isSummarizing ? 'Summarizing...' : 'AI Summarize'}
                             </button>
                             {shouldShowEditor && (
                               <button

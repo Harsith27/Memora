@@ -1299,7 +1299,11 @@ router.put('/preferences', [
   body('studyBoostMinutesBonus')
     .optional()
     .isInt({ min: 0, max: 180 })
-    .withMessage('Study boost minutes bonus must be between 0 and 180')
+    .withMessage('Study boost minutes bonus must be between 0 and 180'),
+  body('groqApiKey')
+    .optional()
+    .custom((value) => typeof value === 'string')
+    .withMessage('Groq API Key must be a string')
 ], handleValidationErrors, async (req, res) => {
   try {
     const {
@@ -1312,7 +1316,8 @@ router.put('/preferences', [
       studyBoostDates,
       studyBoostTopicBonus,
       studyBoostDifficultyBonus,
-      studyBoostMinutesBonus
+      studyBoostMinutesBonus,
+      groqApiKey
     } = req.body;
     const user = await User.findById(req.user.id);
     
@@ -1334,6 +1339,7 @@ router.put('/preferences', [
     if (studyBoostTopicBonus !== undefined) user.preferences.studyBoostTopicBonus = Math.max(0, Number(studyBoostTopicBonus) || 0);
     if (studyBoostDifficultyBonus !== undefined) user.preferences.studyBoostDifficultyBonus = Math.max(0, Number(studyBoostDifficultyBonus) || 0);
     if (studyBoostMinutesBonus !== undefined) user.preferences.studyBoostMinutesBonus = Math.max(0, Number(studyBoostMinutesBonus) || 0);
+    if (groqApiKey !== undefined) user.preferences.groqApiKey = String(groqApiKey || '').trim();
 
     await user.save();
 
@@ -1348,6 +1354,113 @@ router.put('/preferences', [
     res.status(500).json({
       success: false,
       message: 'Failed to update preferences'
+    });
+  }
+});
+
+/**
+ * @route   POST /api/user/validate-key
+ * @desc    Validate a custom Groq API key and fetch its rate limits/token availability
+ * @access  Private
+ */
+router.post('/validate-key', authenticateToken, async (req, res) => {
+  try {
+    const keysArray = [];
+    if (groqApiKey && typeof groqApiKey === 'string') {
+      const split = groqApiKey.split(',')
+        .map(k => String(k || '').trim())
+        .filter(k => k && k.toLowerCase() !== 'null' && k.toLowerCase() !== 'undefined');
+      keysArray.push(...split);
+    }
+    
+    if (keysArray.length === 0) {
+      const { getApiKey } = require('../utils/groq');
+      const defaultKey = getApiKey();
+      if (defaultKey) {
+        keysArray.push(defaultKey);
+      }
+    }
+
+    if (keysArray.length === 0) {
+      return res.status(400).json({ success: false, message: 'No Groq API Key available to validate.' });
+    }
+
+    const results = [];
+    for (let i = 0; i < keysArray.length; i++) {
+      const key = keysArray[i];
+      const maskedKey = key.length > 12 
+        ? `${key.slice(0, 7)}...${key.slice(-4)}` 
+        : 'Invalid Key Format';
+
+      try {
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${key}`
+          },
+          body: JSON.stringify({
+            model: 'llama-3.1-8b-instant',
+            messages: [{ role: 'user', content: 'Ping' }],
+            max_tokens: 1
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          let parsed = {};
+          try { parsed = JSON.parse(errorText); } catch (_) {}
+          results.push({
+            keyIndex: i + 1,
+            maskedKey,
+            success: false,
+            message: parsed?.error?.message || 'Authentication test failed. Key is invalid or expired.'
+          });
+          continue;
+        }
+
+        const limits = {
+          limitRequests: response.headers.get('x-ratelimit-limit-requests'),
+          remainingRequests: response.headers.get('x-ratelimit-remaining-requests'),
+          limitTokens: response.headers.get('x-ratelimit-limit-tokens'),
+          remainingTokens: response.headers.get('x-ratelimit-remaining-tokens'),
+          resetRequests: response.headers.get('x-ratelimit-reset-requests'),
+          resetTokens: response.headers.get('x-ratelimit-reset-tokens'),
+          
+          limitDayTokens: response.headers.get('x-ratelimit-limit-day-tokens') || response.headers.get('x-ratelimit-limit-tokens-day') || response.headers.get('x-ratelimit-limit-tokens-daily'),
+          remainingDayTokens: response.headers.get('x-ratelimit-remaining-day-tokens') || response.headers.get('x-ratelimit-remaining-tokens-day') || response.headers.get('x-ratelimit-remaining-tokens-daily'),
+          limitDayRequests: response.headers.get('x-ratelimit-limit-day-requests') || response.headers.get('x-ratelimit-limit-requests-day') || response.headers.get('x-ratelimit-limit-requests-daily'),
+          remainingDayRequests: response.headers.get('x-ratelimit-remaining-day-requests') || response.headers.get('x-ratelimit-remaining-requests-day') || response.headers.get('x-ratelimit-remaining-requests-daily')
+        };
+
+        results.push({
+          keyIndex: i + 1,
+          maskedKey,
+          success: true,
+          limits
+        });
+
+      } catch (err) {
+        results.push({
+          keyIndex: i + 1,
+          maskedKey,
+          success: false,
+          message: err.message || 'Connection timeout.'
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Groq API validation check complete.',
+      keys: results
+    });
+
+  } catch (error) {
+    console.error('Validate key error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'System error testing Groq API Key connection'
     });
   }
 });

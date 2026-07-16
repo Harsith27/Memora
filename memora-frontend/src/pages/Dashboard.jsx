@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Calendar, BarChart3, Settings, FileText, BookOpen,
   Plus, Flame, Zap, ArrowLeft, CheckCircle, Target, Clock, Edit3, Trash2, SkipForward, Loader, GitBranch,
   Twitter, Github, Mail, Globe, Heart, Linkedin, Instagram, Menu, PanelLeftClose, PanelLeft, CheckSquare,
   Star,
-  Save, X, ChevronLeft, ChevronRight, Maximize2, Minimize2, Play, Square, Award, Mic
+  Save, X, ChevronLeft, ChevronRight, Maximize2, Minimize2, Play, Square, Award, Mic, Bell, Brain, Info, CheckCheck
 } from 'lucide-react';
 import Logo from '../components/Logo';
 import AddTopicModal from '../components/AddTopicModal';
@@ -23,6 +23,7 @@ import DashboardGlyph from '../components/DashboardGlyph';
 import logoImg from '../assets/logo.jpg';
 import { getSidebarNavItems } from '../constants/sidebarNavigation';
 import { useAuth } from '../contexts/AuthContext';
+import { useTimer } from '../contexts/TimerContext';
 import { useTopics } from '../hooks/useTopics';
 import apiService from '../services/api';
 import journalService from '../services/journalService';
@@ -998,6 +999,35 @@ const Dashboard = () => {
     return `${year}-${month}-${day}`;
   });
   const [tasks, setTasks] = useState([]);
+  const { isCompleted: isFocusTimerCompleted } = useTimer();
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [hasTriggeredFocusCompletedAlert, setHasTriggeredFocusCompletedAlert] = useState(false);
+  const [notifications, setNotifications] = useState([
+    {
+      id: 'init-1',
+      title: 'Mindmap Generated',
+      description: 'Your mindmap for MongoDB Basics is complete and ready.',
+      type: 'activity',
+      isRead: false,
+      createdAt: new Date(Date.now() - 3600000)
+    },
+    {
+      id: 'init-2',
+      title: 'Streak Unlocked!',
+      description: 'You completed 5 daily tasks and kept your streak alive. 🔥',
+      type: 'achievement',
+      isRead: false,
+      createdAt: new Date(Date.now() - 7200000)
+    },
+    {
+      id: 'init-3',
+      title: 'Spaced Repetition Warning',
+      description: 'MongoDB Basics needs revision. Ease factor has decayed.',
+      type: 'smart',
+      isRead: true,
+      createdAt: new Date(Date.now() - 86400000)
+    }
+  ]);
   const [streakDialogMode, setStreakDialogMode] = useState('study');
   const [selectedHabitSeriesId, setSelectedHabitSeriesId] = useState('all');
   const [isPartialModalOpen, setIsPartialModalOpen] = useState(false);
@@ -1009,10 +1039,139 @@ const Dashboard = () => {
   const [isTaskSpotlightActive, setIsTaskSpotlightActive] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
+  const triggeredRemindersRef = useRef(new Set());
+
   const showToast = (message, type = 'success') => {
     setToast({ show: true, message, type });
     setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
   };
+
+  const formatTimeDistance = (date) => {
+    if (!date) return '';
+    const diff = Date.now() - new Date(date).getTime();
+    const minutes = Math.floor(diff / 60000);
+    const bgHours = Math.floor(diff / 3600000);
+    const bgDays = Math.floor(diff / 86400000);
+
+    if (diff < 60000) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (bgHours < 24) return `${bgHours}h ago`;
+    return `${bgDays}d ago`;
+  };
+
+  const addNotification = useCallback((newNotif) => {
+    setNotifications(prev => [
+      {
+        id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        isRead: false,
+        createdAt: new Date(),
+        ...newNotif
+      },
+      ...prev
+    ]);
+  }, []);
+
+  // Focus Timer Incomplete Task Helper
+  useEffect(() => {
+    if (isFocusTimerCompleted && !hasTriggeredFocusCompletedAlert) {
+      const incompleteCount = (tasks || []).filter(t => !t.completed).length;
+      if (incompleteCount > 0) {
+        addNotification({
+          title: "Focus Session Over",
+          description: `Focus timer completed, but ${incompleteCount} tasks are still pending. Ready to restart or review?`,
+          type: 'smart',
+          actionUrl: '/focus'
+        });
+      } else {
+        addNotification({
+          title: "Focus Session Over",
+          description: "Outstanding work! You have checked off all your focus session tasks.",
+          type: 'achievement',
+          actionUrl: '/focus'
+        });
+      }
+      setHasTriggeredFocusCompletedAlert(true);
+    } else if (!isFocusTimerCompleted) {
+      setHasTriggeredFocusCompletedAlert(false);
+    }
+  }, [isFocusTimerCompleted, tasks, hasTriggeredFocusCompletedAlert, addNotification]);
+
+  // Natural Language task title parser for smart reminders
+  useEffect(() => {
+    if (!tasks || tasks.length === 0) return;
+
+    const newReminders = [];
+    const now = new Date();
+    const currentHour = now.getHours();
+
+    tasks.forEach(task => {
+      if (task.completed) return;
+
+      const title = String(task.title || '').toLowerCase();
+      let reminder = null;
+      
+      if (title.includes('at night') || title.includes('in the evening') || title.includes('night study')) {
+        if (currentHour >= 19 && currentHour < 23) {
+          reminder = {
+            id: `reminder-night-${task._id || task.id}`,
+            title: "Night Routine Reminder",
+            description: `It is evening. Time for your scheduled task: "${task.title}"`,
+            type: 'smart'
+          };
+        }
+      }
+      
+      if (title.includes('morning') || title.includes('in the morning') || title.includes('morning study')) {
+        if (currentHour >= 6 && currentHour < 12) {
+          reminder = {
+            id: `reminder-morning-${task._id || task.id}`,
+            title: "Morning Routine Reminder",
+            description: `Start your day! Time for your scheduled task: "${task.title}"`,
+            type: 'smart'
+          };
+        }
+      }
+
+      if (title.includes('afternoon') || title.includes('after lunch')) {
+        if (currentHour >= 12 && currentHour < 17) {
+          reminder = {
+            id: `reminder-afternoon-${task._id || task.id}`,
+            title: "Afternoon Focus Reminder",
+            description: `Mid-day review! Time for your scheduled task: "${task.title}"`,
+            type: 'smart'
+          };
+        }
+      }
+
+      if (reminder) {
+        // Prevent duplicate trigger in the same session
+        if (!triggeredRemindersRef.current.has(reminder.id)) {
+          newReminders.push(reminder);
+        }
+      }
+    });
+
+    if (newReminders.length === 0) return;
+
+    // Mark them as triggered in ref synchronously
+    newReminders.forEach(r => triggeredRemindersRef.current.add(r.id));
+
+    setNotifications(prev => {
+      let updated = [...prev];
+      let changed = false;
+      newReminders.forEach(reminder => {
+        if (!prev.some(n => n.id === reminder.id)) {
+          updated.unshift({
+            ...reminder,
+            createdAt: new Date(),
+            isRead: false
+          });
+          changed = true;
+        }
+      });
+      return changed ? updated : prev;
+    });
+  }, [tasks]);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const saved = localStorage.getItem('sidebarCollapsed');
@@ -1184,6 +1343,34 @@ const Dashboard = () => {
       window.clearInterval(pollingTimer);
     };
   }, [user, userTaskStorageKey]);
+
+  // Load notifications from localStorage when userTaskStorageKey changes
+  useEffect(() => {
+    if (!userTaskStorageKey) return;
+    const key = `memora_notifications_${userTaskStorageKey}`;
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        const parsedNotifications = parsed.map(n => ({ ...n, createdAt: new Date(n.createdAt) }));
+        setNotifications(parsedNotifications);
+        
+        // Populate triggeredRemindersRef with existing notification IDs
+        parsedNotifications.forEach(n => {
+          if (n.id) triggeredRemindersRef.current.add(n.id);
+        });
+      } catch (e) {
+        console.error("Failed to parse notifications", e);
+      }
+    }
+  }, [userTaskStorageKey]);
+
+  // Save notifications to localStorage when they change
+  useEffect(() => {
+    if (!userTaskStorageKey) return;
+    const key = `memora_notifications_${userTaskStorageKey}`;
+    localStorage.setItem(key, JSON.stringify(notifications));
+  }, [notifications, userTaskStorageKey]);
 
   const filterLearningTopics = (items = []) => {
     if (!Array.isArray(items)) return [];
@@ -2088,6 +2275,14 @@ const Dashboard = () => {
   const handleTopicSearchFocus = (topic) => {
     const topicId = topic?._id;
     if (!topicId) return;
+
+    if (isGraphMode) {
+      setGraphSearchRequest({
+        query: topic.title,
+        token: `${Date.now()}_${topic.title.toLowerCase()}`
+      });
+      return;
+    }
 
     const inDue = dueTopics.some((item) => item._id === topicId);
     const inUpcoming = upcomingTopics.some((item) => item._id === topicId);
@@ -3693,6 +3888,18 @@ const Dashboard = () => {
             </div>
             ) : (
             <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
+              {/* Search Box - Moved to the left of MemScore */}
+              <div data-tour="dashboard-global-search" className="flex items-center">
+                <GlobalSearchBar
+                  user={user}
+                  onOpenTopicTimeline={handleTopicClick}
+                  onOpenTopicEdit={(topic) => handleTopicEdit(topic?._id)}
+                  onOpenTopicFocus={handleTopicSearchFocus}
+                  onOpenTaskCreate={(dateValue) => openTaskCreateModal(dateValue || selectedDateKey)}
+                  onOpenTaskSearch={(taskQuery, taskMeta) => handleTaskSearchFocus(taskQuery, taskMeta)}
+                />
+              </div>
+
               {/* Stats - Hidden on very small screens */}
               <div className="hidden sm:flex items-center space-x-3 lg:space-x-6">
                 {/* MemScore */}
@@ -3707,20 +3914,113 @@ const Dashboard = () => {
                 </div>
               </div>
 
-              <div data-tour="dashboard-global-search" className="flex items-center">
-                <GlobalSearchBar
-                  user={user}
-                  onOpenTopicTimeline={handleTopicClick}
-                  onOpenTopicEdit={(topic) => handleTopicEdit(topic?._id)}
-                  onOpenTopicFocus={handleTopicSearchFocus}
-                  onOpenTaskCreate={(dateValue) => openTaskCreateModal(dateValue || selectedDateKey)}
-                  onOpenTaskSearch={(taskQuery, taskMeta) => handleTaskSearchFocus(taskQuery, taskMeta)}
-                />
-              </div>
-
               {/* Minimalist Timer */}
               <div className="hidden sm:block">
                 <MinimalistTimer />
+              </div>
+
+              {/* Notifications Center Bell - Added to the left of Focus Mode */}
+              <div className="relative">
+                <button
+                  onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+                  className="relative inline-flex items-center justify-center h-8 w-8 sm:h-9 sm:w-9 rounded-full border border-white/10 bg-white/5 text-gray-200 hover:bg-white/10 hover:border-white/20 transition-all duration-200"
+                  title="Notifications"
+                >
+                  <Bell className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-300" />
+                  {notifications.some(n => !n.isRead) && (
+                    <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                  )}
+                </button>
+
+                {/* Notifications Popover Dropdown */}
+                {isNotificationOpen && (
+                  <>
+                    {/* Click outside backdrop overlay */}
+                    <div
+                      onClick={() => setIsNotificationOpen(false)}
+                      className="fixed inset-0 z-45 bg-transparent"
+                    />
+
+                    {/* Popover Card */}
+                    <div className="absolute right-[-140px] mt-2 w-80 bg-black border border-white/10 rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden max-h-[360px] origin-top">
+                      {/* Dropdown Header */}
+                      <div className="flex items-center justify-between px-3 py-2 border-b border-white/5 bg-white/[0.02] shrink-0">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Notifications</span>
+                        {notifications.some(n => !n.isRead) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+                              showToast('All marked as read.', 'success');
+                            }}
+                            className="text-[10px] text-pink-400 hover:text-pink-300 font-medium transition-colors"
+                          >
+                            Mark all read
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Dropdown Content */}
+                      <div className="flex-1 overflow-y-auto divide-y divide-white/5 max-h-[300px] scrollbar-themed">
+                        {notifications.length === 0 ? (
+                          <div className="py-6 px-4 text-center text-xs text-gray-500">
+                            No notifications yet.
+                          </div>
+                        ) : (
+                          notifications.map((notification) => {
+                            let IconComponent = Info;
+                            let iconColor = 'text-gray-400';
+
+                            if (notification.type === 'activity') {
+                              IconComponent = GitBranch;
+                              iconColor = 'text-cyan-400';
+                            } else if (notification.type === 'achievement') {
+                              IconComponent = Award;
+                              iconColor = 'text-amber-400';
+                            } else if (notification.type === 'smart') {
+                              IconComponent = CheckCheck;
+                              iconColor = 'text-pink-400';
+                            }
+
+                            return (
+                              <div
+                                key={notification.id}
+                                onClick={() => {
+                                  setNotifications(prev => prev.map(n => n.id === notification.id ? { ...n, isRead: true } : n));
+                                  if (notification.actionUrl) {
+                                    navigate(notification.actionUrl);
+                                    setIsNotificationOpen(false);
+                                  }
+                                }}
+                                className={`px-3 py-2.5 transition-colors flex gap-2 text-left ${
+                                  notification.actionUrl ? 'cursor-pointer hover:bg-white/[0.03]' : ''
+                                } ${
+                                  notification.isRead
+                                    ? 'bg-transparent opacity-70'
+                                    : 'bg-pink-500/[0.02]'
+                                }`}
+                              >
+                                <div className="shrink-0 pt-0.5">
+                                  <IconComponent className={`w-3.5 h-3.5 ${iconColor}`} />
+                                </div>
+
+                                <div className="flex-1 min-w-0 space-y-0.5">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <h4 className="text-[11px] font-semibold text-white truncate leading-snug">{notification.title}</h4>
+                                    <span className="text-[9px] text-gray-500 shrink-0">
+                                      {formatTimeDistance(notification.createdAt)}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-gray-400 leading-normal">{notification.description}</p>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Focus Mode Button */}
@@ -4636,6 +4936,8 @@ const Dashboard = () => {
           </div>
         )}
       </Modal>
+
+
 
       {/* Toast Notifications */}
       <Toast

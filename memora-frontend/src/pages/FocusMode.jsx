@@ -1,144 +1,159 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Square, RotateCcw, Settings, Maximize, Minimize, History, Clock, ChevronUp, ChevronDown, Palette, Sparkles } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Square, RotateCcw, Settings, Maximize, Minimize, History, Clock, ChevronUp, ChevronDown, Palette, Sparkles, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTimer } from '../contexts/TimerContext';
 import Toast from '../components/Toast';
 import journalService from '../services/journalService';
 
+import bg1 from '../assets/focusmode_bgs/abstract-black-leather-geometric-pattern-with-subtle-highlights-photo.jpg';
+import bg2 from '../assets/focusmode_bgs/abstract-blue-light-pipe-speed-zoom-black-background-technology_1142-9980.avif';
+import bg3 from '../assets/focusmode_bgs/black-background-with-faint-outline-mountain-range_1170794-257886.avif';
+import bg4 from '../assets/focusmode_bgs/images.jpg';
+import bg5 from '../assets/focusmode_bgs/wallpapersden.com_macbook-pro-m3-4k_3456x2234.jpg';
+
 const focusThemes = [
   {
-    id: 'default',
-    name: 'Default',
-    description: 'Clean and simple focus environment.',
-    fontFamily: '"Inter", "Segoe UI", sans-serif',
-    clockFont: '"JetBrains Mono", "Fira Code", monospace',
+    id: 'geometric-leather',
+    name: 'Geometric Leather',
+    description: 'Black leather geometric patterns with subtle highlights.',
+    fontFamily: '"Geist", "Inter", sans-serif',
+    backgroundImage: `url(${bg1})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
     pattern: 'grid',
-    backgroundImage: 'linear-gradient(135deg, #0f172a 0%, #1a1f3a 50%, #0f172a 100%)',
-    gridColor: 'rgba(148, 163, 184, 0.06)',
-    blobA: 'rgba(15, 23, 42, 0.5)',
-    blobB: 'rgba(30, 41, 59, 0.4)'
+    gridColor: 'rgba(255, 255, 255, 0.04)'
   },
   {
-    id: 'noir-grid',
-    name: 'Noir Grid',
-    description: 'High-contrast dark grid with electric cyan.',
-    fontFamily: '"Geist", "Inter", "Segoe UI", sans-serif',
-    clockFont: '"JetBrains Mono", "Fira Code", monospace',
-    pattern: 'grid',
-    backgroundImage: 'conic-gradient(from 45deg at 50% 50%, transparent 0deg, rgba(34, 211, 238, 0.08) 90deg, transparent 180deg), radial-gradient(circle at 15% 30%, rgba(6, 182, 212, 0.12), transparent 40%), linear-gradient(165deg, #000000 0%, #0f172a 50%, #000000 100%)',
-    gridColor: 'rgba(34, 211, 238, 0.12)',
-    blobA: 'rgba(34, 211, 238, 0.25)',
-    blobB: 'rgba(6, 182, 212, 0.20)'
+    id: 'speed-zoom',
+    name: 'Speed Zoom',
+    description: 'Abstract blue light pipe speed zoom background.',
+    fontFamily: '"Space Grotesk", "Inter", sans-serif',
+    backgroundImage: `url(${bg2})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    pattern: 'none',
+    gridColor: 'transparent'
   },
   {
-    id: 'aurora-slate',
-    name: 'Aurora Slate',
-    description: 'Northern lights with flowing gradients.',
-    fontFamily: '"Sora", "Inter", "Segoe UI", sans-serif',
-    clockFont: '"Sora", "Inter", sans-serif',
+    id: 'mountain-range',
+    name: 'Mountain Range',
+    description: 'Black background with faint outline mountain range.',
+    fontFamily: '"Sora", "Inter", sans-serif',
+    backgroundImage: `url(${bg3})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    pattern: 'stars',
+    gridColor: 'transparent'
+  },
+  {
+    id: 'charcoal-ink',
+    name: 'Charcoal Ink',
+    description: 'Premium dark textured abstract background.',
+    fontFamily: '"Manrope", "Inter", sans-serif',
+    backgroundImage: `url(${bg4})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
     pattern: 'dots',
-    backgroundImage: 'radial-gradient(circle at 0% 50%, rgba(20, 184, 166, 0.15), transparent 35%), radial-gradient(circle at 100% 50%, rgba(34, 211, 238, 0.12), transparent 35%), radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.08), transparent 50%), linear-gradient(180deg, #020617 0%, #0a3436 50%, #020617 100%)',
-    gridColor: 'rgba(16, 185, 129, 0.08)',
-    blobA: 'rgba(20, 184, 166, 0.22)',
-    blobB: 'rgba(34, 211, 238, 0.18)'
+    gridColor: 'rgba(255, 255, 255, 0.04)'
   },
   {
-    id: 'carbon-steel',
-    name: 'Carbon Steel',
-    description: 'Industrial metallic with angular accents.',
-    fontFamily: '"IBM Plex Sans", "Inter", "Segoe UI", sans-serif',
-    clockFont: '"IBM Plex Mono", "JetBrains Mono", monospace',
+    id: 'macbook-m3',
+    name: 'MacBook M3',
+    description: 'Stunning dynamic waves inspired by MacBook Pro M3.',
+    fontFamily: '"IBM Plex Sans", "Inter", sans-serif',
+    backgroundImage: `url(${bg5})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
     pattern: 'grid',
-    backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(71, 85, 105, 0.05) 10px, rgba(71, 85, 105, 0.05) 20px), radial-gradient(circle at 25% 75%, rgba(100, 116, 139, 0.15), transparent 40%), linear-gradient(110deg, #0f0f0f 0%, #1a1f2e 50%, #0f0f0f 100%)',
-    gridColor: 'rgba(71, 85, 105, 0.10)',
-    blobA: 'rgba(100, 116, 139, 0.28)',
-    blobB: 'rgba(71, 85, 105, 0.22)'
-  },
-  {
-    id: 'ivory-night',
-    name: 'Ivory Night',
-    description: 'Warm editorial with golden accents.',
-    fontFamily: '"Cormorant Garamond", "Times New Roman", serif',
-    clockFont: '"Bodoni Moda", "Cormorant Garamond", serif',
-    pattern: 'dots',
-    backgroundImage: 'radial-gradient(circle at 80% 20%, rgba(245, 158, 11, 0.18), transparent 40%), radial-gradient(ellipse 800px 600px at 20% 80%, rgba(217, 119, 6, 0.10), transparent 50%), linear-gradient(145deg, #0a0805 0%, #1a1410 50%, #0a0805 100%)',
-    gridColor: 'rgba(217, 119, 6, 0.08)',
-    blobA: 'rgba(245, 158, 11, 0.26)',
-    blobB: 'rgba(217, 119, 6, 0.20)'
-  },
-  {
-    id: 'nordic-mist',
-    name: 'Nordic Mist',
-    description: 'Minimalist frozen atmosphere.',
-    fontFamily: '"Manrope", "Inter", "Segoe UI", sans-serif',
-    clockFont: '"Manrope", "Inter", sans-serif',
-    pattern: 'dots',
-    backgroundImage: 'radial-gradient(circle at 5% 5%, rgba(191, 219, 254, 0.14), transparent 25%), radial-gradient(circle at 95% 95%, rgba(165, 180, 252, 0.12), transparent 28%), radial-gradient(ellipse 1000px 400px at 50% 30%, rgba(147, 197, 253, 0.06), transparent 60%), linear-gradient(160deg, #020617 0%, #0d2638 50%, #020617 100%)',
-    gridColor: 'rgba(147, 197, 253, 0.08)',
-    blobA: 'rgba(191, 219, 254, 0.24)',
-    blobB: 'rgba(147, 197, 253, 0.18)'
-  },
-  {
-    id: 'cobalt-noise',
-    name: 'Cobalt Noise',
-    description: 'Electric energy with pulsing depth.',
-    fontFamily: '"Space Grotesk", "Inter", "Segoe UI", sans-serif',
-    clockFont: '"Space Grotesk", "Inter", sans-serif',
-    pattern: 'grid',
-    backgroundImage: 'conic-gradient(from 30deg at 60% 40%, rgba(99, 102, 241, 0.12), transparent 90deg), radial-gradient(circle at 30% 20%, rgba(79, 70, 229, 0.18), transparent 35%), radial-gradient(circle at 70% 80%, rgba(59, 130, 246, 0.14), transparent 40%), linear-gradient(135deg, #030712 0%, #0b0f2e 50%, #030712 100%)',
-    gridColor: 'rgba(99, 102, 241, 0.10)',
-    blobA: 'rgba(99, 102, 241, 0.28)',
-    blobB: 'rgba(79, 70, 229, 0.22)'
-  },
-  {
-    id: 'forest-vector',
-    name: 'Forest Vector',
-    description: 'Organic emerald with natural flow.',
-    fontFamily: '"General Sans", "Inter", "Segoe UI", sans-serif',
-    clockFont: '"General Sans", "Inter", sans-serif',
-    pattern: 'dots',
-    backgroundImage: 'radial-gradient(circle at 15% 60%, rgba(52, 211, 153, 0.16), transparent 35%), radial-gradient(circle at 85% 30%, rgba(34, 197, 94, 0.12), transparent 38%), radial-gradient(ellipse 900px 500px at 70% 70%, rgba(16, 185, 129, 0.08), transparent 60%), linear-gradient(155deg, #051513 0%, #0a3836 50%, #051513 100%)',
-    gridColor: 'rgba(52, 211, 153, 0.09)',
-    blobA: 'rgba(52, 211, 153, 0.26)',
-    blobB: 'rgba(16, 185, 129, 0.20)'
-  },
-  {
-    id: 'ember-signal',
-    name: 'Ember Signal',
-    description: 'Warm fire with glowing warmth.',
-    fontFamily: '"Outfit", "Inter", "Segoe UI", sans-serif',
-    clockFont: '"Outfit", "Inter", sans-serif',
-    pattern: 'grid',
-    backgroundImage: 'radial-gradient(circle at 75% 25%, rgba(239, 68, 68, 0.18), transparent 40%), radial-gradient(circle at 20% 70%, rgba(251, 146, 60, 0.14), transparent 38%), radial-gradient(ellipse 800px 600px at 50% 50%, rgba(249, 115, 22, 0.06), transparent 70%), linear-gradient(140deg, #0b0505 0%, #2a0f0a 50%, #0b0505 100%)',
-    gridColor: 'rgba(251, 146, 60, 0.09)',
-    blobA: 'rgba(248, 113, 113, 0.26)',
-    blobB: 'rgba(251, 146, 60, 0.20)'
-  },
-  {
-    id: 'midnight-paper',
-    name: 'Midnight Paper',
-    description: 'Pure monochrome editorial elegance.',
-    fontFamily: '"DM Sans", "Inter", "Segoe UI", sans-serif',
-    clockFont: '"DM Serif Display", "DM Sans", serif',
-    pattern: 'grid',
-    backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 80px, rgba(102, 102, 102, 0.03) 80px, rgba(102, 102, 102, 0.03) 81px), linear-gradient(180deg, #080808 0%, #1a1a1a 50%, #080808 100%)',
-    gridColor: 'rgba(161, 161, 170, 0.07)',
-    blobA: 'rgba(161, 161, 170, 0.18)',
-    blobB: 'rgba(113, 113, 122, 0.14)'
+    gridColor: 'rgba(255, 255, 255, 0.05)'
   }
 ];
 
-const getPatternLayer = (pattern, color, spacing = 42) => {
-  if (pattern === 'dots') {
-    return {
-      backgroundImage: `radial-gradient(circle, ${color} 1.2px, transparent 1.2px)`,
-      backgroundSize: `${spacing}px ${spacing}px`
-    };
-  }
+const DIGIT_GRIDS = {
+  '0': [
+    [1, 1, 1],
+    [1, 0, 1],
+    [1, 0, 1],
+    [1, 0, 1],
+    [1, 1, 1]
+  ],
+  '1': [
+    [0, 1, 0],
+    [0, 1, 0],
+    [0, 1, 0],
+    [0, 1, 0],
+    [0, 1, 0]
+  ],
+  '2': [
+    [1, 1, 1],
+    [0, 0, 1],
+    [1, 1, 1],
+    [1, 0, 0],
+    [1, 1, 1]
+  ],
+  '3': [
+    [1, 1, 1],
+    [0, 0, 1],
+    [1, 1, 1],
+    [0, 0, 1],
+    [1, 1, 1]
+  ],
+  '4': [
+    [1, 0, 1],
+    [1, 0, 1],
+    [1, 1, 1],
+    [0, 0, 1],
+    [0, 0, 1]
+  ],
+  '5': [
+    [1, 1, 1],
+    [1, 0, 0],
+    [1, 1, 1],
+    [0, 0, 1],
+    [1, 1, 1]
+  ],
+  '6': [
+    [1, 1, 1],
+    [1, 0, 0],
+    [1, 1, 1],
+    [1, 0, 1],
+    [1, 1, 1]
+  ],
+  '7': [
+    [1, 1, 1],
+    [0, 0, 1],
+    [0, 0, 1],
+    [0, 0, 1],
+    [0, 0, 1]
+  ],
+  '8': [
+    [1, 1, 1],
+    [1, 0, 1],
+    [1, 1, 1],
+    [1, 0, 1],
+    [1, 1, 1]
+  ],
+  '9': [
+    [1, 1, 1],
+    [1, 0, 1],
+    [1, 1, 1],
+    [0, 0, 1],
+    [1, 1, 1]
+  ],
+  ':': [
+    [0, 0, 0],
+    [0, 1, 0],
+    [0, 0, 0],
+    [0, 1, 0],
+    [0, 0, 0]
+  ]
+};
 
+const getPatternLayer = (pattern, color, spacing = 42) => {
+  if (pattern === 'none' || pattern === 'stars') return {};
   return {
-    backgroundImage: `linear-gradient(${color} 1px, transparent 1px), linear-gradient(90deg, ${color} 1px, transparent 1px)`,
+    backgroundImage: `radial-gradient(circle, ${color} 1.2px, transparent 1.2px)`,
     backgroundSize: `${spacing}px ${spacing}px`
   };
 };
@@ -384,7 +399,23 @@ const FocusMode = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [showThemes, setShowThemes] = useState(false);
   const [pomodoroSessions, setPomodoroSessions] = useState(defaultSettings.pomodoroSessions);
-  const [activeThemeId, setActiveThemeId] = useState('default');
+  const [activeThemeId, setActiveThemeId] = useState('geometric-leather');
+  const [activeTimeStyle, setActiveTimeStyle] = useState('minimalist');
+  const [stars, setStars] = useState([]);
+
+  useEffect(() => {
+    // Generate 35 starlit dots
+    const generated = Array.from({ length: 35 }, (_, idx) => ({
+      id: idx,
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      size: Math.random() * 2 + 1,
+      duration: Math.random() * 6 + 6,
+      delay: Math.random() * -10
+    }));
+    setStars(generated);
+  }, []);
+
   const [launchTopic, setLaunchTopic] = useState(null);
   const [pendingAutoStartTopic, setPendingAutoStartTopic] = useState(null);
   const shouldShowSaveConfig = Boolean(launchTopic?.topicId);
@@ -531,8 +562,11 @@ const FocusMode = () => {
       setActiveThemeId(
         savedTheme && focusThemes.some((theme) => theme.id === savedTheme)
           ? savedTheme
-          : 'default'
+          : 'geometric-leather'
       );
+      const styleStorageKey = getUserStorageKey('focusModeTimeStyle');
+      const savedStyle = styleStorageKey ? localStorage.getItem(styleStorageKey) : null;
+      setActiveTimeStyle(savedStyle || 'minimalist');
       return;
     }
 
@@ -563,8 +597,11 @@ const FocusMode = () => {
     setActiveThemeId(
       savedTheme && focusThemes.some((theme) => theme.id === savedTheme)
         ? savedTheme
-        : 'default'
+        : 'geometric-leather'
     );
+    const styleStorageKey = getUserStorageKey('focusModeTimeStyle');
+    const savedStyle = styleStorageKey ? localStorage.getItem(styleStorageKey) : null;
+    setActiveTimeStyle(savedStyle || 'minimalist');
   }, [userStorageId]); // Only reload when user changes, not when timer state changes
 
   useEffect(() => {
@@ -1155,20 +1192,377 @@ const FocusMode = () => {
     };
   }, [isFullscreen, showPresetDialog, showThemes, showPresetsManager, showSettings, showHistory]);
 
+  const renderClock = (timeString) => {
+    const parts = String(timeString || '25:00').split(':');
+
+    const renderDotZeroChar = (char, idx) => {
+      if (char === '0') {
+        return (
+          <span key={idx} className="relative inline-block select-none font-mono">
+            0
+            <span className="absolute top-[50%] left-[50%] w-[1.5px] h-[1.5px] sm:w-[3.5px] sm:h-[3.5px] rounded-full bg-white -translate-x-1/2 -translate-y-1/2 opacity-95 animate-pulse" />
+          </span>
+        );
+      }
+      return <span key={idx}>{char}</span>;
+    };
+
+    const renderDotMatrixDigit = (char, idx) => {
+      const grid = DIGIT_GRIDS[char] || DIGIT_GRIDS['0'];
+      const digitWidth = isFullscreen ? 'w-16 sm:w-26 md:w-34' : 'w-10 sm:w-14 md:w-20';
+      const cellGap = isFullscreen ? 'gap-[3px]' : 'gap-[2px]';
+      return (
+        <div key={idx} className={`grid grid-cols-3 ${cellGap} ${digitWidth} shrink-0 select-none bg-black/10 p-1 rounded-md border border-white/5 shadow-inner`}>
+          {grid.map((row, rIdx) => 
+            row.map((cell, cIdx) => (
+              <div 
+                key={`${rIdx}-${cIdx}`} 
+                className={`aspect-square rounded-[1px] transition-colors duration-200 ${
+                  cell ? 'bg-white' : 'bg-gray-300/[0.12]'
+                }`} 
+              />
+            ))
+          )}
+        </div>
+      );
+    };
+
+    const renderFlapBoard = () => {
+      let hours = '';
+      let minutes = '';
+      let seconds = '';
+      
+      if (parts.length === 3) {
+        hours = parts[0];
+        minutes = parts[1];
+        seconds = parts[2];
+      } else {
+        hours = '00';
+        minutes = parts[0];
+        seconds = parts[1];
+      }
+
+      const cardWidth = isFullscreen ? 'w-20 sm:w-30 md:w-38' : 'w-12 sm:w-18 md:w-24';
+      const cardHeight = isFullscreen ? 'h-28 sm:h-44 md:h-54' : 'h-18 sm:h-28 md:h-36';
+      const fontSize = isFullscreen ? 'text-[3.5rem] sm:text-[6.5rem] md:text-[8.5rem]' : 'text-[2.2rem] sm:text-[3.5rem] md:text-[5rem]';
+      
+      const renderPairCards = (valString) => {
+        return (
+          <div className="flex items-center gap-1.5 bg-[#121318] p-1.5 rounded-xl border border-white/10 shadow-2xl">
+            {valString.split('').map((char, idx) => (
+              <div key={char} className={`relative bg-white border border-gray-300 rounded-lg ${cardWidth} ${cardHeight} flex items-center justify-center overflow-hidden shadow-2xl shrink-0 animate-flap`}>
+                {/* Center split line */}
+                <div className="absolute top-1/2 left-0 right-0 h-[1.5px] bg-black/40 z-20" />
+                {/* Hinge Tick */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-gray-600 rounded-b z-20" />
+                
+                {/* Top Half */}
+                <div className="absolute inset-0 flex items-center justify-center bg-[#fdfdfd]" style={{ clipPath: 'inset(0% 0% 50% 0%)' }}>
+                  <span className={`${fontSize} font-bold text-black font-mono leading-none select-none`}>{char}</span>
+                </div>
+                
+                {/* Bottom Half */}
+                <div className="absolute inset-0 flex items-center justify-center bg-[#eaeaea]" style={{ clipPath: 'inset(50% 0% 0% 0%)' }}>
+                  <span className={`${fontSize} font-bold text-black font-mono leading-none select-none`}>{char}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      };
+
+      return (
+        <div className="flex items-center justify-center gap-3 sm:gap-6 md:gap-8 select-none font-sans">
+          <div className="flex flex-col items-center gap-1.5">
+            {renderPairCards(hours)}
+            <span className="text-[9px] sm:text-[11px] font-sans uppercase tracking-widest text-gray-400 font-bold mt-1">Hours</span>
+          </div>
+          <span className="text-white/60 text-xl sm:text-4xl animate-pulse font-bold">:</span>
+          <div className="flex flex-col items-center gap-1.5">
+            {renderPairCards(minutes)}
+            <span className="text-[9px] sm:text-[11px] font-sans uppercase tracking-widest text-gray-400 font-bold mt-1">Minutes</span>
+          </div>
+          <span className="text-white/60 text-xl sm:text-4xl animate-pulse font-bold">:</span>
+          <div className="flex flex-col items-center gap-1.5">
+            {renderPairCards(seconds)}
+            <span className="text-[9px] sm:text-[11px] font-sans uppercase tracking-widest text-gray-400 font-bold mt-1">Seconds</span>
+          </div>
+        </div>
+      );
+    };
+
+    switch (activeTimeStyle) {
+      case 'grid-matrix':
+        return (
+          <div className="flex items-center justify-center gap-1.5 sm:gap-3 md:gap-5 select-none bg-black/40 px-6 py-5 rounded-2xl border border-white/10 shadow-2xl max-w-full overflow-hidden">
+            {String(timeString || '25:00').split('').map((char, idx) => {
+              if (char === ':') {
+                return (
+                  <div key={idx} className="flex flex-col justify-center items-center gap-5 w-5 sm:w-8 md:w-12 shrink-0">
+                    <div className="w-3 h-3 sm:w-4.5 sm:h-4.5 bg-white rounded-sm animate-pulse" />
+                    <div className="w-3 h-3 sm:w-4.5 sm:h-4.5 bg-white rounded-sm animate-pulse" />
+                  </div>
+                );
+              }
+              return renderDotMatrixDigit(char, idx);
+            })}
+          </div>
+        );
+
+      case 'handdrawn':
+        const handdrawnSize = isFullscreen ? 'text-[8rem] sm:text-[15rem] md:text-[20rem]' : 'text-[5rem] sm:text-[9.5rem] md:text-[12.5rem]';
+        return (
+          <div className="flex items-end justify-center gap-6 sm:gap-10 md:gap-14 select-none font-normal" style={{ fontFamily: '"Architects Daughter", cursive' }}>
+            {parts.map((val, idx) => {
+              let label = 'seconds';
+              if (parts.length === 3) {
+                if (idx === 0) label = 'hours';
+                else if (idx === 1) label = 'minutes';
+              } else {
+                if (idx === 0) label = 'minutes';
+              }
+              return (
+                <div key={idx} className="flex flex-col items-center">
+                  <span className={`${handdrawnSize} text-white/95 tracking-normal leading-none font-normal`}>{val}</span>
+                  <span className="text-xs sm:text-sm text-gray-400 mt-2 lowercase">{label}</span>
+                </div>
+              );
+            })}
+          </div>
+        );
+
+      case 'roller-card':
+        const rollerWidth = isFullscreen ? 'w-28 sm:w-48 md:w-64' : 'w-20 sm:w-34 md:w-46';
+        const rollerHeight = isFullscreen ? 'h-36 sm:h-60 md:h-76' : 'h-26 sm:h-44 md:h-56';
+        const rollerFontSize = isFullscreen ? 'text-[4.5rem] sm:text-[9rem] md:text-[12rem]' : 'text-[3rem] sm:text-[6rem] md:text-[9rem]';
+        return (
+          <div className="flex items-center justify-center gap-3 sm:gap-5 md:gap-7 select-none">
+            {parts.map((val, idx) => {
+              let label = 'Seconds';
+              if (parts.length === 3) {
+                if (idx === 0) label = 'Hours';
+                else if (idx === 1) label = 'Minutes';
+              } else {
+                if (idx === 0) label = 'Minutes';
+              }
+              return (
+                <div key={idx} className="flex flex-col items-center gap-2">
+                  <div className={`relative bg-white text-black border border-white/25 rounded-2xl ${rollerWidth} ${rollerHeight} flex items-center justify-center shadow-[0_16px_40px_rgba(0,0,0,0.5)] overflow-hidden`}>
+                    <div className="absolute top-1/2 left-0 right-0 h-px bg-black/15 shadow-[0_0.5px_0.5px_rgba(255,255,255,0.2)]" />
+                    <span key={val} className={`${rollerFontSize} font-bold font-serif select-none leading-none z-10 animate-roll`}>
+                      {val}
+                    </span>
+                  </div>
+                  <span className="text-[10px] sm:text-xs font-serif uppercase tracking-widest text-gray-400 font-semibold">{label}</span>
+                </div>
+              );
+            })}
+          </div>
+        );
+
+      case 'flap-board':
+        return renderFlapBoard();
+
+      case 'led':
+        const ledSize = isFullscreen ? 'text-[7rem] sm:text-[13rem] md:text-[18rem]' : 'text-[4.5rem] sm:text-[8rem] md:text-[10rem]';
+        return (
+          <div 
+            className={`tracking-widest text-[#00ffcc] select-none text-center ${ledSize}`}
+            style={{ 
+              fontFamily: '"Orbitron", monospace',
+              textShadow: '0 0 15px rgba(0,255,204,0.8)' 
+            }}
+          >
+            {timeString}
+          </div>
+        );
+
+      case 'neon':
+        const neonSize = isFullscreen ? 'text-[7rem] sm:text-[13rem] md:text-[18rem]' : 'text-[4.5rem] sm:text-[8rem] md:text-[10rem]';
+        return (
+          <div 
+            className={`font-bold text-[#ff007f] select-none text-center tracking-normal ${neonSize}`}
+            style={{ 
+              fontFamily: '"Sora", sans-serif',
+              textShadow: '0 0 15px rgba(255,0,127,0.85)' 
+            }}
+          >
+            {timeString}
+          </div>
+        );
+
+      case 'terminal':
+        const termSize = isFullscreen ? 'text-4xl sm:text-7xl md:text-9xl' : 'text-xl sm:text-4xl md:text-5xl';
+        return (
+          <div className="inline-block text-left bg-black border border-white/10 rounded-xl p-5 font-mono select-none shadow-2xl max-w-full" style={{ fontFamily: '"JetBrains Mono", monospace' }}>
+            <div className="text-gray-500 text-xs mb-1"># focus-active-shell</div>
+            <div className="text-cyan-400 text-sm font-bold">$ ./memora_timer.sh</div>
+            <div className={`mt-2 text-emerald-400 font-bold tracking-wider ${termSize}`}>
+              {timeString}
+            </div>
+            <div className="mt-1.5 text-[10px] text-gray-500 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
+              <span>process executing...</span>
+            </div>
+          </div>
+        );
+
+      case 'glass':
+        const glassSize = isFullscreen ? 'text-[6.5rem] sm:text-[11rem] md:text-[15rem]' : 'text-[4rem] sm:text-[6.5rem] md:text-[8.5rem]';
+        return (
+          <div className="inline-flex items-center justify-center border border-white/20 bg-white/5 backdrop-blur-xl rounded-[2.5rem] px-8 sm:px-12 py-4 sm:py-6 shadow-2xl max-w-full">
+            <div 
+              className={`font-bold text-white tracking-widest leading-none select-none ${glassSize}`}
+              style={{ fontFamily: '"Space Grotesk", sans-serif' }}
+            >
+              {timeString}
+            </div>
+          </div>
+        );
+
+      case 'monolith':
+        const monoSize = isFullscreen ? 'text-[8rem] sm:text-[14rem] md:text-[19rem]' : 'text-[5rem] sm:text-[8.5rem] md:text-[11rem]';
+        return (
+          <div 
+            className={`font-black text-white tracking-tighter select-none leading-none text-center border-[6px] sm:border-[8px] border-white p-4 sm:p-6 bg-black/40 ${monoSize}`}
+            style={{ fontFamily: '"Sora", sans-serif' }}
+          >
+            {timeString}
+          </div>
+        );
+
+      case 'brackets':
+        const brackSize = isFullscreen ? 'text-[6.5rem] sm:text-[11rem] md:text-[15rem]' : 'text-[4rem] sm:text-[6.5rem] md:text-[8.5rem]';
+        const bracketCharSize = isFullscreen ? 'text-[8rem] sm:text-[15rem] md:text-[20rem]' : 'text-[5rem] sm:text-[9.5rem] md:text-[12.5rem]';
+        return (
+          <div className="inline-flex items-center justify-center gap-4 select-none font-mono" style={{ fontFamily: '"JetBrains Mono", monospace' }}>
+            <span className={`${bracketCharSize} font-light text-white/30 leading-none`}>[</span>
+            <span className={`font-bold text-white tracking-widest leading-none select-none ${brackSize}`}>
+              {timeString}
+            </span>
+            <span className={`${bracketCharSize} font-light text-white/30 leading-none`}>]</span>
+          </div>
+        );
+
+      case 'typewriter':
+        const typeSize = isFullscreen ? 'text-[6.5rem] sm:text-[11rem] md:text-[15rem]' : 'text-[4rem] sm:text-[6.5rem] md:text-[8.5rem]';
+        return (
+          <div 
+            className={`text-white select-none text-center ${typeSize}`}
+            style={{ fontFamily: '"Special Elite", serif', filter: 'opacity(0.9)' }}
+          >
+            {timeString}
+          </div>
+        );
+
+      case 'gothic':
+        const gothicSize = isFullscreen ? 'text-[6.5rem] sm:text-[11rem] md:text-[15rem]' : 'text-[4rem] sm:text-[6.5rem] md:text-[8.5rem]';
+        return (
+          <div 
+            className={`text-white select-none text-center tracking-widest uppercase font-bold ${gothicSize}`}
+            style={{ fontFamily: '"Cinzel", serif' }}
+          >
+            {timeString}
+          </div>
+        );
+
+      case 'hologram':
+        const holoSize = isFullscreen ? 'text-[7rem] sm:text-[13rem] md:text-[18rem]' : 'text-[4.5rem] sm:text-[8rem] md:text-[10.5rem]';
+        return (
+          <div 
+            className={`text-cyan-400 select-none text-center tracking-widest relative ${holoSize}`}
+            style={{ 
+              fontFamily: '"Orbitron", monospace',
+              textShadow: '-2px 0 0 rgba(255,0,0,0.6), 2px 0 0 rgba(0,0,255,0.6)' 
+            }}
+          >
+            {timeString}
+          </div>
+        );
+
+      case 'cartoon':
+        const cartSize = isFullscreen ? 'text-[8rem] sm:text-[14rem] md:text-[19rem]' : 'text-[5rem] sm:text-[8.5rem] md:text-[11rem]';
+        return (
+          <div 
+            className={`text-white select-none text-center font-bold tracking-wider ${cartSize}`}
+            style={{ 
+              fontFamily: '"Fredoka One", sans-serif',
+              textShadow: '3px 3px 0px rgba(0,0,0,0.2)'
+            }}
+          >
+            {timeString}
+          </div>
+        );
+
+      case 'minimalist':
+      default:
+        const minimalistSize = isFullscreen ? 'text-[7rem] sm:text-[13rem] md:text-[18rem]' : 'text-[4.5rem] sm:text-[8rem] md:text-[10rem]';
+        return (
+          <div 
+            className={`font-mono text-white leading-none select-none tracking-widest text-center ${minimalistSize}`}
+            style={{ fontFamily: '"JetBrains Mono", monospace' }}
+          >
+            {String(timeString || '25:00').split('').map((char, idx) => renderDotZeroChar(char, idx))}
+          </div>
+        );
+    }
+  };
+
   return (
     <div
       className="min-h-screen text-white flex flex-col relative overflow-x-hidden"
       style={{
         backgroundImage: activeTheme.backgroundImage,
+        backgroundSize: activeTheme.backgroundSize || 'cover',
+        backgroundPosition: activeTheme.backgroundPosition || 'center',
+        backgroundRepeat: 'no-repeat',
         backgroundColor: '#000000',
         fontFamily: activeTheme.fontFamily
       }}
     >
-      <div className="pointer-events-none absolute inset-0">
-        <div
-          className="absolute inset-0"
-          style={getPatternLayer(activeTheme.pattern, activeTheme.gridColor, 42)}
-        />
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Indie+Flower&family=Space+Grotesk:wght@400;700&family=Sora:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Cabin+Sketch:wght@400;700&display=swap');
+        @keyframes roll-in {
+          0% { transform: translateY(-30px); filter: blur(2px); opacity: 0.5; }
+          100% { transform: translateY(0); filter: blur(0); opacity: 1; }
+        }
+        .animate-roll {
+          animation: roll-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          display: inline-block;
+        }
+        @keyframes float-star {
+          0% { transform: translateY(0px) translateX(0px); opacity: 0.1; }
+          50% { opacity: 0.8; }
+          100% { transform: translateY(-70px) translateX(25px); opacity: 0.1; }
+        }
+      `}</style>
+
+      {activeTheme.pattern === 'stars' && (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+          {stars.map((star) => (
+            <div
+              key={star.id}
+              className="absolute bg-white rounded-full opacity-60 animate-pulse"
+              style={{
+                left: `${star.x}%`,
+                top: `${star.y}%`,
+                width: `${star.size}px`,
+                height: `${star.size}px`,
+                animation: `float-star ${star.duration}s linear infinite`,
+                animationDelay: `${star.delay}s`
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="pointer-events-none absolute inset-0 z-0">
+        {activeTheme.pattern !== 'stars' && (
+          <div
+            className="absolute inset-0 animate-in fade-in duration-300"
+            style={getPatternLayer(activeTheme.pattern, activeTheme.gridColor, 42)}
+          />
+        )}
       </div>
       <div className="sm:hidden portrait:flex hidden fixed inset-0 bg-black z-50 items-center justify-center p-6">
         <div className="rotate-phone-glyph relative h-28 w-28">
@@ -1256,77 +1650,178 @@ const FocusMode = () => {
       {/* Themes Dialog */}
       {showThemes && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-2 sm:p-4"
+          className="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center z-50 p-2 sm:p-4 animate-in fade-in duration-200"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowThemes(false);
             }
           }}
         >
-          <div className="bg-black border border-white/20 rounded-xl p-4 sm:p-6 max-w-6xl w-full mx-2 sm:mx-4 shadow-2xl max-h-[88vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between mb-4 sm:mb-5">
+          <div className="bg-black border border-white/20 rounded-2xl max-w-4xl w-full mx-2 shadow-2xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            {/* Opaque Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between shrink-0 bg-black z-20">
               <div>
-                <h2 className="text-base sm:text-lg font-semibold text-white">Focus Themes</h2>
-                <p className="text-xs sm:text-sm text-gray-400 mt-1">Pick a modern look for your deep-work screen.</p>
+                <h2 className="text-sm sm:text-base font-bold text-white">Visual Settings</h2>
+                <p className="text-[10px] text-gray-400 mt-0.5">Configure backdrop and clock style.</p>
               </div>
               <button
                 onClick={() => setShowThemes(false)}
-                className="text-gray-400 hover:text-white transition-colors"
+                className="p-1 text-gray-400 hover:text-white transition-colors"
               >
-                <Palette className="w-4 h-4 sm:w-5 sm:h-5" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 overflow-y-auto scrollbar-themed pr-1">
-              {focusThemes.map((theme) => {
-                const isActive = activeThemeId === theme.id;
-
-                return (
-                  <button
-                    key={theme.id}
-                    onClick={() => {
-                      applyTheme(theme.id);
-                      setShowThemes(false);
-                    }}
-                    className={`text-left rounded-xl border p-3 transition-all ${
-                      isActive
-                        ? 'border-white/60 bg-white/10'
-                        : 'border-white/20 bg-white/5 hover:border-white/40'
-                    }`}
-                  >
+            {/* 16:9 Live Preview Area */}
+            <div 
+              className="w-full aspect-[16/9] max-h-[280px] sm:max-h-[340px] bg-black/55 flex items-center justify-center p-6 relative overflow-hidden border-b border-white/10 shrink-0 select-none"
+              style={{
+                backgroundImage: activeTheme.backgroundImage,
+                backgroundSize: activeTheme.backgroundSize || 'cover',
+                backgroundPosition: activeTheme.backgroundPosition || 'center',
+                backgroundRepeat: 'no-repeat',
+                fontFamily: activeTheme.fontFamily
+              }}
+            >
+              {/* Pattern layers or floating stars in preview */}
+              {activeTheme.pattern === 'stars' && (
+                <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                  {stars.slice(0, 15).map((star) => (
                     <div
-                      className="h-20 rounded-lg border border-white/20 mb-3 relative overflow-hidden"
-                      style={{ backgroundImage: theme.backgroundImage }}
-                    >
-                      <div
-                        className="absolute inset-0"
-                        style={getPatternLayer(theme.pattern, theme.gridColor, 24)}
-                      />
-                      <div
-                        className="absolute -top-4 -left-3 w-14 h-14 rounded-full blur-xl"
-                        style={{ backgroundColor: theme.blobA }}
-                      />
-                      <div
-                        className="absolute -bottom-5 -right-3 w-16 h-16 rounded-full blur-xl"
-                        style={{ backgroundColor: theme.blobB }}
-                      />
-                      {isActive && (
-                        <div className="absolute top-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-white/90 text-black font-medium">Active</div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold text-white truncate">{theme.name}</p>
-                      <Sparkles className="w-3.5 h-3.5 text-gray-400" />
-                    </div>
-                    <p className="text-xs text-gray-400 mt-1 leading-relaxed">{theme.description}</p>
-                  </button>
-                );
-              })}
+                      key={star.id}
+                      className="absolute bg-white rounded-full opacity-60 animate-pulse"
+                      style={{
+                        left: `${star.x}%`,
+                        top: `${star.y}%`,
+                        width: `${star.size}px`,
+                        height: `${star.size}px`,
+                        animation: `float-star ${star.duration}s linear infinite`,
+                        animationDelay: `${star.delay}s`
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+              {activeTheme.pattern !== 'stars' && (
+                <div
+                  className="absolute inset-0 opacity-40 pointer-events-none"
+                  style={getPatternLayer(activeTheme.pattern, activeTheme.gridColor, 20)}
+                />
+              )}
+              
+              <div className="relative z-10 flex flex-col items-center w-full">
+                <span className="text-[9px] uppercase font-bold tracking-widest text-pink-400 mb-4 bg-pink-500/10 px-2 py-0.5 rounded border border-pink-500/20 select-none">Live Preview</span>
+                <div className="scale-75 sm:scale-90 md:scale-100 transform origin-center flex items-center justify-center w-full">
+                  {renderClock(formatTime(getCurrentTime()))}
+                </div>
+              </div>
             </div>
 
-            <div className="mt-4 pt-4 border-t border-white/10">
-              <p className="text-xs text-gray-400">Click a theme to apply instantly.</p>
+            {/* Bottom Selectors Grid (2 columns) */}
+            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/10 overflow-hidden bg-black max-h-[380px] z-10">
+              
+              {/* Left Column: Backdrop themes selection */}
+              <div className="p-4 sm:p-5 space-y-4 overflow-y-auto max-h-[380px] scrollbar-themed bg-black">
+                <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-pink-400 select-none sticky top-0 bg-black pb-2 z-15">
+                  <Palette className="w-3.5 h-3.5" />
+                  <span>Backdrop Theme</span>
+                </div>
+                <div className="space-y-2">
+                  {focusThemes.map((theme) => {
+                    const isActive = activeThemeId === theme.id;
+                    return (
+                      <button
+                        key={theme.id}
+                        onClick={() => applyTheme(theme.id)}
+                        className={`w-full text-left rounded-xl border p-2.5 transition-all flex items-center gap-3 ${
+                          isActive
+                            ? 'border-pink-500 bg-pink-500/10'
+                            : 'border-white/10 bg-white/5 hover:border-white/20'
+                        }`}
+                      >
+                        <div
+                          className="w-12 h-10 rounded-lg border border-white/20 relative overflow-hidden shrink-0"
+                          style={{ 
+                            backgroundImage: theme.backgroundImage,
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
+                            backgroundRepeat: 'no-repeat'
+                          }}
+                        >
+                          {theme.pattern !== 'stars' && (
+                            <div
+                              className="absolute inset-0"
+                              style={getPatternLayer(theme.pattern, theme.gridColor, 10)}
+                            />
+                          )}
+                          {theme.pattern === 'stars' && (
+                            <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.4)_0.8px,transparent_0.8px)] bg-[size:6px_6px]" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-white truncate">{theme.name}</p>
+                          <p className="text-[9px] text-gray-400 truncate mt-0.5 leading-normal">{theme.description}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Right Column: Clock style face selection */}
+              <div className="p-4 sm:p-5 space-y-4 overflow-y-auto max-h-[380px] scrollbar-themed bg-black">
+                <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-pink-400 select-none sticky top-0 bg-black pb-2 z-15">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Clock Face (15 styles)</span>
+                </div>
+                <div className="space-y-2">
+                  {[
+                    { id: 'minimalist', name: 'Dotted Zero', desc: 'Space-separated monospace with dot-zeros.' },
+                    { id: 'grid-matrix', name: 'Grid Dot Matrix', desc: '5x3 square grid block styling.' },
+                    { id: 'handdrawn', name: 'Hand-drawn Sketch', desc: 'Blueprint architectural handwriting font.' },
+                    { id: 'roller-card', name: 'Roller Card', desc: 'Rounded shuttle panels with slide transition.' },
+                    { id: 'flap-board', name: 'Retro Flap Board', desc: 'Classic mechanical board with flap ticks.' },
+                    { id: 'led', name: 'Digital LED', desc: 'Glowing green 7-segment LED calculator.' },
+                    { id: 'neon', name: 'Cyberpunk Neon', desc: 'Laser pink text with drop glow shadow.' },
+                    { id: 'terminal', name: 'Terminal Prompt', desc: 'Command terminal script prompt style.' },
+                    { id: 'glass', name: 'Frosted Glass', desc: 'White text inside glass capsule.' },
+                    { id: 'monolith', name: 'Brutalist Monolith', desc: 'Massive block text with raw borders.' },
+                    { id: 'brackets', name: 'Geometric Brackets', desc: 'Monospace numbers inside brackets.' },
+                    { id: 'typewriter', name: 'Vintage Typewriter', desc: 'Faded ink typewriter style.' },
+                    { id: 'gothic', name: 'Gothic Serif', desc: 'Elegant classical gothic layout.' },
+                    { id: 'hologram', name: 'Hologram Glitch', desc: 'Glitched offset cyan/red shadows.' },
+                    { id: 'cartoon', name: 'Bubbly Cartoon', desc: 'Bubbly soft numbers outline.' }
+                  ].map((styleOption) => {
+                    const isActive = activeTimeStyle === styleOption.id;
+                    return (
+                      <button
+                        key={styleOption.id}
+                        onClick={() => {
+                          setActiveTimeStyle(styleOption.id);
+                          const storageKey = getUserStorageKey('focusModeTimeStyle');
+                          if (storageKey) {
+                            localStorage.setItem(storageKey, styleOption.id);
+                          }
+                        }}
+                        className={`w-full text-left rounded-xl border p-2.5 transition-all flex items-center gap-3 ${
+                          isActive
+                            ? 'border-pink-500 bg-pink-500/10'
+                            : 'border-white/10 bg-white/5 hover:border-white/20'
+                        }`}
+                      >
+                        <div className="w-12 h-10 rounded-lg border border-white/5 bg-white/[0.02] flex items-center justify-center font-mono text-[9px] font-bold text-white/50 shrink-0 select-none">
+                          25:00
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-white truncate">{styleOption.name}</p>
+                          <p className="text-[9px] text-gray-400 truncate mt-0.5 leading-normal">{styleOption.desc}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
             </div>
           </div>
         </div>
@@ -1924,12 +2419,8 @@ const FocusMode = () => {
         {/* Digital Clock Display - Massive in Fullscreen */}
         <div className={`${isFullscreen ? 'mb-4 sm:mb-8 px-2 sm:px-4' : 'mb-6 sm:mb-12'} w-full`}>
           <div className="text-center max-w-full overflow-hidden">
-            <div className={`font-bold text-white leading-none select-none ${
-              isFullscreen
-                ? 'text-[clamp(3rem,24vw,18rem)] tracking-tight'
-                : 'text-[clamp(2.4rem,18vw,10rem)] tracking-wider'
-            }`} style={{ fontFamily: activeTheme.clockFont || activeTheme.fontFamily }}>
-              {formatTime(getCurrentTime())}
+            <div className="flex items-center justify-center max-w-full overflow-hidden leading-none select-none">
+              {renderClock(formatTime(getCurrentTime()))}
             </div>
             {!isFullscreen && (
               <div className={`text-gray-400 text-sm sm:text-base mt-2`}>

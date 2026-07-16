@@ -290,6 +290,36 @@ docTagSchema.statics.getFavorites = function(userId) {
   }).sort({ name: 1 });
 };
 
+// Local database mirroring middleware
+docTagSchema.post('save', function(doc) {
+  try {
+    const localDb = require('../utils/localDb');
+    localDb.saveItem('doctags', doc);
+  } catch (err) {
+    console.error('Local DB post-save mirror failed for doctag:', err.message);
+  }
+});
+
+docTagSchema.post('remove', function(doc) {
+  try {
+    const localDb = require('../utils/localDb');
+    localDb.deleteItem('doctags', doc._id);
+  } catch (err) {
+    console.error('Local DB post-remove mirror failed for doctag:', err.message);
+  }
+});
+
+docTagSchema.post('findOneAndDelete', function(doc) {
+  if (doc) {
+    try {
+      const localDb = require('../utils/localDb');
+      localDb.deleteItem('doctags', doc._id);
+    } catch (err) {
+      console.error('Local DB post-findOneAndDelete mirror failed for doctag:', err.message);
+    }
+  }
+});
+
 const DocTag = mongoose.model('DocTag', docTagSchema);
 
 module.exports = DocTag;

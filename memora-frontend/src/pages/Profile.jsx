@@ -4,7 +4,8 @@ import {
   ArrowLeft, User, Mail, Lock, Calendar, Trophy, Flame, Target,
   Brain, Settings, Eye, EyeOff, Save, Edit3, RefreshCw, Shield,
   Bell, Moon, Globe, Trash2, Phone, MapPin, Briefcase,
-  GraduationCap, Heart, AlertTriangle, CheckCircle, ChevronLeft, ChevronRight
+  GraduationCap, Heart, AlertTriangle, CheckCircle, ChevronLeft, ChevronRight,
+  Cpu, Key
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import Toast from '../components/Toast';
@@ -56,6 +57,83 @@ const Profile = () => {
     studyBoostDifficultyBonus: Math.max(0, Number(user?.preferences?.studyBoostDifficultyBonus) || 4),
     studyBoostMinutesBonus: Math.max(0, Number(user?.preferences?.studyBoostMinutesBonus) || 30)
   });
+
+  const [groqKeys, setGroqKeys] = useState(
+    user?.preferences?.groqApiKey
+      ? user.preferences.groqApiKey.split(',').map(k => k.trim()).filter(Boolean)
+      : ['']
+  );
+  const [showGroqKey, setShowGroqKey] = useState(false);
+  const [validateStatus, setValidateStatus] = useState('idle');
+  const [validateMessage, setValidateMessage] = useState('');
+  const [validateLimits, setValidateLimits] = useState(null);
+  const [isSavingKey, setIsSavingKey] = useState(false);
+  
+  const [resetTimes, setResetTimes] = useState({});
+
+  const parseResetTimeToMs = (timeStr) => {
+    if (!timeStr) return 0;
+    const str = String(timeStr).trim().toLowerCase();
+    if (str.endsWith('ms')) {
+      return parseFloat(str.slice(0, -2)) || 0;
+    }
+    if (str.endsWith('s')) {
+      return (parseFloat(str.slice(0, -1)) || 0) * 1000;
+    }
+    if (str.endsWith('m')) {
+      return (parseFloat(str.slice(0, -1)) || 0) * 60 * 1000;
+    }
+    if (str.endsWith('h')) {
+      return (parseFloat(str.slice(0, -1)) || 0) * 60 * 60 * 1000;
+    }
+    return parseFloat(str) * 1000 || 0;
+  };
+
+  const formatMsToResetStr = (ms) => {
+    if (ms <= 0) return '0s';
+    if (ms < 1000) {
+      return `${Math.round(ms)}ms`;
+    }
+    return `${(ms / 1000).toFixed(1)}s`;
+  };
+
+  useEffect(() => {
+    if (validateLimits) {
+      const initialTimes = {};
+      const limitList = Array.isArray(validateLimits) ? validateLimits : (validateLimits.keys || [{ keyIndex: 1, success: true, limits: validateLimits }]);
+      limitList.forEach((kd) => {
+        if (kd.success && kd.limits) {
+          initialTimes[kd.keyIndex] = {
+            tokens: parseResetTimeToMs(kd.limits.resetTokens),
+            requests: parseResetTimeToMs(kd.limits.resetRequests)
+          };
+        }
+      });
+      setResetTimes(initialTimes);
+    } else {
+      setResetTimes({});
+    }
+  }, [validateLimits]);
+
+  useEffect(() => {
+    const keysToTick = Object.keys(resetTimes).filter(k => resetTimes[k].tokens > 0 || resetTimes[k].requests > 0);
+    if (keysToTick.length === 0) return;
+
+    const timer = setInterval(() => {
+      setResetTimes(prev => {
+        const next = { ...prev };
+        Object.keys(next).forEach(k => {
+          next[k] = {
+            tokens: Math.max(0, (next[k]?.tokens || 0) - 100),
+            requests: Math.max(0, (next[k]?.requests || 0) - 100)
+          };
+        });
+        return next;
+      });
+    }, 100);
+
+    return () => clearInterval(timer);
+  }, [resetTimes]);
   
   // Form data
   const [formData, setFormData] = useState({
@@ -106,7 +184,7 @@ const Profile = () => {
     const requestedTab = location?.state?.activeTab;
     let tabToSet = requestedTab;
     if (requestedTab === 'learning') tabToSet = 'modes';
-    if (tabToSet && ['general', 'security', 'modes', 'account'].includes(tabToSet)) {
+    if (tabToSet && ['general', 'security', 'modes', 'account', 'api'].includes(tabToSet)) {
       setActiveTab(tabToSet);
     }
   }, [location?.state]);
@@ -130,6 +208,8 @@ const Profile = () => {
           studyBoostDifficultyBonus: Math.max(0, Number(response.preferences.studyBoostDifficultyBonus || user?.preferences?.studyBoostDifficultyBonus || 4)),
           studyBoostMinutesBonus: Math.max(0, Number(response.preferences.studyBoostMinutesBonus || user?.preferences?.studyBoostMinutesBonus || 30))
         });
+        const savedKeys = response.preferences.groqApiKey || user?.preferences?.groqApiKey || '';
+        setGroqKeys(savedKeys ? savedKeys.split(',').map(k => k.trim()).filter(Boolean) : ['']);
       } catch (error) {
         console.warn('Failed to load user preferences:', error);
         if (isMounted) {
@@ -144,6 +224,8 @@ const Profile = () => {
             studyBoostDifficultyBonus: Math.max(0, Number(user?.preferences?.studyBoostDifficultyBonus) || 4),
             studyBoostMinutesBonus: Math.max(0, Number(user?.preferences?.studyBoostMinutesBonus) || 30)
           });
+          const savedKeysFallback = user?.preferences?.groqApiKey || '';
+          setGroqKeys(savedKeysFallback ? savedKeysFallback.split(',').map(k => k.trim()).filter(Boolean) : ['']);
         }
       }
     };
@@ -317,6 +399,70 @@ const Profile = () => {
     }
   };
 
+  const handleValidateKey = async () => {
+    const keysString = groqKeys.map(k => k.trim()).filter(Boolean).join(',');
+
+    setValidateStatus('loading');
+    setValidateMessage('');
+    setValidateLimits(null);
+
+    try {
+      const response = await apiService.validateApiKey(keysString);
+      if (response && response.success) {
+        setValidateStatus('success');
+        setValidateMessage(response.message || 'API Key is active and verified.');
+        setValidateLimits(response.limits);
+      } else {
+        setValidateStatus('error');
+        setValidateMessage(response.message || 'Key validation failed. Make sure it is active.');
+        setValidateLimits(null);
+      }
+    } catch (err) {
+      setValidateStatus('error');
+      setValidateMessage(err.message || 'An error occurred while validating API Key.');
+      setValidateLimits(null);
+    }
+  };
+
+  const handleSaveApiKey = async () => {
+    setIsSavingKey(true);
+    try {
+      const keysString = groqKeys.map(k => k.trim()).filter(Boolean).join(',');
+      const response = await apiService.updateUserPreferences({
+        revisionMode: learningPreferences.revisionMode,
+        retentionSpeed: learningPreferences.retentionSpeed,
+        defaultDifficulty: learningPreferences.defaultDifficulty,
+        memScoreRecalibrationFreq: learningPreferences.memScoreRecalibrationFreq,
+        dailyResetTime: normalizeDailyResetTime(learningPreferences.dailyResetTime),
+        studyBoostDates: normalizeBoostDateInput(learningPreferences.studyBoostDatesText)
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter(Boolean),
+        studyBoostTopicBonus: Math.max(0, Number(learningPreferences.studyBoostTopicBonus) || 0),
+        studyBoostDifficultyBonus: Math.max(0, Number(learningPreferences.studyBoostDifficultyBonus) || 0),
+        studyBoostMinutesBonus: Math.max(0, Number(learningPreferences.studyBoostMinutesBonus) || 0),
+        groqApiKey: keysString
+      });
+
+      if (response && response.success) {
+        setToast({ show: true, message: 'AI Key settings saved successfully!', type: 'success' });
+        updateUser({
+          preferences: {
+            ...(user?.preferences || {}),
+            ...(response.preferences || {}),
+            groqApiKey: keysString
+          }
+        });
+      } else {
+        throw new Error(response?.message || 'Failed to save API Key.');
+      }
+    } catch (err) {
+      setToast({ show: true, message: err.message || 'Failed to save settings', type: 'error' });
+    } finally {
+      setIsSavingKey(false);
+    }
+  };
+
   const handleProfileIconSelect = async (iconId, options = {}) => {
     const { showToast = true } = options;
     try {
@@ -481,6 +627,7 @@ const Profile = () => {
     { id: 'general', label: 'General', icon: User },
     { id: 'security', label: 'Security', icon: Shield },
     { id: 'modes', label: 'Modes', icon: Brain },
+    { id: 'api', label: 'AI Settings', icon: Cpu },
     { id: 'account', label: 'Account', icon: Trash2 }
   ];
 
@@ -1012,7 +1159,7 @@ const Profile = () => {
                       className={getThemedButtonClass('red')}
                     >
                       <Save className="w-4 h-4" />
-                      <span>Save Mode Settings</span>
+                      <span>Save</span>
                     </button>
                   </div>
 
@@ -1178,6 +1325,223 @@ const Profile = () => {
                     <p>
                       Changing revision mode now affects new topics only. Existing topics are preserved with their prior mode behavior to avoid retroactive schedule shifts.
                     </p>
+                  </div>
+                </div>
+              )}
+
+              {/* AI Settings Tab */}
+              {activeTab === 'api' && (
+                <div className="space-y-6">
+                  <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4 sm:p-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h2 className="text-xl font-semibold text-rose-100">AI Engine Configurations</h2>
+                      <p className="text-sm text-rose-100/70 mt-1 max-w-2xl">
+                        Configure your custom Groq API key here. Providing a personal API key increases performance, resolves system-shared rate limits, and unlocks hyper-personalized active recall checks.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleSaveApiKey}
+                      disabled={isSavingKey}
+                      className={getThemedButtonClass('red')}
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>{isSavingKey ? 'Saving...' : 'Save'}</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm text-rose-100/80 block font-medium">Groq API Keys</label>
+                        <button
+                          type="button"
+                          onClick={() => setGroqKeys([...groqKeys, ''])}
+                          className="text-xs text-rose-300 hover:text-rose-200 transition-colors font-medium"
+                        >
+                          + Add Key
+                        </button>
+                      </div>
+                      
+                      <div className="space-y-2.5">
+                        {groqKeys.map((key, index) => (
+                          <div key={index} className="flex gap-2">
+                            <div className="relative flex-1">
+                              <input
+                                type={showGroqKey ? 'text' : 'password'}
+                                value={key}
+                                onChange={(e) => {
+                                  const updated = [...groqKeys];
+                                  updated[index] = e.target.value;
+                                  setGroqKeys(updated);
+                                }}
+                                placeholder={`gsk_... (Key #${index + 1})`}
+                                className="w-full pl-3 pr-12 py-2.5 bg-black/40 border border-white/15 focus:border-rose-400 rounded-lg text-white font-mono text-sm focus:outline-none transition-colors"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowGroqKey(!showGroqKey)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-white rounded-md transition-colors"
+                              >
+                                {showGroqKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              </button>
+                            </div>
+                            {groqKeys.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = groqKeys.filter((_, idx) => idx !== index);
+                                  setGroqKeys(updated);
+                                }}
+                                className="px-3 border border-white/10 hover:border-red-500/30 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-gray-400 mt-2">
+                        Get your API keys at <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="text-rose-300 hover:underline">console.groq.com/keys</a>. If left empty, Memora will fall back to using default environment keys.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={handleValidateKey}
+                        disabled={validateStatus === 'loading'}
+                        className="inline-flex items-center space-x-2 rounded-lg border border-white/20 px-4 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors disabled:opacity-60"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${validateStatus === 'loading' ? 'animate-spin' : ''}`} />
+                        <span>{validateStatus === 'loading' ? 'Verifying Key Connection...' : 'Validate Key & Check Limits'}</span>
+                      </button>
+                    </div>
+
+                    {/* Validation Message */}
+                    {validateMessage && (
+                      <div className={`p-4 rounded-xl border flex items-start gap-3 text-sm ${
+                        validateStatus === 'success'
+                          ? 'border-emerald-500/25 bg-emerald-500/5 text-emerald-100'
+                          : 'border-red-500/25 bg-red-500/5 text-red-100'
+                      }`}>
+                        <div className="mt-0.5">
+                          {validateStatus === 'success' ? (
+                            <CheckCircle className="w-4 h-4 shrink-0" />
+                          ) : (
+                            <AlertTriangle className="w-4 h-4 shrink-0" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-semibold capitalize">{validateStatus === 'success' ? 'Active' : 'Error'}</p>
+                          <p className="mt-0.5 opacity-90">{validateMessage}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Quota Details (Tokens & Limits Info) */}
+                    {validateLimits && (
+                      <div className="space-y-4">
+                        {(Array.isArray(validateLimits) 
+                          ? validateLimits 
+                          : (validateLimits.keys || [{ keyIndex: 1, success: true, maskedKey: 'Stored key', limits: validateLimits }])
+                        ).map((keyData) => {
+                          const { keyIndex, success, limits, message, maskedKey } = keyData;
+                          const tReset = resetTimes[keyIndex]?.tokens || 0;
+                          const rReset = resetTimes[keyIndex]?.requests || 0;
+
+                          return (
+                            <div key={keyIndex} className="border border-white/10 rounded-xl bg-white/[0.02] p-4 sm:p-5 space-y-4">
+                              <h3 className="text-sm font-semibold text-rose-100 tracking-wider uppercase flex items-center justify-between">
+                                <span>Key #{keyIndex} Quota Limits <span className="text-xs text-gray-500 font-mono normal-case">({maskedKey})</span></span>
+                                {success ? (
+                                  <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full font-bold">Active</span>
+                                ) : (
+                                  <span className="text-xs text-rose-400 bg-rose-500/10 px-2.5 py-0.5 rounded-full font-bold">Inactive</span>
+                                )}
+                              </h3>
+
+                              {!success ? (
+                                <p className="text-xs text-rose-300 bg-rose-500/5 border border-rose-500/10 p-3 rounded-lg">{message || 'Key test failed.'}</p>
+                              ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div className="p-3 border border-white/5 bg-black/40 rounded-lg space-y-2">
+                                    <p className="text-xs text-gray-400 font-medium">Token Allocation (TPM)</p>
+                                    <div className="flex items-baseline justify-between">
+                                      <span className="text-lg font-bold text-white font-mono">{Number(limits.remainingTokens || 0).toLocaleString()}</span>
+                                      <span className="text-xs text-gray-500 font-mono">/ {Number(limits.limitTokens || 0).toLocaleString()} left</span>
+                                    </div>
+                                    <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-rose-400/80 transition-all duration-500"
+                                        style={{
+                                          width: `${Math.min(100, Math.max(0, ((Number(limits.remainingTokens) || 0) / (Number(limits.limitTokens) || 1)) * 100))}%`
+                                        }}
+                                      />
+                                    </div>
+                                    <p className="text-[10px] text-gray-500">Resets in: {formatMsToResetStr(tReset)}</p>
+                                  </div>
+
+                                  <div className="p-3 border border-white/5 bg-black/40 rounded-lg space-y-2">
+                                    <p className="text-xs text-gray-400 font-medium">Requests Allocation (RPD - Daily Overall)</p>
+                                    <div className="flex items-baseline justify-between">
+                                      <span className="text-lg font-bold text-white font-mono">{Number(limits.remainingRequests || 0).toLocaleString()}</span>
+                                      <span className="text-xs text-gray-500 font-mono">/ {Number(limits.limitRequests || 0).toLocaleString()} left</span>
+                                    </div>
+                                    <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-rose-400/80 transition-all duration-500"
+                                        style={{
+                                          width: `${Math.min(100, Math.max(0, ((Number(limits.remainingRequests) || 0) / (Number(limits.limitRequests) || 1)) * 100))}%`
+                                        }}
+                                      />
+                                    </div>
+                                    <p className="text-[10px] text-gray-500">Resets in: {formatMsToResetStr(rReset)}</p>
+                                  </div>
+
+                                  {limits.limitDayTokens && (
+                                    <div className="p-3 border border-white/5 bg-black/40 rounded-lg space-y-2">
+                                      <p className="text-xs text-gray-400 font-medium">Daily Tokens Allocation (Overall Allowed)</p>
+                                      <div className="flex items-baseline justify-between">
+                                        <span className="text-lg font-bold text-white font-mono">{Number(limits.remainingDayTokens || 0).toLocaleString()}</span>
+                                        <span className="text-xs text-gray-500 font-mono">/ {Number(limits.limitDayTokens || 0).toLocaleString()} left</span>
+                                      </div>
+                                      <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                        <div
+                                          className="h-full bg-emerald-400/80 transition-all duration-500"
+                                          style={{
+                                            width: `${Math.min(100, Math.max(0, ((Number(limits.remainingDayTokens) || 0) / (Number(limits.limitDayTokens) || 1)) * 100))}%`
+                                          }}
+                                        />
+                                      </div>
+                                      <p className="text-[10px] text-gray-500">Overall allowed tokens per day</p>
+                                    </div>
+                                  )}
+
+                                  {limits.limitDayRequests && (
+                                    <div className="p-3 border border-white/5 bg-black/40 rounded-lg space-y-2">
+                                      <p className="text-xs text-gray-400 font-medium">Daily Requests Allocation (Overall Allowed)</p>
+                                      <div className="flex items-baseline justify-between">
+                                        <span className="text-lg font-bold text-white font-mono">{Number(limits.remainingDayRequests || 0).toLocaleString()}</span>
+                                        <span className="text-xs text-gray-500 font-mono">/ {Number(limits.limitDayRequests || 0).toLocaleString()} left</span>
+                                      </div>
+                                      <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                        <div
+                                          className="h-full bg-emerald-400/80 transition-all duration-500"
+                                          style={{
+                                            width: `${Math.min(100, Math.max(0, ((Number(limits.remainingDayRequests) || 0) / (Number(limits.limitDayRequests) || 1)) * 100))}%`
+                                          }}
+                                        />
+                                      </div>
+                                      <p className="text-[10px] text-gray-500">Overall allowed requests per day</p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

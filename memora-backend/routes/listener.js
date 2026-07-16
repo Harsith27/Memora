@@ -108,12 +108,7 @@ const upload = multer({
   }
 });
 
-const callGroqTranscription = async ({ filePath, mimeType, fileName, language }) => {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    throw new Error('GROQ_API_KEY is missing in backend environment variables');
-  }
-
+const callGroqTranscription = async ({ filePath, mimeType, fileName, language }, userId) => {
   const transcriptModel = process.env.GROQ_TRANSCRIBE_MODEL || 'whisper-large-v3-turbo';
   const fileBuffer = await fs.promises.readFile(filePath);
   const BlobClass = typeof Blob !== 'undefined' ? Blob : NodeBlob;
@@ -134,7 +129,7 @@ const callGroqTranscription = async ({ filePath, mimeType, fileName, language })
   const response = await fetchGroq('https://api.groq.com/openai/v1/audio/transcriptions', {
     method: 'POST',
     body
-  });
+  }, userId);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -151,12 +146,7 @@ const callGroqTranscription = async ({ filePath, mimeType, fileName, language })
   return transcript;
 };
 
-const callGroqSummarization = async (transcript) => {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    throw new Error('GROQ_API_KEY is missing in backend environment variables');
-  }
-
+const callGroqSummarization = async (transcript, userId) => {
   const summaryModel = process.env.GROQ_MODEL || process.env.GROQ_SUMMARY_MODEL || 'llama-3.3-70b-versatile';
 
   const response = await fetchGroq('https://api.groq.com/openai/v1/chat/completions', {
@@ -171,15 +161,29 @@ const callGroqSummarization = async (transcript) => {
       messages: [
         {
           role: 'system',
-          content: 'You are rewriting class audio into natural student notes. The final text must feel like something a real student wrote in their own notebook, not AI output. Keep the same meaning, improve grammar, remove filler words, and keep the idea flow logical. You may add short clarifying lines only when directly supported by the transcript. Do not invent facts. Output format: one short title line, then 2 to 4 natural paragraphs in plain language. No section headings, no bullet points, no labels, no robotic phrases.'
+          content: `You are structuring spoken study audio into formatted, sectioned student notes. The final output must be highly structured and sectioned to help in creating mindmaps and flashcards. Keep it strictly focused on the facts in the transcript—do not invent outside details or add fluff. If the transcript is very short, keep the notes brief and concise. The output MUST follow this exact format:
+
+TITLE: [One short title line]
+
+SUMMARY:
+[A concise, natural summary paragraph of the transcript. Proportionate in length to the original audio]
+
+KEY CONCEPTS:
+- [Concept/Term]: [Simple explanation or definition]
+
+FORMULAS & EQUATIONS:
+- [Any math, physics, chemical, or engineering equations/formulas. IMPORTANT: Only include this section if there are actual equations, formulas, or chemical rules present in the transcript. If none are present, completely omit this "FORMULAS & EQUATIONS:" section and its header.]
+
+ACTIVE RECALL QUESTION:
+[A single prompt to self-test retention of this note]`
         },
         {
           role: 'user',
-          content: `Rewrite this spoken transcript as clean, human-sounding study notes that read like personal notebook paragraphs:\n\n${transcript}`
+          content: `Structure this spoken transcript as sectioned study notes:\n\n${transcript}`
         }
       ]
     })
-  });
+  }, userId);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -204,7 +208,8 @@ const buildNoteTitle = (summary, fallback = 'Listener Revision Note') => {
 
   if (!firstMeaningfulLine) return fallback;
 
-  return firstMeaningfulLine.slice(0, 80);
+  const cleanTitle = firstMeaningfulLine.replace(/^TITLE:\s*/i, '').trim();
+  return cleanTitle.slice(0, 80) || fallback;
 };
 
 const toNoteResponse = (noteDoc) => ({
@@ -285,9 +290,9 @@ router.post('/process', authenticateToken, async (req, res) => {
         mimeType: file.mimetype,
         fileName: file.originalname,
         language
-      });
+      }, userId);
 
-      const summary = await callGroqSummarization(transcript);
+      const summary = await callGroqSummarization(transcript, userId);
       const title = buildNoteTitle(summary, topic ? `${topic.title} - Listener Note` : 'Listener Revision Note');
       const wordCount = transcript.split(/\s+/).filter(Boolean).length;
 
@@ -318,6 +323,13 @@ router.post('/process', authenticateToken, async (req, res) => {
       });
     } catch (error) {
       console.error('Listener process error:', error);
+      if (error.message === 'API_KEY_INVALID' || error.message === 'API_KEY_QUOTA_EXCEEDED') {
+        return res.status(402).json({
+          success: false,
+          errorType: 'API_CREDITS_EXPIRED',
+          message: 'Your custom Groq API Key has expired or exceeded its quota. Please update it in Settings.'
+        });
+      }
       return res.status(500).json({
         success: false,
         message: error?.message || 'Failed to process listener recording'

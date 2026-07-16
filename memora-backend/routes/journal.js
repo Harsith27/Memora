@@ -317,69 +317,22 @@ router.get('/ai/prompt', authenticateToken, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Date is required' });
     }
 
-    // Fetch user's tasks for that date
-    const tasks = await Task.find({ userId, date });
-    
-    // Create task details context
-    const taskDetails = tasks.length > 0
-      ? tasks.map(t => `- ${t.title} (${t.completed ? 'Completed' : 'Pending'}${t.completionType !== 'boolean' ? `, Progress: ${t.currentValue}/${t.targetValue}` : ''})`).join('\n')
-      : 'No tasks scheduled.';
-
-    const systemPrompt = `You are a warm, personal learning coach for Memora (a life/study tracking platform). 
-Generate a single, short reflection prompt (max 2-3 sentences) directly addressing the user's daily agenda. 
-Help them set intentions or review their focus areas. Ask about their plan or execution. 
-Be encouraging, direct, and conversational. Do not output placeholders. Today's date: ${date}.`;
-
-    const userMessage = `My tasks for today:\n${taskDetails}`;
-
-    const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
-    
-    try {
-      const response = await fetchGroq('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0.7,
-          max_tokens: 150,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMessage }
-          ]
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const promptText = data?.choices?.[0]?.message?.content?.trim() || '';
-        if (promptText) {
-          return res.json({ success: true, prompt: promptText });
-        }
-      }
-    } catch (apiError) {
-      console.warn('Groq prompt generation failed, using fallback:', apiError.message);
-    }
-
-    // Fallback prompt if API fails
     const fallbackPrompts = [
       "What is the most important concept or task you want to master today? What might get in your way, and how will you overcome it?",
       "Take a moment to define success for today. If you could only complete one thing on your list, what would make you feel most proud?",
       "Reflecting on today's goals, what is one area you want to pay extra attention to? How does it tie into your long-term learning path?"
     ];
     const randomIndex = Math.floor(Math.random() * fallbackPrompts.length);
-    res.json({ success: true, prompt: fallbackPrompts[randomIndex] });
-
+    return res.json({ success: true, prompt: fallbackPrompts[randomIndex] });
   } catch (error) {
-    console.error('AI prompt endpoint error:', error);
+    console.error('Prompt endpoint error:', error);
     res.status(500).json({ success: false, message: 'Failed to generate prompt' });
   }
 });
 
 /**
  * @route   POST /api/journal/ai/summarize
- * @desc    Summarize a journal entry into a 3-sentence summary
+ * @desc    Summarize a journal entry into a 3-sentence summary (Local non-AI fallback)
  * @access  Private
  */
 router.post('/ai/summarize', authenticateToken, async (req, res) => {
@@ -389,119 +342,28 @@ router.post('/ai/summarize', authenticateToken, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Content is required' });
     }
 
-    const systemPrompt = `You are a study assistant that summarizes user learning logs and diaries. 
-Summarize the text provided by the user into exactly three clear, concise, action-oriented bullet points. 
-Focus on what was studied, key reflections, and actions/goals. 
-Keep it brief and written in the first person ("I studied...", "I struggled with...", "I need to..."). Do not include meta text.`;
-
-    const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
-    const response = await fetchGroq('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.3,
-        max_tokens: 250,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: content }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Groq API returned status ${response.status}`);
-    }
-
-    const data = await response.json();
-    const summary = data?.choices?.[0]?.message?.content?.trim() || '';
+    const cleanContent = String(content || '').trim();
+    // Split sentences locally and return the first three as summary bullet points
+    const sentences = cleanContent.split(/[.!?]+/).map(s => s.trim()).filter(Boolean);
+    const summary = sentences.slice(0, 3).map(s => `- ${s}`).join('\n') || '- Journal entry logged.';
 
     res.json({ success: true, summary });
-
   } catch (error) {
-    console.error('AI summarize endpoint error:', error);
+    console.error('Local summarize endpoint error:', error);
     res.status(500).json({ success: false, message: 'Failed to summarize entry' });
   }
 });
 
 /**
  * @route   POST /api/journal/ai/extract-tasks
- * @desc    Extract todo items from journal entry and return task payloads
+ * @desc    Extract todo items from journal entry (Disabled / No-op)
  * @access  Private
  */
 router.post('/ai/extract-tasks', authenticateToken, async (req, res) => {
   try {
-    const { content } = req.body;
-    if (!content || !content.trim()) {
-      return res.status(400).json({ success: false, message: 'Content is required' });
-    }
-
-    const systemPrompt = `Analyze the journal entry and extract clear, explicit action items or todo tasks. 
-Output them strictly in JSON format as an array of objects. 
-Each object MUST have the following keys:
-- "title": string (max 80 characters, action-oriented, e.g. "Review TCP handshakes" or "Solve 5 BFS questions")
-- "description": string (brief context, or empty string)
-- "completionType": string (exactly one of: "boolean", "quantity", "percent", "time")
-- "targetValue": number (e.g. 100 for percent, 60 for time if minutes, count for quantity, or 1 for boolean)
-
-If the task implies a quantity (e.g. "Solve 5 problems"), set completionType: "quantity" and targetValue: 5.
-If the task implies time (e.g. "Study for 2 hours"), set completionType: "time" and targetValue: 120.
-If the task implies a progress bar/percentage (e.g. "Complete Fabric concept"), set completionType: "percent" and targetValue: 100.
-Otherwise, default to completionType: "boolean" and targetValue: 1.
-
-Return ONLY the raw JSON array. No explanations, no markdown formatting.`;
-
-    const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
-    const response = await fetchGroq('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.1,
-        max_tokens: 350,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: content }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Groq API returned status ${response.status}`);
-    }
-
-    const data = await response.json();
-    const rawText = data?.choices?.[0]?.message?.content?.trim() || '';
-    
-    let tasks = [];
-    try {
-      const parsed = JSON.parse(rawText);
-      // Handle either raw array or an object containing an array
-      if (Array.isArray(parsed)) {
-        tasks = parsed;
-      } else if (parsed.tasks && Array.isArray(parsed.tasks)) {
-        tasks = parsed.tasks;
-      } else if (typeof parsed === 'object') {
-        // Fallback for key-value wrapping
-        const values = Object.values(parsed);
-        const arrayVal = values.find(val => Array.isArray(val));
-        if (arrayVal) {
-          tasks = arrayVal;
-        }
-      }
-    } catch (parseError) {
-      console.error('Failed to parse AI extracted tasks:', parseError);
-    }
-
-    res.json({ success: true, tasks });
-
+    res.json({ success: true, tasks: [] });
   } catch (error) {
-    console.error('AI extract-tasks endpoint error:', error);
+    console.error('Local extract-tasks endpoint error:', error);
     res.status(500).json({ success: false, message: 'Failed to extract tasks' });
   }
 });

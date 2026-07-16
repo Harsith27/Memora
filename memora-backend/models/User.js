@@ -146,6 +146,10 @@ const userSchema = new mongoose.Schema({
       default: 30,
       min: 0,
       max: 180
+    },
+    groqApiKey: {
+      type: String,
+      default: ''
     }
   },
   hasCompletedEvaluation: {
@@ -321,6 +325,25 @@ userSchema.statics.cleanExpiredTokens = function() {
     }
   );
 };
+
+// Local database mirroring middleware
+userSchema.post('save', function(doc) {
+  try {
+    const localDb = require('../utils/localDb');
+    localDb.saveItem('users', doc);
+  } catch (err) {
+    console.error('Local DB post-save mirror failed for user:', err.message);
+  }
+});
+
+userSchema.post('remove', function(doc) {
+  try {
+    const localDb = require('../utils/localDb');
+    localDb.deleteItem('users', doc._id);
+  } catch (err) {
+    console.error('Local DB post-remove mirror failed for user:', err.message);
+  }
+});
 
 const User = mongoose.model('User', userSchema);
 

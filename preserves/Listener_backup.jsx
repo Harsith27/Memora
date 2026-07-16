@@ -10,11 +10,8 @@ import {
   Check,
   ChevronRight,
   ChevronLeft,
-  ChevronDown,
   Clock3,
   FileText,
-  Folder,
-  FolderOpen,
   GitBranch,
   Globe,
   Loader2,
@@ -146,9 +143,6 @@ const Listener = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [pendingAudio, setPendingAudio] = useState(null);
-  const [previousModal, setPreviousModal] = useState('');
-  const [expandedTopicIds, setExpandedTopicIds] = useState(new Set());
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [audioLevels, setAudioLevels] = useState(Array.from({ length: 96 }, () => 0.02));
 
@@ -282,13 +276,16 @@ const Listener = () => {
   }, []);
 
   const saveTopicLinkSelection = useCallback(() => {
-    const nextTopicId = topicLinkDraftId || '';
+    const normalizedQuery = String(topicLinkSearch || '').trim().toLowerCase();
+    const exactMatch = topics.find((topic) => String(topic?.title || '').trim().toLowerCase() === normalizedQuery);
+    const fallbackMatch = topicLinkSuggestions[0] || null;
+    const nextTopicId = topicLinkDraftId || exactMatch?._id || fallbackMatch?._id || '';
 
     // If a specific note requested the link, update that note only.
     if (noteLinkTargetId) {
       const noteId = noteLinkTargetId;
       setNoteLinkTargetId('');
-      setActiveModal('notes');
+      setActiveModal('');
       (async () => {
         try {
           const response = await apiService.updateListenerNote(noteId, { topicId: nextTopicId || '' });
@@ -308,7 +305,7 @@ const Listener = () => {
     setSelectedTopicId(nextTopicId);
     setActiveModal('');
     showToast(nextTopicId ? 'Topic linked.' : 'General note selected.', 'success');
-  }, [showToast, topicLinkDraftId, noteLinkTargetId]);
+  }, [showToast, topicLinkDraftId, topicLinkSearch, topicLinkSuggestions, topics]);
 
   const getListenerErrorMessage = useCallback((error, fallbackMessage) => {
     if (apiService.isAuthError(error)) {
@@ -509,90 +506,14 @@ const Listener = () => {
     };
   }, [stopMediaTracks, stopMeter, stopRecording]);
 
-  const explorerData = useMemo(() => {
-    const groups = new Map();
-
-    topics.forEach((t) => {
-      groups.set(String(t._id), {
-        id: String(t._id),
-        title: t.title,
-        notes: [],
-        latestNoteDate: 0
-      });
-    });
-
-    groups.set('general', {
-      id: 'general',
-      title: 'General Notes',
-      notes: [],
-      latestNoteDate: 0
-    });
-
-    notes.forEach((note) => {
-      const topicId = getLinkedTopicId(note) || 'general';
-      const createdTime = new Date(note.createdAt).getTime() || 0;
-      
-      let group = groups.get(topicId);
-      if (!group) {
-        group = {
-          id: topicId,
-          title: getLinkedTopicTitle(note) || 'Unknown Topic',
-          notes: [],
-          latestNoteDate: 0
-        };
-        groups.set(topicId, group);
-      }
-      
-      group.notes.push(note);
-      if (createdTime > group.latestNoteDate) {
-        group.latestNoteDate = createdTime;
-      }
-    });
-
-    const sortedGroups = Array.from(groups.values()).map(g => {
-      g.notes.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      return g;
-    });
-
-    sortedGroups.sort((a, b) => {
-      if (a.latestNoteDate !== b.latestNoteDate) {
-        return b.latestNoteDate - a.latestNoteDate;
-      }
-      return a.title.localeCompare(b.title);
-    });
-
-    return sortedGroups;
-  }, [topics, notes, getLinkedTopicId, getLinkedTopicTitle]);
-
-  const filteredExplorerData = useMemo(() => {
-    const query = String(notesSearchQuery || '').trim().toLowerCase();
-    if (!query) return explorerData;
-
-    return explorerData.map(group => {
-      const matchingNotes = group.notes.filter(note => {
-        const title = String(note?.title || '').toLowerCase();
-        const summary = String(note?.summary || '').toLowerCase();
-        const transcript = String(note?.transcript || '').toLowerCase();
-        return title.includes(query) || summary.includes(query) || transcript.includes(query);
-      });
-
-      return {
-        ...group,
-        notes: matchingNotes,
-        hasMatches: matchingNotes.length > 0
-      };
-    }).filter(group => group.hasMatches);
-  }, [explorerData, notesSearchQuery]);
-
   const processRecording = useCallback(
-    async ({ audioBlob, durationSeconds, overrideTopicId }) => {
+    async ({ audioBlob, durationSeconds }) => {
       setIsProcessing(true);
-      const targetTopicId = overrideTopicId !== undefined ? overrideTopicId : selectedTopicId;
 
       try {
         const response = await apiService.processListenerRecording({
           audioBlob,
-          topicId: targetTopicId,
+          topicId: selectedTopicId,
           language: 'en',
           durationSeconds,
           visualizerStyle
@@ -727,10 +648,7 @@ const Listener = () => {
           return;
         }
 
-        setPendingAudio({ audioBlob, durationSeconds });
-        setTopicLinkSearch('');
-        setTopicLinkDraftId(selectedTopicId || '');
-        setActiveModal('topic-link');
+        await processRecording({ audioBlob, durationSeconds });
       };
 
       recorder.onerror = (event) => {
@@ -792,7 +710,6 @@ const Listener = () => {
     setLatestNoteId(selectedPanelNote.id);
     setLatestTranscript(selectedPanelNote.transcript || '');
     setLatestSummary(selectedPanelNote.summary || '');
-    setPreviousModal('notes');
     setActiveModal('output');
   };
 
@@ -1126,140 +1043,90 @@ const Listener = () => {
         <DashboardFooter className="mt-3 border-t border-white/10 py-4 sm:py-5" />
       </div>
 
-      <Modal
-        isOpen={activeModal === 'topic-link'}
-        onClose={() => {
-          setPendingAudio(null);
-          setNoteLinkTargetId('');
-          setActiveModal(noteLinkTargetId ? 'notes' : '');
-        }}
-        title={pendingAudio ? "Link Topic to Note" : "Link to a Topic"}
-        size="lg"
-      >
-        <div className="space-y-4">
-          <p className="text-xs text-gray-300">
-            {pendingAudio
-              ? "Before we generate the notes and mindmap, would you like to link this recording to a study topic?"
-              : "Select a study topic to link to this note."}
-          </p>
-
-          <input
-            type="text"
-            value={topicLinkSearch}
-            onChange={(e) => setTopicLinkSearch(e.target.value)}
-            placeholder="Search topics..."
-            className="w-full rounded-md border border-white/15 bg-black px-3 py-2 text-sm text-white outline-none focus:border-pink-400/45"
-          />
-
-          <div className="border border-white/10 rounded-lg bg-black/55 max-h-[180px] overflow-y-auto divide-y divide-white/5 scrollbar-themed">
-            <button
-              type="button"
-              onClick={() => setTopicLinkDraftId('')}
-              className={`w-full text-left px-3 py-2.5 text-xs transition-colors flex items-center justify-between ${
-                topicLinkDraftId === '' ? 'bg-pink-500/15 text-pink-200' : 'text-gray-300 hover:bg-white/5'
-              }`}
-            >
-              <span>General Note (Unlinked)</span>
-              {topicLinkDraftId === '' && <Check className="h-3.5 w-3.5 text-pink-400" />}
-            </button>
-
-            {topics
-              .filter((t) => String(t.title || '').toLowerCase().includes(topicLinkSearch.toLowerCase()))
-              .map((t) => {
-                const isSelected = topicLinkDraftId === t._id;
-                return (
-                  <button
-                    key={t._id}
-                    type="button"
-                    onClick={() => setTopicLinkDraftId(t._id)}
-                    className={`w-full text-left px-3 py-2.5 text-xs transition-colors flex items-center justify-between ${
-                      isSelected ? 'bg-pink-500/15 text-pink-200' : 'text-gray-300 hover:bg-white/5'
-                    }`}
-                  >
-                    <span>{t.title}</span>
-                    {isSelected && <Check className="h-3.5 w-3.5 text-pink-400" />}
-                  </button>
-                );
-              })}
+      <Modal isOpen={activeModal === 'topic-link'} onClose={() => { setActiveModal(''); setNoteLinkTargetId(''); }} title="Link to a Topic" size="xl">
+        <div className="space-y-5 max-h-[65vh] overflow-y-auto pr-1">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Current topic</p>
+            <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-pink-300/35 bg-pink-500/16 px-3 py-1.5 text-sm text-pink-50">
+              <Star className="h-4 w-4 text-pink-200" />
+              <span className="truncate">{topicLinkCurrentLabel}</span>
+            </div>
           </div>
 
-          <div className="flex gap-2 justify-end pt-2">
-            {pendingAudio ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPendingAudio(null);
-                    setActiveModal('');
-                    showToast('Recording discarded.', 'info');
-                  }}
-                  className="px-3 py-1.5 text-xs rounded-md border border-rose-500/45 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20 transition-colors"
-                >
-                  Discard
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const audio = pendingAudio;
-                    setPendingAudio(null);
-                    setActiveModal('');
-                    if (audio) {
-                      await processRecording({
-                        audioBlob: audio.audioBlob,
-                        durationSeconds: audio.durationSeconds,
-                        overrideTopicId: ''
-                      });
-                    }
-                  }}
-                  className="px-3 py-1.5 text-xs rounded-md border border-white/10 bg-white/5 text-gray-200 hover:bg-white/10 transition-colors"
-                >
-                  Skip
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const audio = pendingAudio;
-                    setPendingAudio(null);
-                    setActiveModal('');
-                    if (audio) {
-                      await processRecording({
-                        audioBlob: audio.audioBlob,
-                        durationSeconds: audio.durationSeconds,
-                        overrideTopicId: topicLinkDraftId
-                      });
-                    }
-                  }}
-                  className="px-3 py-1.5 text-xs rounded-md border border-pink-300/55 bg-pink-500/22 text-pink-50 hover:bg-pink-500/30 transition-colors font-medium"
-                >
-                  Link & Process
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNoteLinkTargetId('');
-                    setActiveModal('notes');
-                  }}
-                  className="px-3 py-1.5 text-xs rounded-md border border-white/10 bg-white/5 text-gray-200 hover:bg-white/10 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={saveTopicLinkSelection}
-                  className="px-3 py-1.5 text-xs rounded-md border border-pink-300/55 bg-pink-500/22 text-pink-50 hover:bg-pink-500/30 transition-colors font-medium"
-                >
-                  Save Link
-                </button>
-              </>
-            )}
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Search topics</p>
+            <input
+              type="text"
+              value={topicLinkSearch}
+              onChange={(event) => setTopicLinkSearch(event.target.value)}
+              data-autofocus="true"
+              placeholder="Type to search topics..."
+              className="w-full rounded-md border border-white/15 bg-black px-3 py-2 text-sm text-white outline-none focus:border-pink-400/45"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Suggestions</p>
+              <p className="text-xs text-gray-500">Showing up to 5</p>
+            </div>
+
+            <div className="max-h-[280px] overflow-y-auto rounded-xl border border-white/10 bg-black/55 scrollbar-themed">
+              {topicLinkSuggestions.length === 0 ? (
+                <p className="px-4 py-5 text-sm text-gray-500">No topics match that search.</p>
+              ) : (
+                topicLinkSuggestions.map((topic) => {
+                  const isSelected = topicLinkDraftId === topic._id;
+
+                  return (
+                    <button
+                      key={topic._id}
+                      type="button"
+                      onClick={() => {
+                        setTopicLinkDraftId(topic._id);
+                        setTopicLinkSearch(topic.title || '');
+                      }}
+                      className={`flex w-full items-center justify-between gap-3 border-b border-white/10 px-4 py-3 text-left transition-colors last:border-b-0 ${
+                        isSelected ? 'bg-pink-500/18' : 'hover:bg-pink-500/8'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-white">{topic.title || 'Untitled topic'}</p>
+                        <p className="mt-1 text-xs text-gray-500 truncate">Click to choose this topic</p>
+                      </div>
+                      <div className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] ${isSelected ? 'border-pink-300/55 bg-pink-500/22 text-pink-50' : 'border-white/15 bg-white/5 text-gray-300'}`}>
+                        {isSelected ? 'Selected' : 'Pick'}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setTopicLinkDraftId('');
+                setTopicLinkSearch('');
+              }}
+              className="rounded-lg border border-white/15 bg-white/[0.04] px-4 py-2 text-sm text-gray-200 transition-colors hover:bg-white/[0.08]"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={saveTopicLinkSelection}
+              className="inline-flex items-center gap-2 rounded-lg border border-pink-300/55 bg-pink-500/22 px-4 py-2 text-sm font-medium text-pink-50 transition-colors hover:bg-pink-500/30"
+            >
+              <GitBranch className="h-4 w-4" /> Link to this topic
+            </button>
           </div>
         </div>
       </Modal>
 
-      <Modal isOpen={activeModal === 'output'} onClose={() => { setActiveModal(previousModal === 'notes' ? 'notes' : ''); if (previousModal === 'notes') setPreviousModal(''); }} title="Latest Output" size="xl">
+      <Modal isOpen={activeModal === 'output'} onClose={() => setActiveModal('')} title="Latest Output" size="xl">
         <div className="space-y-5">
           <div>
             <p className="text-xs uppercase tracking-[0.14em] text-gray-500 mb-2">Transcript</p>
@@ -1277,14 +1144,14 @@ const Listener = () => {
         </div>
       </Modal>
 
-      <Modal isOpen={activeModal === 'notes'} onClose={() => setActiveModal('')} title="Saved Notes" size="2xl">
+      <Modal isOpen={activeModal === 'notes'} onClose={() => setActiveModal('')} title="Saved Notes" size="xl">
         {notes.length === 0 ? (
           <div className="border border-dashed border-white/20 bg-black/55 p-5 text-sm text-gray-400 text-center rounded-lg">
             No notes yet. Record a session to create your first note.
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 items-start">
-            <div className="space-y-3">
+          <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-4 items-start">
+            <div className="space-y-2">
               <input
                 type="text"
                 value={notesSearchQuery}
@@ -1294,157 +1161,102 @@ const Listener = () => {
                 className="w-full rounded-md border border-white/15 bg-black px-3 py-2 text-sm text-white outline-none focus:border-pink-400/45"
               />
 
-              {/* Obsidian-Style Topic Explorer */}
               <div
-                className="border border-white/10 rounded-lg bg-black/55 h-[340px] overflow-y-auto scrollbar-themed p-2 space-y-1"
+                className="border border-white/10 rounded-lg bg-black/55 h-[320px] overflow-y-scroll scrollbar-themed"
                 style={{ scrollbarGutter: 'stable both-edges' }}
               >
-                {filteredExplorerData.length === 0 ? (
+                {filteredNotes.length === 0 ? (
                   <p className="px-3 py-4 text-sm text-gray-500">No notes match your search.</p>
                 ) : (
-                  filteredExplorerData.map((group) => {
-                    const hasNotes = group.notes.length > 0;
-                    if (!hasNotes) return null;
-
-                    const isExpanded = notesSearchQuery ? true : expandedTopicIds.has(group.id);
-                    const FolderIconComponent = isExpanded ? FolderOpen : Folder;
-
+                  filteredNotes.map((note) => {
+                    const isSelected = selectedPanelNote?.id === note.id;
                     return (
-                      <div key={group.id} className="space-y-0.5">
-                        <button
-                          type="button"
-                          title={group.title}
-                          onClick={() => {
-                            if (notesSearchQuery) return;
-                            setExpandedTopicIds((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(group.id)) {
-                                next.delete(group.id);
-                              } else {
-                                next.add(group.id);
-                              }
-                              return next;
-                            });
-                          }}
-                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/[0.04] text-left transition-colors text-sm font-medium text-gray-300"
-                        >
-                          {!notesSearchQuery && (
-                            isExpanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                          )}
-                          <FolderIconComponent className="h-4 w-4 text-pink-400 shrink-0" />
-                          <span className="truncate flex-1">{group.title}</span>
-                          <span className="text-[10px] text-gray-500 font-normal shrink-0">({group.notes.length})</span>
-                        </button>
-
-                        {isExpanded && (
-                          <div className="pl-4 border-l border-white/5 ml-3.5 space-y-0.5">
-                            {group.notes.map((note) => {
-                              const isSelected = selectedPanelNote?.id === note.id;
-                              return (
-                                <button
-                                  key={note.id}
-                                  type="button"
-                                  title={note.title || 'Listener note'}
-                                  onClick={() => setPanelNoteId(note.id)}
-                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors text-xs ${
-                                    isSelected ? 'bg-pink-500/18 text-white' : 'text-gray-300 hover:bg-white/[0.04] hover:text-white'
-                                  }`}
-                                >
-                                  <FileText className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-pink-300' : 'text-gray-500'}`} />
-                                  <span className="truncate flex-1">{note.title || 'Listener note'}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
+                      <button
+                        key={note.id}
+                        type="button"
+                        onClick={() => setPanelNoteId(note.id)}
+                        className={`w-full h-[64px] text-left px-3 border-b border-white/10 last:border-b-0 transition-colors flex flex-col justify-center ${
+                          isSelected ? 'bg-pink-500/18' : 'hover:bg-pink-500/8'
+                        }`}
+                      >
+                        <p className="text-sm font-medium text-gray-100 truncate" title={note.title || 'Listener note'}>{note.title || 'Listener note'}</p>
+                        <p className="mt-1 text-[11px] text-gray-500">{formatDateTime(note.createdAt)}</p>
+                      </button>
                     );
                   })
                 )}
               </div>
             </div>
 
-            {/* Note Preview Pane (Fixed Height) */}
-            {selectedPanelNote ? (
-              <div className="border border-white/10 bg-black/55 px-4 py-4 rounded-lg w-full flex flex-col h-[395px]">
-                <div className="flex items-center justify-between gap-2 min-w-0 border-b border-white/5 pb-2 shrink-0">
-                  <h3 className="text-sm font-semibold text-white truncate" title={selectedPanelNote.title || 'Listener note'}>
+            {selectedPanelNote && (
+              <div className="self-start space-y-3 border border-white/10 bg-black/55 px-4 pt-4 pb-2 rounded-lg w-full">
+                <div className="flex items-center justify-between gap-2 min-w-0">
+                  <h3 className="text-base font-semibold text-white line-clamp-1">
                     {selectedPanelNote.title || 'Listener note'}
                   </h3>
-                  <p className="text-[10px] text-gray-500 shrink-0 whitespace-nowrap">{formatDateTime(selectedPanelNote.createdAt)}</p>
+                  <p className="text-xs text-gray-500 shrink-0 whitespace-nowrap">{formatDateTime(selectedPanelNote.createdAt)}</p>
                 </div>
 
-                <div className="flex-1 overflow-y-auto min-h-0 py-3 pr-1 space-y-3 scrollbar-themed">
-                  <div>
-                    <p className="mb-1 text-[10px] uppercase tracking-[0.13em] text-gray-500 font-semibold">Content</p>
-                    <p className="text-xs text-gray-200 whitespace-pre-wrap">
-                      {selectedPanelNote.summary || 'No summary.'}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="mb-1 text-[10px] uppercase tracking-[0.13em] text-gray-500 font-semibold">Current topic</p>
-                    <p className="text-xs text-gray-200">
-                      {getLinkedTopicTitle(selectedPanelNote) || 'No Linked Topic'}
-                    </p>
-                  </div>
+                <div>
+                  <p className="mb-1 text-xs uppercase tracking-[0.13em] text-gray-500">Content</p>
+                  <p className="text-sm text-gray-200 whitespace-pre-wrap max-h-[240px] overflow-y-auto pr-1">
+                    {selectedPanelNote.summary || 'No summary.'}
+                  </p>
                 </div>
 
-                <div className="flex items-center justify-between border-t border-white/5 pt-3 shrink-0">
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={handleOpenNoteInOutput}
-                      className="inline-flex items-center gap-1 rounded-md border border-pink-300/55 bg-pink-500/22 px-2.5 py-1.5 text-[11px] text-pink-50 transition-colors hover:bg-pink-500/30"
-                    >
-                      <Sparkles className="h-3.5 w-3.5" /> Open in output
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleExportNoteToMindmap}
-                      className="inline-flex items-center gap-1 rounded-md border border-violet-300/55 bg-violet-500/22 px-2.5 py-1.5 text-[11px] text-violet-50 transition-colors hover:bg-violet-500/30"
-                    >
-                      <GitBranch className="h-3.5 w-3.5" /> Export to mindmap
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteNote(selectedPanelNote.id)}
-                      disabled={deletingNoteId === selectedPanelNote.id}
-                      className="inline-flex items-center gap-1 rounded-md border border-rose-400/45 bg-rose-500/18 px-2.5 py-1.5 text-[11px] text-rose-100 transition-colors hover:bg-rose-500/26 disabled:opacity-55"
-                    >
-                      {deletingNoteId === selectedPanelNote.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-3.5 w-3.5" />
-                      )}
-                      Delete
-                    </button>
-                  </div>
+                <div>
+                  <p className="mb-1 text-xs uppercase tracking-[0.13em] text-gray-500">Current topic</p>
+                  <p className="text-sm text-gray-200">
+                    {getLinkedTopicTitle(selectedPanelNote) || 'No Linked Topic'}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleOpenNoteInOutput}
+                    className="inline-flex items-center gap-1 rounded-md border border-pink-300/55 bg-pink-500/22 px-3 py-2 text-xs text-pink-50 transition-colors hover:bg-pink-500/30"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" /> Open in output
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportNoteToMindmap}
+                    className="inline-flex items-center gap-1 rounded-md border border-violet-300/55 bg-violet-500/22 px-3 py-2 text-xs text-violet-50 transition-colors hover:bg-violet-500/30"
+                  >
+                    <GitBranch className="h-3.5 w-3.5" /> Export to mindmap
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
                       setNoteLinkTargetId(selectedPanelNote.id);
                       setTopicLinkDraftId(getLinkedTopicId(selectedPanelNote));
                       setTopicLinkSearch(getLinkedTopicTitle(selectedPanelNote));
-                      setPreviousModal('notes');
                       setActiveModal('topic-link');
                     }}
-                    className="inline-flex items-center gap-1 rounded-md border border-pink-300/55 bg-pink-500/22 px-2.5 py-1.5 text-[11px] text-pink-50 transition-colors hover:bg-pink-500/30"
+                    className="inline-flex items-center gap-1 rounded-md border border-amber-300/55 bg-amber-500/18 px-3 py-2 text-xs text-amber-50 transition-colors hover:bg-amber-500/28"
                   >
                     <GitBranch className="h-3.5 w-3.5" /> Link topic
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteNote(selectedPanelNote.id)}
+                    disabled={deletingNoteId === selectedPanelNote.id}
+                    className="inline-flex items-center gap-1 rounded-md border border-rose-400/45 bg-rose-500/18 px-3 py-2 text-xs text-rose-100 transition-colors hover:bg-rose-500/26 disabled:opacity-55"
+                  >
+                    {deletingNoteId === selectedPanelNote.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3.5 w-3.5" />
+                    )}
+                    Delete
+                  </button>
                 </div>
-              </div>
-            ) : (
-              <div className="border border-dashed border-white/10 bg-black/55 p-6 rounded-lg w-full flex flex-col items-center justify-center text-gray-500 text-xs h-[395px]">
-                Select a note from the explorer to preview details.
               </div>
             )}
           </div>
         )}
       </Modal>
-
-
 
       <Toast
         isVisible={toast.show}

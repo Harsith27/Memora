@@ -152,6 +152,13 @@ class ApiService {
 
       if (!response.ok) {
         const payload = data !== null ? data : _rawResponseText;
+        if (response.status === 402 || (data && data.errorType === 'API_CREDITS_EXPIRED')) {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('memora:api_credits_expired', {
+              detail: { message: data?.message || 'Your custom Groq API Key has expired or exceeded its quota.' }
+            }));
+          }
+        }
         const httpError = this.createHttpError(
           (data && data.message) || (typeof _rawResponseText === 'string' ? _rawResponseText : `HTTP error! status: ${response.status}`),
           response.status,
@@ -371,6 +378,10 @@ class ApiService {
 
   async updateUserPreferences(preferences) {
     return this.put('/user/preferences', preferences);
+  }
+
+  async validateApiKey(groqApiKey) {
+    return this.post('/user/validate-key', { groqApiKey });
   }
 
   async recordStudySession() {

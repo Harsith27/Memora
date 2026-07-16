@@ -86,14 +86,7 @@ const Flashcards = () => {
             })}
           </div>
 
-          {!isSidebarCollapsed && (
-            <div className="mt-8 space-y-1">
-              <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Quick actions</p>
-              <button type="button" onClick={() => setToast({ show: true, message: 'Flashcards content is intentionally empty for now.', type: 'info' })} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm border border-white/10 bg-white/[0.04] text-gray-100 hover:bg-white/10 transition-colors">
-                <DashboardGlyph className="w-4 h-4 text-teal-200" /> Empty module area
-              </button>
-            </div>
-          )}
+
         </nav>
       </aside>
 
@@ -137,7 +130,7 @@ const Flashcards = () => {
                   <LibraryBig className="w-5 h-5 text-cyan-200" />
                   Flashcards
                 </h1>
-                <p className="hidden sm:block text-xs text-gray-400 mt-0.5">Build the Flashcards module layout step by step. Content area is intentionally empty for now.</p>
+                <p className="hidden sm:block text-xs text-gray-400 mt-0.5">&nbsp;</p>
               </div>
             </div>
 
@@ -154,11 +147,6 @@ const Flashcards = () => {
 
         <main className="px-3 sm:px-5 py-4 sm:py-6">
           <div className="min-h-[calc(100vh-9rem)] rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-6 sm:p-8">
-            <div className="max-w-2xl">
-              <p className="text-xs uppercase tracking-[0.22em] text-gray-400">Module area</p>
-              <h2 className="mt-2 text-2xl sm:text-3xl font-semibold text-white">Empty for now</h2>
-              <p className="mt-3 text-sm sm:text-base text-gray-400">This is just the shared module shell with the left sidebar in place. We can decide the actual Flashcards content next.</p>
-            </div>
           </div>
 
           <DashboardFooter className="mt-4 border-t border-white/10 py-5 sm:py-6" />

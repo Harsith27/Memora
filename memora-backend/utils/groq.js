@@ -44,10 +44,75 @@ function markRateLimited(key) {
 }
 
 /**
- * Custom fetch wrapper that automatically load-balances requests across available Groq keys,
- * catches HTTP 429 (rate-limiting), marks the key, and retries the call with a new key.
+ * Custom fetch wrapper that automatically load-balances requests across available Groq keys.
+ * If a userId is provided, it attempts to load and use the user's custom Groq API key first.
  */
-async function fetchGroq(url, options = {}) {
+async function fetchGroq(url, options = {}, userId = '') {
+  let userKeys = [];
+  
+  if (userId) {
+    try {
+      const User = require('../models/User');
+      const user = await User.findById(userId).select('preferences.groqApiKey').lean();
+      const rawKey = user?.preferences?.groqApiKey || '';
+      userKeys = rawKey.split(',')
+        .map(k => String(k || '').trim())
+        .filter(k => k && k.toLowerCase() !== 'null' && k.toLowerCase() !== 'undefined');
+    } catch (err) {
+      console.error('[groq-balancer] Failed to load user custom API keys:', err.message);
+    }
+  }
+
+  if (userKeys.length > 0) {
+    const maxAttempts = Math.max(1, userKeys.length);
+    let attempts = 0;
+    let lastError = null;
+
+    while (attempts < maxAttempts) {
+      const now = Date.now();
+      const availableUserKeys = userKeys.filter(k => {
+        const expires = cooldowns.get(k) || 0;
+        return now > expires;
+      });
+
+      const activeUserKeys = availableUserKeys.length > 0 ? availableUserKeys : userKeys;
+      const customKey = activeUserKeys[attempts % activeUserKeys.length];
+
+      const headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${customKey}`
+      };
+
+      try {
+        const response = await fetch(url, { ...options, headers });
+
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('API_KEY_INVALID');
+        }
+
+        if (response.status === 429) {
+          markRateLimited(customKey);
+          attempts++;
+          continue;
+        }
+
+        return response;
+      } catch (err) {
+        if (err.message === 'API_KEY_INVALID') {
+          throw err;
+        }
+        lastError = err;
+        attempts++;
+      }
+    }
+
+    if (lastError?.message === 'API_KEY_INVALID') {
+      throw lastError;
+    }
+    throw new Error('API_KEY_QUOTA_EXCEEDED');
+  }
+
+  // Fallback to balanced system keys
   const maxAttempts = Math.max(1, keys.length);
   let attempts = 0;
   let lastError = null;

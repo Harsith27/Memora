@@ -1,0 +1,89 @@
+{
+  "timestamp": "2026-07-16T10:25:08.096Z",
+  "topics": [],
+  "doctags": [],
+  "revisionhistories": [],
+  "users": [
+    {
+      "preferences": {
+        "colorTheme": "monochrome",
+        "defaultDifficulty": 3,
+        "retentionSpeed": "medium",
+        "memScoreRecalibrationFreq": 30,
+        "revisionMode": "competitive",
+        "dailyResetTime": "04:00",
+        "studyBoostDates": [],
+        "studyBoostTopicBonus": 2,
+        "studyBoostDifficultyBonus": 4,
+        "studyBoostMinutesBonus": 30,
+        "groqApiKey": ""
+      },
+      "evaluationResults": {
+        "memoryGame": 92,
+        "tileRecall": 90,
+        "processingSpeed": 88,
+        "overallScore": 90,
+        "completedAt": "2026-04-12T06:08:21.995Z"
+      },
+      "_id": "6a51ddd69b343c4bea03719e",
+      "username": "lucky",
+      "email": "lucky@gmail.com",
+      "firstName": "Lucky",
+      "lastName": "",
+      "bio": "Computer science student using Memora to stay on top of revision, labs, and interviews.",
+      "location": "India",
+      "website": "",
+      "phoneNumber": "",
+      "dateOfBirth": null,
+      "occupation": "Computer Science Student",
+      "education": "B.Tech Computer Science",
+      "interests": "DSA, DBMS, Operating Systems, Computer Networks, Java, Software Engineering",
+      "memScore": 9,
+      "hasCompletedEvaluation": true,
+      "lastMemScoreUpdate": "2026-07-10T06:08:28.669Z",
+      "profileIconId": "sphere-2",
+      "currentStreak": 16,
+      "longestStreak": 33,
+      "lastStudyDate": "2026-07-11T19:28:38.579Z",
+      "totalStudyDays": 79,
+      "isActive": true,
+      "refreshTokens": [
+        {
+          "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNTFkZGQ2OWIzNDNjNGJlYTAzNzE5ZSIsImVtYWlsIjoibHVja3lAZ21haWwuY29tIiwidXNlcm5hbWUiOiJsdWNreSIsImlhdCI6MTc4Mzc1MDI3OSwiZXhwIjoxNzg0MzU1MDc5LCJhdWQiOiJtZW1vcmEtY2xpZW50IiwiaXNzIjoibWVtb3JhLWFwaSJ9.KlB3jO9mGIxxTgC2lxerJ0cNOnm6zWuRcloIj_quwTY",
+          "expiresAt": "2026-07-18T06:11:19.801Z",
+          "_id": "6a51de87c9940f11cc8542fb",
+          "createdAt": "2026-07-11T06:11:19.806Z"
+        },
+        {
+          "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNTFkZGQ2OWIzNDNjNGJlYTAzNzE5ZSIsImVtYWlsIjoibHVja3lAZ21haWwuY29tIiwidXNlcm5hbWUiOiJsdWNreSIsImlhdCI6MTc4Mzc3MjEzNywiZXhwIjoxNzg0Mzc2OTM3LCJhdWQiOiJtZW1vcmEtY2xpZW50IiwiaXNzIjoibWVtb3JhLWFwaSJ9._N4pNxZEI60I5tugOL8DfrUQCpxAkK2qMZSSrC-vyfo",
+          "expiresAt": "2026-07-18T12:15:37.804Z",
+          "_id": "6a5233e973fd2962c291b273",
+          "createdAt": "2026-07-11T12:15:37.806Z"
+        },
+        {
+          "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNTFkZGQ2OWIzNDNjNGJlYTAzNzE5ZSIsImVtYWlsIjoibHVja3lAZ21haWwuY29tIiwidXNlcm5hbWUiOiJsdWNreSIsImlhdCI6MTc4MzkyMDM3OCwiZXhwIjoxNzg0NTI1MTc4LCJhdWQiOiJtZW1vcmEtY2xpZW50IiwiaXNzIjoibWVtb3JhLWFwaSJ9.8tflBnq06jalEa5-dXDOFlwvJ5yZ7zrd4yjgzwfHaVQ",
+          "expiresAt": "2026-07-20T05:26:18.629Z",
+          "_id": "6a5476fa308f447827d84d90",
+          "createdAt": "2026-07-13T05:26:18.638Z"
+        },
+        {
+          "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNTFkZGQ2OWIzNDNjNGJlYTAzNzE5ZSIsImVtYWlsIjoibHVja3lAZ21haWwuY29tIiwidXNlcm5hbWUiOiJsdWNreSIsImlhdCI6MTc4NDE3NjczMywiZXhwIjoxNzg0NzgxNTMzLCJhdWQiOiJtZW1vcmEtY2xpZW50IiwiaXNzIjoibWVtb3JhLWFwaSJ9.9hok8aAeYDIKv5JBvWRVQ-nWgRNzLVuYXskZ1Ty-vP8",
+          "expiresAt": "2026-07-23T04:38:53.980Z",
+          "_id": "6a58605dbfcdb5590b0a5e07",
+          "createdAt": "2026-07-16T04:38:53.983Z"
+        },
+        {
+          "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNTFkZGQ2OWIzNDNjNGJlYTAzNzE5ZSIsImVtYWlsIjoibHVja3lAZ21haWwuY29tIiwidXNlcm5hbWUiOiJsdWNreSIsImlhdCI6MTc4NDE5NjM2NSwiZXhwIjoxNzg0ODAxMTY1LCJhdWQiOiJtZW1vcmEtY2xpZW50IiwiaXNzIjoibWVtb3JhLWFwaSJ9.ETSXs55xdmSwlsCz74v2G37P_7gJ60DQTOZYRdQv-ys",
+          "expiresAt": "2026-07-23T10:06:05.595Z",
+          "_id": "6a58ad0d599b7740cf65aa1e",
+          "createdAt": "2026-07-16T10:06:05.598Z"
+        }
+      ],
+      "lastLogin": "2026-07-16T10:06:05.469Z",
+      "createdAt": "2026-07-11T06:08:22.027Z",
+      "updatedAt": "2026-07-16T10:06:05.607Z",
+      "__v": 11,
+      "password": "$2b$12$jDSYJxiUcsNIYhcXcmoKrOJy5mZXLmRgfeeL7wQP4EunuRtXCpsGK"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+// Trigger nodemon reload - Groq API keys updated
 const express = require('express');
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
@@ -11,6 +12,9 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
+
+const { initBackupScheduler } = require('./utils/backupScheduler');
+const { initCleanupScheduler } = require('./utils/cleanupScheduler');
 
 const app = express();
 
@@ -130,10 +134,7 @@ const migrateExistingTasks = async () => {
 
     console.log('[Migration] Starting optimized task classification migration...');
     const tasks = await Task.find({
-      $or: [
-        { completionType: { $exists: false } },
-        { completionType: 'boolean', targetValue: 1 }
-      ]
+      completionType: { $exists: false }
     }).lean();
 
     if (tasks.length === 0) {
@@ -279,6 +280,18 @@ app.use('/api/listener', require('./routes/listener'));
 // app.use('/api/revisions', require('./routes/revisions'));
 // app.use('/api/neuro', require('./routes/neuro'));
 
+const { syncWithCloud } = require('./utils/syncEngine');
+const { authenticateToken } = require('./middleware/auth');
+
+app.post('/api/sync', authenticateToken, async (req, res) => {
+  try {
+    const result = await syncWithCloud(req.user.id);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -298,6 +311,10 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🚀 Memora Backend Server running on port ${PORT}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  // Initialize automatic JSON backups and temporary audio cleanup schedulers
+  initBackupScheduler();
+  initCleanupScheduler();
 });
 
 module.exports = app;

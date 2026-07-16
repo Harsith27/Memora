@@ -2,6 +2,7 @@
 @import "react-datepicker/dist/react-datepicker.css";
 @import url("https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&display=swap");
+@import url('https://fonts.googleapis.com/css2?family=Architects+Daughter&family=Cabin+Sketch:wght@400;700&family=Orbitron:wght@400;700;900&family=Special+Elite&family=Cinzel:wght@400;700;900&family=Fredoka+One&family=Space+Grotesk:wght@400;700&family=Sora:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap');
 
 @font-face {
   font-family: "Geist Fallback";
@@ -23,9 +24,12 @@
 
 /* Hide scrollbars globally by default. */
 * {
-  font-family: var(--font-sans);
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+html, body, #root {
+  font-family: var(--font-sans);
 }
 
 .mindmap-font-scope,

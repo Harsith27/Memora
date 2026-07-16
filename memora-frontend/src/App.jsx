@@ -6,6 +6,7 @@ import { TimerProvider } from './contexts/TimerContext';
 import AchievementUnlockNotifier from './components/AchievementUnlockNotifier';
 import UserProfileDropdown from './components/UserProfileDropdown';
 import SeoManager from './components/SeoManager';
+import ApiKeyModal from './components/ApiKeyModal';
 
 const loadLanding = () => import('./pages/Landing');
 const loadDocs = () => import('./pages/Docs');
@@ -367,6 +368,7 @@ function App() {
             <OverlayScrollLockManager />
             <RoutePrefetcher />
             <AchievementUnlockNotifier />
+            <ApiKeyModal />
             <Suspense fallback={<RouteFallback />}>
               <GlobalProfileDock />
               <Routes>

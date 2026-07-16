@@ -11,7 +11,10 @@ import {
   GitBranch,
   Loader2,
   Search,
-  X
+  X,
+  Zap,
+  Brain,
+  Award
 } from 'lucide-react';
 import apiService from '../services/api';
 import docTagsService from '../services/docTagsService';
@@ -59,6 +62,22 @@ const COMMAND_HINTS = [
     subtitle: 'Template command, then type task title',
     prefix: '/task:',
     aliases: ['task', 't']
+  },
+  {
+    id: 'command_template_mindmap',
+    commandType: 'mindmap',
+    title: '/mindmap:',
+    subtitle: 'Template command, then type topic name',
+    prefix: '/mindmap:',
+    aliases: ['mindmap', 'm', 'map']
+  },
+  {
+    id: 'command_template_flashcards',
+    commandType: 'flashcards',
+    title: '/flashcard:',
+    subtitle: 'Template command, then type topic name',
+    prefix: '/flashcard:',
+    aliases: ['flashcard', 'flashcards', 'card', 'study']
   }
 ];
 
@@ -221,14 +240,21 @@ const parseDateExpression = (rawInput) => {
   return getLocalDateString(parsed);
 };
 
-const getResultIcon = (type) => {
+const getResultIcon = (type, commandType) => {
+  if (type === 'command') {
+    if (commandType === 'journal') return FileText;
+    if (commandType === 'chronicle') return Calendar;
+    if (commandType === 'graph') return GitBranch;
+    if (commandType === 'addtask') return CheckSquare;
+    if (commandType === 'task') return CheckSquare;
+  }
   if (type === 'topic') return BookOpen;
   if (type === 'folder') return Folder;
   if (type === 'document') return FileText;
   if (type === 'file') return File;
   if (type === 'mindmap') return GitBranch;
   if (type === 'calendar') return Calendar;
-  if (type === 'journal') return BookOpen;
+  if (type === 'journal') return FileText;
   if (type === 'task') return CheckSquare;
   if (type === 'command') return Command;
   return Search;
@@ -334,6 +360,8 @@ const getResultTheme = (result) => {
   if (type === 'command' && commandType === 'graph') return themes.commandGraph;
   if (type === 'command' && commandType === 'task') return themes.commandTask;
   if (type === 'command' && commandType === 'addtask') return themes.commandAddTask;
+  if (type === 'command' && commandType === 'mindmap') return themes.mindmap;
+  if (type === 'command' && commandType === 'flashcards') return themes.topic;
 
   return themes[type] || {
     iconClass: 'text-gray-200',
@@ -437,6 +465,24 @@ const getCommandMeta = (rawQuery) => {
       commandType: 'task',
       commandLabel: '/task',
       action: 'focus-task',
+      defaultExpression: ''
+    };
+  }
+
+  if (normalizedPrefix === 'mindmap' || normalizedPrefix === 'map' || normalizedPrefix === 'm') {
+    return {
+      commandType: 'mindmap',
+      commandLabel: '/mindmap',
+      action: 'focus-mindmap',
+      defaultExpression: ''
+    };
+  }
+
+  if (normalizedPrefix === 'flashcard' || normalizedPrefix === 'flashcards' || normalizedPrefix === 'card' || normalizedPrefix === 'study') {
+    return {
+      commandType: 'flashcards',
+      commandLabel: '/flashcard',
+      action: 'focus-flashcards',
       defaultExpression: ''
     };
   }
@@ -682,6 +728,62 @@ const GlobalSearchBar = ({
         score: 1000,
         payload: {
           action: 'focus-task',
+          query: expression
+        }
+      };
+    }
+
+    if (commandMeta.commandType === 'mindmap') {
+      if (!expression) {
+        return {
+          id: 'command_mindmap_prompt',
+          type: 'command',
+          commandType: 'mindmap',
+          title: 'Type a topic name after mindmap:',
+          subtitle: 'Example: mindmap:biology',
+          score: 1001,
+          payload: null,
+          isDisabled: true
+        };
+      }
+
+      return {
+        id: `command_mindmap_${expression.toLowerCase()}`,
+        type: 'command',
+        commandType: 'mindmap',
+        title: `Find mindmap: ${expression}`,
+        subtitle: 'Command: /mindmap:<topic_name>',
+        score: 1000,
+        payload: {
+          action: 'focus-mindmap',
+          query: expression
+        }
+      };
+    }
+
+    if (commandMeta.commandType === 'flashcards') {
+      if (!expression) {
+        return {
+          id: 'command_flashcards_prompt',
+          type: 'command',
+          commandType: 'flashcards',
+          title: 'Type a topic name after flashcard:',
+          subtitle: 'Example: flashcard:chemistry',
+          score: 1001,
+          payload: null,
+          isDisabled: true
+        };
+      }
+
+      return {
+        id: `command_flashcards_${expression.toLowerCase()}`,
+        type: 'command',
+        commandType: 'flashcards',
+        title: `Study flashcards: ${expression}`,
+        subtitle: 'Command: /flashcard:<topic_name>',
+        score: 1000,
+        payload: {
+          action: 'focus-flashcards',
           query: expression
         }
       };
@@ -968,6 +1070,59 @@ const GlobalSearchBar = ({
       });
     }
 
+    if (explicitCommandMeta?.commandType === 'mindmap') {
+      const queryValue = explicitCommandExpression.toLowerCase();
+      const matchedMaps = [...(catalog.mindmaps || [])]
+        .filter((map) => {
+          const title = String(map?.title || '').toLowerCase();
+          const topic = String(map?.linkedTopicTitle || '').toLowerCase();
+          return !queryValue || title.includes(queryValue) || topic.includes(queryValue);
+        })
+        .slice(0, 15);
+
+      matchedMaps.forEach((map, index) => {
+        commandSuggestionResults.push({
+          id: `command_mindmap_lookup_${map.id || index}`,
+          type: 'command',
+          commandType: 'mindmap',
+          title: `Mindmap:${map.title}`,
+          subtitle: `Linked: ${map.linkedTopicTitle || 'None'} • ${map.nodeCount} nodes`,
+          score: 1450 - index,
+          payload: {
+            action: 'focus-mindmap',
+            mapId: map.id,
+            mapTitle: map.title
+          }
+        });
+      });
+    }
+
+    if (explicitCommandMeta?.commandType === 'flashcards') {
+      const queryValue = explicitCommandExpression.toLowerCase();
+      const matchedTopics = [...(catalog.topics || [])]
+        .filter((topic) => {
+          const title = String(topic?.title || '').toLowerCase();
+          return !queryValue || title.includes(queryValue);
+        })
+        .slice(0, 15);
+
+      matchedTopics.forEach((topic, index) => {
+        commandSuggestionResults.push({
+          id: `command_flashcards_lookup_${topic._id || index}`,
+          type: 'command',
+          commandType: 'flashcards',
+          title: `Flashcards:${topic.title}`,
+          subtitle: `Study cards for topic`,
+          score: 1450 - index,
+          payload: {
+            action: 'focus-flashcards',
+            topicId: topic._id,
+            topicTitle: topic.title
+          }
+        });
+      });
+    }
+
     if (explicitCommandMeta) {
       const commandOnlyResults = [];
       if (commandResult) commandOnlyResults.push(commandResult);
@@ -991,6 +1146,28 @@ const GlobalSearchBar = ({
 
     if (commandResult) {
       composedResults.push(commandResult);
+    }
+
+    // Auto-date command suggestions
+    const autoParsedDate = parseDateExpression(trimmedQuery);
+    if (autoParsedDate) {
+      const displayDate = formatDateForDisplay(autoParsedDate);
+      composedResults.push({
+        id: `auto_journal_${autoParsedDate}`,
+        type: 'journal',
+        title: `Open Journal for ${displayDate}`,
+        subtitle: `Quick nav to journal entry`,
+        score: 1080,
+        payload: { date: autoParsedDate }
+      });
+      composedResults.push({
+        id: `auto_chronicle_${autoParsedDate}`,
+        type: 'calendar',
+        title: `Move Chronicle to ${displayDate}`,
+        subtitle: `Quick nav to calendar events`,
+        score: 1070,
+        payload: { event: { date: autoParsedDate } }
+      });
     }
 
     catalog.topics.forEach((topic) => {
@@ -1222,7 +1399,9 @@ const GlobalSearchBar = ({
   useEffect(() => {
     const handleShortcut = (event) => {
       if (!(event.ctrlKey || event.metaKey)) return;
-      if (!(event.key === '/' || event.code === 'Slash')) return;
+      const isSlash = event.key === '/' || event.code === 'Slash';
+      const isK = event.key === 'k' || event.code === 'KeyK';
+      if (!isSlash && !isK) return;
 
       event.preventDefault();
       openSearchModal();
@@ -1250,6 +1429,10 @@ const GlobalSearchBar = ({
     if (result.type === 'command') {
       if (result.payload?.action === 'fill-command') {
         const prefix = String(result.payload.prefix || '').trim();
+        if (prefix === '/add task:create') {
+          onOpenTaskCreate?.(null);
+          return true;
+        }
         if (prefix) {
           setQuery(prefix);
           setIsOpen(true);
@@ -1314,6 +1497,34 @@ const GlobalSearchBar = ({
             date: result.payload?.date || null
           }
         );
+        return true;
+      }
+
+      if (result.payload?.action === 'focus-mindmap') {
+        navigate('/mindmaps', {
+          state: {
+            globalSearch: {
+              source: 'dashboard-global-search',
+              action: 'open-map',
+              mapId: result.payload.mapId,
+              mapTitle: result.payload.mapTitle
+            }
+          }
+        });
+        return true;
+      }
+
+      if (result.payload?.action === 'focus-flashcards') {
+        navigate('/flashcards', {
+          state: {
+            globalSearch: {
+              source: 'dashboard-global-search',
+              action: 'open-flashcards',
+              topicId: result.payload.topicId,
+              topicTitle: result.payload.topicTitle
+            }
+          }
+        });
         return true;
       }
       return true;
@@ -1468,7 +1679,7 @@ const GlobalSearchBar = ({
           type="button"
           onClick={openSearchModal}
           className="inline-flex items-center justify-center w-10 h-10 rounded-lg text-gray-200 hover:text-white transition-colors"
-          title="Open Global Search (Ctrl+/)"
+          title="Open Global Search (Ctrl+K or Ctrl+/)"
         >
           <Search className="w-4 h-4" />
         </button>
@@ -1476,7 +1687,7 @@ const GlobalSearchBar = ({
 
       {isOpen ? (
         <div
-          className="fixed inset-0 z-[120] bg-black/55 backdrop-blur-[2px] flex items-center justify-center px-4"
+          className="fixed inset-0 z-[120] bg-black/65 backdrop-blur-[2px] flex items-center justify-center px-4"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
               clearDropdown();
@@ -1484,98 +1695,131 @@ const GlobalSearchBar = ({
           }}
         >
           <div
-            className="w-full max-w-[780px] rounded-xl border border-white/25 bg-black/95 shadow-[0_24px_70px_rgba(0,0,0,0.55)] overflow-hidden"
+            className="w-full max-w-[780px] rounded-2xl border border-white/10 bg-black shadow-[0_32px_80px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col"
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-              <div className="flex items-center gap-2 text-sm text-gray-300">
-                <Search className="w-4 h-4 text-white/75" />
-                <span>Global Search</span>
-              </div>
-              <button
-                type="button"
-                onClick={clearDropdown}
-                className="inline-flex items-center justify-center w-8 h-8 rounded-md border border-white/15 bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white transition-colors"
-                aria-label="Close global search"
-              >
-                <X className="w-4 h-4" />
-              </button>
+            {/* Search Input Bar (Raycast borderless prefix style) */}
+            <div className="flex items-center gap-3 px-4 border-b border-white/5 bg-transparent">
+              <Search className="w-5 h-5 text-gray-500 shrink-0" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Search for topics, files and commands..."
+                className="w-full h-13 bg-transparent text-base text-white placeholder:text-gray-500 outline-none border-none ring-0 focus:ring-0 focus:border-none focus:outline-none"
+              />
+              <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[9px] text-gray-500 font-mono select-none uppercase">
+                Esc
+              </span>
             </div>
 
-            <div className="p-4 border-b border-white/10">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/75" />
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Global Search or Commands: /"
-                  className="w-full h-11 rounded-lg border border-white/30 bg-black pl-10 pr-4 text-sm text-white placeholder:text-gray-400 outline-none focus:border-white/45 focus:ring-2 focus:ring-white/10"
-                />
-              </div>
-              <div className="mt-2 flex items-center gap-1.5 text-[10px] text-gray-400">
-                <span className="inline-flex items-center px-2 py-1 rounded-md border border-white/15 bg-black/50 tracking-wide">
-                  Ctrl+/
-                </span>
-                <span className="inline-flex items-center px-2 py-1 rounded-md border border-white/15 bg-black/50 tracking-wide">
-                  Ctrl+Enter open
-                </span>
-              </div>
-            </div>
-
-            <div className={`${SEARCH_RESULTS_PANEL_HEIGHT_CLASS} overflow-y-auto scrollbar-themed py-1`}>
+            {/* Results Grid with Section Headers */}
+            <div className="h-[420px] overflow-y-auto scrollbar-themed py-1">
               {isHydrating && results.length === 0 ? (
-                <div className="h-full px-4 flex items-center justify-center gap-2 text-sm text-gray-200">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Indexing your workspace content...</span>
+                <div className="py-20 px-4 flex flex-col items-center justify-center gap-3 text-sm text-gray-400">
+                  <Loader2 className="w-5 h-5 animate-spin text-pink-400" />
+                  <span>Indexing workspace contents...</span>
                 </div>
               ) : results.length === 0 ? (
-                <div className="h-full px-4 flex items-center justify-center text-sm text-gray-400">No matches found.</div>
+                <div className="py-16 px-4 text-center text-sm text-gray-500">No matches found.</div>
               ) : (
                 <>
-                  {results.map((result, index) => {
-                    const Icon = getResultIcon(result.type);
-                    const active = index === activeIndex;
-                    const theme = getResultTheme(result);
+                  {(() => {
+                    const getSectionName = (type) => {
+                      if (type === 'command') return 'Commands';
+                      if (type === 'topic') return 'Topics';
+                      if (type === 'document' || type === 'file' || type === 'folder') return 'Documents & Files';
+                      if (type === 'mindmap') return 'Mindmaps';
+                      if (type === 'task') return 'Tasks';
+                      if (type === 'calendar' || type === 'journal') return 'Chronicle & Journals';
+                      return 'Results';
+                    };
 
-                    return (
-                      <button
-                        key={result.id}
-                        type="button"
-                        disabled={result.isDisabled}
-                        className={`w-full text-left px-3 py-2.5 transition-colors ${
-                          active ? 'bg-white/10' : 'hover:bg-white/5'
-                        } ${result.isDisabled ? 'opacity-70 cursor-not-allowed' : ''}`}
-                        onMouseEnter={() => setActiveIndex(index)}
-                        onMouseDown={(event) => {
-                          event.preventDefault();
-                          const shouldClose = executeResult(result, false);
-                          if (shouldClose) {
-                            clearDropdown();
-                          }
-                        }}
-                      >
-                        <div className="flex items-start gap-2.5">
-                          <div className={`mt-0.5 p-1.5 rounded-md border ${theme.iconShellClass}`}>
-                            <Icon className={`w-3.5 h-3.5 ${theme.iconClass}`} />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm text-white truncate">{result.title}</p>
-                              <span className={`text-[10px] uppercase tracking-wide border rounded px-1.5 py-0.5 ${theme.badgeClass}`}>
-                                {getResultBadge(result.type)}
-                              </span>
+                    let lastSection = null;
+                    return results.map((result, index) => {
+                      const section = getSectionName(result.type);
+                      const showHeader = section !== lastSection;
+                      lastSection = section;
+
+                      const Icon = getResultIcon(result.type, result.commandType);
+                      const active = index === activeIndex;
+                      const theme = getResultTheme(result);
+
+                      let shortcutLabel = '';
+                      if (result.type === 'command') {
+                        if (result.commandType === 'journal') shortcutLabel = 'j';
+                        else if (result.commandType === 'chronicle') shortcutLabel = 'cal';
+                        else if (result.commandType === 'graph') shortcutLabel = 'g';
+                        else if (result.commandType === 'addtask') shortcutLabel = 'add';
+                        else if (result.commandType === 'task') shortcutLabel = 't';
+                      } else {
+                        shortcutLabel = getResultBadge(result.type).toLowerCase();
+                      }
+
+                      return (
+                        <div key={result.id}>
+                          {showHeader && (
+                            <div className="px-4 py-1.5 text-[9px] uppercase font-bold tracking-wider text-gray-500 bg-white/[0.01] border-y border-white/[0.03] first:border-t-0 select-none">
+                              {section}
                             </div>
-                            <p className="text-xs text-gray-400 truncate mt-0.5">{result.subtitle}</p>
-                          </div>
+                          )}
+                          <button
+                            type="button"
+                            disabled={result.isDisabled}
+                            className={`w-full text-left px-4 py-2 transition-colors flex items-center justify-between gap-3 ${
+                              active ? 'bg-white/10' : 'hover:bg-white/5'
+                            } ${result.isDisabled ? 'opacity-70 cursor-not-allowed' : ''}`}
+                            onMouseEnter={() => setActiveIndex(index)}
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              const shouldClose = executeResult(result, false);
+                              if (shouldClose) {
+                                clearDropdown();
+                              }
+                            }}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className={`p-1.5 rounded-lg border shrink-0 ${theme.iconShellClass}`}>
+                                <Icon className={`w-3.5 h-3.5 ${theme.iconClass}`} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-[13px] text-white font-medium truncate leading-snug">{result.title}</p>
+                                <p className="text-[11px] text-gray-400 truncate mt-0.5 leading-normal">{result.subtitle}</p>
+                              </div>
+                            </div>
+
+
+                          </button>
                         </div>
-                      </button>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
                 </>
               )}
+            </div>
+
+            {/* Footer with keycap guide */}
+            <div className="h-10 px-4 py-2 flex items-center justify-between border-t border-white/5 bg-white/[0.01] text-[10px] text-gray-500 font-medium select-none shrink-0">
+              <div className="flex items-center gap-1.5">
+                <Command className="w-3.5 h-3.5 text-gray-400" />
+                <span className="text-gray-400">Command Palette</span>
+              </div>
+              <div className="flex items-center gap-3 font-mono">
+                <span className="flex items-center gap-1">
+                  <span>Show</span>
+                  <kbd className="px-1 py-0.5 rounded border border-white/10 bg-white/5 text-[9px]">↩</kbd>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span>Edit</span>
+                  <kbd className="px-1 py-0.5 rounded border border-white/10 bg-white/5 text-[9px]">Ctrl ↩</kbd>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span>Toggle</span>
+                  <kbd className="px-1 py-0.5 rounded border border-white/10 bg-white/5 text-[9px]">Ctrl+K</kbd>
+                </span>
+              </div>
             </div>
           </div>
         </div>

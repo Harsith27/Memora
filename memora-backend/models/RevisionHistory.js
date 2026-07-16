@@ -313,6 +313,36 @@ revisionHistorySchema.statics.getCurrentStreak = function(userId) {
   ]);
 };
 
+// Local database mirroring middleware
+revisionHistorySchema.post('save', function(doc) {
+  try {
+    const localDb = require('../utils/localDb');
+    localDb.saveItem('revisionhistories', doc);
+  } catch (err) {
+    console.error('Local DB post-save mirror failed for revision history:', err.message);
+  }
+});
+
+revisionHistorySchema.post('remove', function(doc) {
+  try {
+    const localDb = require('../utils/localDb');
+    localDb.deleteItem('revisionhistories', doc._id);
+  } catch (err) {
+    console.error('Local DB post-remove mirror failed for revision history:', err.message);
+  }
+});
+
+revisionHistorySchema.post('findOneAndDelete', function(doc) {
+  if (doc) {
+    try {
+      const localDb = require('../utils/localDb');
+      localDb.deleteItem('revisionhistories', doc._id);
+    } catch (err) {
+      console.error('Local DB post-findOneAndDelete mirror failed for revision history:', err.message);
+    }
+  }
+});
+
 const RevisionHistory = mongoose.model('RevisionHistory', revisionHistorySchema);
 
 module.exports = RevisionHistory;

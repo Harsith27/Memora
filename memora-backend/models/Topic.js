@@ -968,6 +968,36 @@ topicSchema.statics.findBestAlternativeDate = async function(userId, originalDat
   return alternatives.length > 0 ? alternatives[0].date : null;
 };
 
+// Local database mirroring middleware
+topicSchema.post('save', function(doc) {
+  try {
+    const localDb = require('../utils/localDb');
+    localDb.saveItem('topics', doc);
+  } catch (err) {
+    console.error('Local DB post-save mirror failed for topic:', err.message);
+  }
+});
+
+topicSchema.post('remove', function(doc) {
+  try {
+    const localDb = require('../utils/localDb');
+    localDb.deleteItem('topics', doc._id);
+  } catch (err) {
+    console.error('Local DB post-remove mirror failed for topic:', err.message);
+  }
+});
+
+topicSchema.post('findOneAndDelete', function(doc) {
+  if (doc) {
+    try {
+      const localDb = require('../utils/localDb');
+      localDb.deleteItem('topics', doc._id);
+    } catch (err) {
+      console.error('Local DB post-findOneAndDelete mirror failed for topic:', err.message);
+    }
+  }
+});
+
 const Topic = mongoose.model('Topic', topicSchema);
 
 module.exports = Topic;
