@@ -1453,13 +1453,11 @@ router.patch('/:id/revision-date', [
     const targetDay = startOfDay(nextReviewDate);
     const targetReviewDate = setPreferredReviewTime(targetDay);
 
+    // Allow dragging/rescheduling past hard deadlines since the user requested it
     if (topic.deadlineType === 'hard' && topic.deadlineDate) {
       const deadlineDay = startOfDay(topic.deadlineDate);
       if (targetDay > deadlineDay) {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot move this revision after a hard deadline'
-        });
+        console.warn(`Rescheduling topic revision past hard deadline: ${topic._id}`);
       }
     }
 

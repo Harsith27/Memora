@@ -106,8 +106,8 @@ const Chronicle = () => {
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const lastFetchIdRef = useRef(0);
 
-  // Chronicle 5-day calendar scheduling grid settings
-  const [calendarViewMode, setCalendarViewMode] = useState('month'); // 'month' or '5-day'
+  // Chronicle 3-day calendar scheduling grid settings
+  const [calendarViewMode, setCalendarViewMode] = useState('month'); // 'month' or '3-day'
   const [hourHeight, setHourHeight] = useState(60); // Zoom height in px per hour track
   const [draggingCard, setDraggingCard] = useState(null); // Reference of drag event card
   const [habitPromptModal, setHabitPromptModal] = useState(null); // Reschedule series options modal
@@ -857,10 +857,10 @@ const Chronicle = () => {
 
   // Calendar navigation
   const navigateMonth = (direction) => {
-    if (calendarViewMode === '5-day') {
+    if (calendarViewMode === '3-day') {
       setCurrentDate((prev) => {
         const next = new Date(prev);
-        next.setDate(next.getDate() + direction * 5);
+        next.setDate(next.getDate() + direction * 3);
         return next;
       });
     } else {
@@ -874,7 +874,7 @@ const Chronicle = () => {
 
   const goToToday = () => {
     const today = new Date();
-    if (calendarViewMode === '5-day') {
+    if (calendarViewMode === '3-day') {
       setCurrentDate(today);
     } else {
       setCurrentDate(new Date(today.getFullYear(), today.getMonth(), 1));
@@ -938,12 +938,12 @@ const Chronicle = () => {
     return false;
   };
 
-  const generate5DayCalendar = () => {
+  const generate3DayCalendar = () => {
     const days = [];
     const base = new Date(currentDate);
     const todayStr = new Date().toDateString();
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 3; i++) {
       const current = new Date(base);
       current.setDate(base.getDate() + i);
       const dateKey = current.toDateString();
@@ -1787,14 +1787,14 @@ const Chronicle = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setCalendarViewMode('5-day')}
+                  onClick={() => setCalendarViewMode('3-day')}
                   className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-                    calendarViewMode === '5-day'
+                    calendarViewMode === '3-day'
                       ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/20'
                       : 'text-gray-400 hover:text-white border border-transparent'
                   }`}
                 >
-                  5-Day
+                  3-Day
                 </button>
               </div>
 
@@ -1823,10 +1823,10 @@ const Chronicle = () => {
               </button>
               <div className="min-w-0 flex-1 sm:flex-none sm:w-[260px] text-center">
                 <h2 className="text-lg sm:text-xl font-semibold whitespace-nowrap">
-                  {calendarViewMode === '5-day' ? (
+                  {calendarViewMode === '3-day' ? (
                     (() => {
                       const endD = new Date(currentDate);
-                      endD.setDate(endD.getDate() + 4);
+                      endD.setDate(endD.getDate() + 2);
                       const startM = monthNames[currentDate.getMonth()].slice(0, 3);
                       const endM = monthNames[endD.getMonth()].slice(0, 3);
                       if (currentDate.getMonth() === endD.getMonth()) {
@@ -1875,10 +1875,10 @@ const Chronicle = () => {
         </div>
 
         {/* Calendar Grid */}
-        {calendarViewMode === '5-day' ? (
-          <Chronicle5DayView
+        {calendarViewMode === '3-day' ? (
+          <Chronicle3DayView
             currentDate={currentDate}
-            generate5DayCalendar={generate5DayCalendar}
+            generate3DayCalendar={generate3DayCalendar}
             hourHeight={hourHeight}
             setHourHeight={setHourHeight}
             handleEventDragStart={handleEventDragStart}
@@ -1891,6 +1891,7 @@ const Chronicle = () => {
               setSelectedDate(day.date);
               setShowDayDetails(true);
             }}
+            draggingCard={draggingCard}
           />
         ) : (
           <div className="flex-1 px-3 sm:px-4 py-3 sm:py-4 overflow-auto scrollbar-hide">
@@ -2574,16 +2575,14 @@ const LiveTimeIndicator = ({ hourHeight }) => {
   const hours = now.getHours();
   const minutes = now.getMinutes();
 
-  if (hours < 7 || hours >= 23) return null;
-
-  const topOffset = ((hours - 7) * hourHeight) + ((minutes / 60) * hourHeight);
+  const topOffset = (hours * hourHeight) + ((minutes / 60) * hourHeight);
 
   return (
     <div
-      className="absolute left-0 right-0 border-t-2 border-red-500 z-10 flex items-center pointer-events-none"
+      className="absolute left-0 right-0 border-t-2 border-dashed border-amber-400 z-10 flex items-center pointer-events-none"
       style={{ top: topOffset }}
     >
-      <div className="w-2 h-2 rounded-full bg-red-500 -ml-1" />
+      <div className="w-2 h-2 rounded-full bg-amber-400 -ml-1" />
     </div>
   );
 };
@@ -2611,7 +2610,7 @@ const CalendarEventCard = ({
         ? event.difficulty <= 2 ? 5 : (event.difficulty <= 4 ? 10 : 15)
         : Math.max(15, parseTimeToMinutes(event.endTime || '10:00') - startMinutes));
 
-  const minsSinceStart = startMinutes - 420; // relative to 7 AM
+  const minsSinceStart = startMinutes; // relative to midnight (0 AM)
   const top = (minsSinceStart / 60) * hourHeight;
   const height = Math.max(22, (duration / 60) * hourHeight);
 
@@ -2625,14 +2624,6 @@ const CalendarEventCard = ({
   const cardClass = event.type === 'task'
     ? getCalendarTaskColor(event)
     : getEventColor(event);
-
-  const formatTimeStr = (mins) => {
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    const suffix = h >= 12 ? 'pm' : 'am';
-    const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    return `${displayHour}:${String(m).padStart(2, '0')}${suffix}`;
-  };
 
   const style = {
     top: `${top}px`,
@@ -2651,8 +2642,7 @@ const CalendarEventCard = ({
     >
       <div className="flex items-center space-x-1 font-semibold truncate">
         <EventIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-80" />
-        <span>{formatTimeStr(startMinutes)}</span>
-        <span className="opacity-60 font-normal">({duration}m)</span>
+        <span className="opacity-70 font-medium">({duration}m)</span>
       </div>
       <div className="font-medium truncate mt-0.5">{event.title}</div>
       {height > 50 && event.description && (
@@ -2662,9 +2652,9 @@ const CalendarEventCard = ({
   );
 };
 
-const Chronicle5DayView = ({
+const Chronicle3DayView = ({
   currentDate,
-  generate5DayCalendar,
+  generate3DayCalendar,
   hourHeight,
   setHourHeight,
   handleEventDragStart,
@@ -2673,11 +2663,29 @@ const Chronicle5DayView = ({
   getEventIcon,
   getCalendarTaskColor,
   getEventColor,
-  openDayDetails
+  openDayDetails,
+  draggingCard
 }) => {
-  const days = generate5DayCalendar();
-  const HOURS = Array.from({ length: 16 }, (_, i) => i + 7); // 7 AM to 10 PM
+  const days = generate3DayCalendar();
+  const HOURS = Array.from({ length: 24 }, (_, i) => i); // 12 AM to 11 PM
   const gridContainerRef = useRef(null);
+  const hasScrolledRef = useRef(false);
+
+  const [dragOverDay, setDragOverDay] = useState(null);
+  const [dragOverMinutes, setDragOverMinutes] = useState(null);
+
+  // Auto-scroll to center current time on load
+  useEffect(() => {
+    if (hasScrolledRef.current) return;
+    const grid = gridContainerRef.current;
+    if (!grid) return;
+    const now = new Date();
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+    const topOffset = (currentMins / 60) * hourHeight;
+    const gridHeight = grid.clientHeight || 500;
+    grid.scrollTop = topOffset - gridHeight / 2;
+    hasScrolledRef.current = true;
+  }, [hourHeight]);
 
   useEffect(() => {
     const grid = gridContainerRef.current;
@@ -2725,6 +2733,37 @@ const Chronicle5DayView = ({
     touchStartDistRef.current = 0;
   };
 
+  const handleDragOverTrack = (e, dateKey) => {
+    e.preventDefault();
+    if (!draggingCard) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relativeY = e.clientY - rect.top;
+    const minutesSinceStart = (relativeY / hourHeight) * 60;
+    const snappedMinutes = Math.max(0, Math.min(1425, Math.round(minutesSinceStart / 15) * 15));
+    setDragOverDay(dateKey);
+    setDragOverMinutes(snappedMinutes);
+  };
+
+  const handleEventDropWithReset = async (e, dateKey) => {
+    setDragOverDay(null);
+    setDragOverMinutes(null);
+    await handleEventDrop(e, dateKey);
+  };
+
+  const getDraggingCardDuration = (card) => {
+    if (card.type === 'task') return card.duration || 30;
+    if (card.type === 'revision') return card.difficulty <= 2 ? 5 : (card.difficulty <= 4 ? 10 : 15);
+    return 60;
+  };
+
+  const formatTimeStr = (mins) => {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    const suffix = h >= 12 ? 'pm' : 'am';
+    const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${displayHour}:${String(m).padStart(2, '0')}${suffix}`;
+  };
+
   return (
     <div className="flex-1 flex flex-col px-3 sm:px-4 py-3 sm:py-4 overflow-hidden min-h-[400px]">
       <div className="flex bg-black border border-white/10 rounded-t-lg divide-x divide-white/10 flex-shrink-0 pl-14 overflow-hidden">
@@ -2758,7 +2797,7 @@ const Chronicle5DayView = ({
               className="text-[10px] text-gray-500 font-mono text-right pr-2 flex items-center justify-end"
               style={{ height: hourHeight }}
             >
-              {hour === 12 ? '12 PM' : hour > 12 ? `${hour - 12} PM` : `${hour} AM`}
+              {hour === 0 ? '12 AM' : hour === 12 ? '12 PM' : hour > 12 ? `${hour - 12} PM` : `${hour} AM`}
             </div>
           ))}
         </div>
@@ -2767,22 +2806,36 @@ const Chronicle5DayView = ({
           {days.map((day) => (
             <div
               key={day.dateKey}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => handleEventDrop(e, day.dateKey)}
+              onDragOver={(e) => handleDragOverTrack(e, day.dateKey)}
+              onDragLeave={() => { setDragOverDay(null); setDragOverMinutes(null); }}
+              onDrop={(e) => handleEventDropWithReset(e, day.dateKey)}
               className={`flex-1 relative ${
                 day.isToday ? 'bg-white/[0.01]' : ''
               }`}
-              style={{ height: hourHeight * 16 }}
+              style={{ height: hourHeight * 24 }}
             >
               {HOURS.map((hour) => (
                 <div
                   key={hour}
                   className="absolute left-0 right-0 border-b border-white/5 pointer-events-none"
-                  style={{ top: (hour - 7) * hourHeight, height: hourHeight }}
+                  style={{ top: hour * hourHeight, height: hourHeight }}
                 />
               ))}
 
-              {day.isToday && <LiveTimeIndicator hourHeight={hourHeight} />}
+              {dragOverDay === day.dateKey && dragOverMinutes !== null && draggingCard && (
+                <div
+                  className="absolute border border-dashed border-amber-400 bg-amber-500/10 text-amber-200 rounded-lg p-1.5 text-[11px] overflow-hidden opacity-75 pointer-events-none z-30"
+                  style={{
+                    top: `${(dragOverMinutes / 60) * hourHeight}px`,
+                    height: `${(getDraggingCardDuration(draggingCard) / 60) * hourHeight}px`,
+                    left: '2px',
+                    width: 'calc(100% - 4px)'
+                  }}
+                >
+                  <div className="font-semibold truncate">Move to {formatTimeStr(dragOverMinutes)}</div>
+                  <div className="font-medium truncate">{draggingCard.title}</div>
+                </div>
+              )}
 
               {day.events.map((event) => (
                 <CalendarEventCard
@@ -2798,6 +2851,8 @@ const Chronicle5DayView = ({
               ))}
             </div>
           ))}
+
+          {days.some(d => d.isToday) && <LiveTimeIndicator hourHeight={hourHeight} />}
         </div>
       </div>
     </div>
