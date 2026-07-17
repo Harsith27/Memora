@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Calendar, ChevronLeft, ChevronRight, Plus, Filter,
   BookOpen, Target, Star, AlertCircle, CheckCircle, Circle,
-  CheckSquare,
+  CheckSquare, Clock,
   FileText, BarChart3, Settings, PanelLeft, PanelLeftClose,
   X, Edit3, Trash2, Save, MapPin, Users, Gift,
   Globe, GitBranch, Award, Mic
@@ -2925,15 +2925,35 @@ const Chronicle3DayView = ({
   const [dragOverDay, setDragOverDay] = useState(null);
   const [dragOverMinutes, setDragOverMinutes] = useState(null);
 
+  // Adjust hourHeight so exactly 6 hours are visible in viewport on layout load & resize
+  useEffect(() => {
+    const updateHourHeight = () => {
+      const grid = gridContainerRef.current;
+      if (!grid) return;
+      const gridHeight = grid.clientHeight || 500;
+      // Show exactly 6 hours
+      const calculatedHeight = Math.max(60, gridHeight / 6);
+      setHourHeight(calculatedHeight);
+    };
+
+    const timer = setTimeout(updateHourHeight, 100);
+    window.addEventListener('resize', updateHourHeight);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', updateHourHeight);
+    };
+  }, [setHourHeight]);
+
   // Auto-scroll to center current time on load
   useEffect(() => {
-    if (hasScrolledRef.current) return;
     const grid = gridContainerRef.current;
-    if (!grid) return;
+    if (!grid || hasScrolledRef.current) return;
+    const gridHeight = grid.clientHeight || 500;
+    if (Math.abs(hourHeight - (gridHeight / 6)) > 5) return;
+
     const now = new Date();
     const currentMins = now.getHours() * 60 + now.getMinutes();
     const topOffset = (currentMins / 60) * hourHeight;
-    const gridHeight = grid.clientHeight || 500;
     grid.scrollTop = topOffset - gridHeight / 2;
     hasScrolledRef.current = true;
   }, [hourHeight]);
@@ -3017,7 +3037,7 @@ const Chronicle3DayView = ({
 
   return (
     <div className="flex-1 flex flex-col px-3 sm:px-4 py-3 sm:py-4 overflow-hidden min-h-[400px]">
-      <div className="flex bg-black border border-white/10 rounded-t-lg divide-x divide-white/10 flex-shrink-0 pl-20 overflow-hidden">
+      <div className="flex bg-black border border-white/10 rounded-t-lg divide-x divide-white/10 flex-shrink-0 pl-16 overflow-hidden">
         {days.map((day) => (
           <button
             type="button"
@@ -3041,11 +3061,11 @@ const Chronicle3DayView = ({
         onTouchEnd={handleTouchEnd}
         className="flex-1 bg-black border-x border-b border-white/10 rounded-b-lg overflow-auto flex select-none relative"
       >
-        <div className="w-20 bg-[#07080a] border-r border-white/10 flex-shrink-0 sticky left-0 z-20">
+        <div className="w-16 bg-black border-r border-white/10 flex-shrink-0 sticky left-0 z-20">
           {HOURS.map((hour) => (
             <div
               key={hour}
-              className="text-[10px] text-gray-400 font-sans font-semibold tracking-wider text-right pr-3 flex items-center justify-end uppercase"
+              className="text-[10px] text-gray-400 font-sans font-semibold tracking-wider text-right pr-3 flex items-start pt-1.5 justify-end uppercase"
               style={{ height: hourHeight }}
             >
               {hour === 0 ? '12 AM' : hour === 12 ? '12 PM' : hour > 12 ? `${hour - 12} PM` : `${hour} AM`}
@@ -3083,8 +3103,7 @@ const Chronicle3DayView = ({
                     width: 'calc(100% - 4px)'
                   }}
                 >
-                  <div className="font-semibold truncate">Move to {formatTimeStr(dragOverMinutes)}</div>
-                  <div className="font-medium truncate">{draggingCard.title}</div>
+                  <div className="font-semibold truncate">{draggingCard.title}</div>
                 </div>
               )}
 
