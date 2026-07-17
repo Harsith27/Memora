@@ -4658,6 +4658,11 @@ const Dashboard = () => {
                                   if (ct === 'percent') return (
                                     <span className="shrink-0 inline-flex items-center justify-center w-4 h-4 rounded border border-emerald-400/40 bg-emerald-500/10 text-emerald-400 text-[9px] font-black leading-none select-none">%</span>
                                   );
+                                  if (ct === 'boolean') return (
+                                    <span className="shrink-0 inline-flex items-center justify-center w-4 h-4 rounded border border-violet-400/40 bg-violet-500/10 text-violet-400">
+                                      <CheckSquare className="w-2.5 h-2.5" />
+                                    </span>
+                                  );
                                   return null;
                                 })()}
                                 <span className="truncate">{task.title || 'Untitled task'}</span>
