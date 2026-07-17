@@ -1244,10 +1244,9 @@ const Chronicle = () => {
     const sourceCard = draggingCard;
     setDraggingCard(null);
 
-    // Format new date to standard format safely avoiding timezone shifts
-    const [yr, mo, dy] = dateKey.split('-').map(Number);
-    const targetDate = new Date(yr, mo - 1, dy); // Local timezone representation
-    const isoDate = dateKey;
+    // Format new date to standard format safely
+    const targetDate = new Date(dateKey);
+    const isoDate = toLocalDateKey(targetDate);
 
     if (sourceCard.type === 'task') {
       const userTaskStorageKey = taskService.resolveUserStorageKey(user);
@@ -2921,18 +2920,20 @@ const Chronicle3DayView = ({
   const HOURS = Array.from({ length: 24 }, (_, i) => i); // 12 AM to 11 PM
   const gridContainerRef = useRef(null);
   const hasScrolledRef = useRef(false);
+  const userHasZoomedRef = useRef(false);
 
   const [dragOverDay, setDragOverDay] = useState(null);
   const [dragOverMinutes, setDragOverMinutes] = useState(null);
 
-  // Adjust hourHeight so exactly 6 hours are visible in viewport on layout load & resize
+  // Adjust hourHeight so exactly 12 hours are visible in viewport (half size) on layout load & resize
   useEffect(() => {
     const updateHourHeight = () => {
+      if (userHasZoomedRef.current) return;
       const grid = gridContainerRef.current;
       if (!grid) return;
       const gridHeight = grid.clientHeight || 500;
-      // Show exactly 6 hours
-      const calculatedHeight = Math.max(60, gridHeight / 6);
+      // Show exactly 12 hours (reducing block height by half)
+      const calculatedHeight = Math.max(30, gridHeight / 12);
       setHourHeight(calculatedHeight);
     };
 
@@ -2949,7 +2950,7 @@ const Chronicle3DayView = ({
     const grid = gridContainerRef.current;
     if (!grid || hasScrolledRef.current) return;
     const gridHeight = grid.clientHeight || 500;
-    if (Math.abs(hourHeight - (gridHeight / 6)) > 5) return;
+    if (Math.abs(hourHeight - (gridHeight / 12)) > 5) return;
 
     const now = new Date();
     const currentMins = now.getHours() * 60 + now.getMinutes();
@@ -2965,7 +2966,8 @@ const Chronicle3DayView = ({
       if (e.ctrlKey) {
         e.preventDefault();
         const delta = e.deltaY * -0.5;
-        setHourHeight((prev) => Math.max(40, Math.min(200, prev + delta)));
+        setHourHeight((prev) => Math.max(30, Math.min(200, prev + delta)));
+        userHasZoomedRef.current = true;
       }
     };
     grid.addEventListener('wheel', onWheel, { passive: false });
@@ -2995,8 +2997,9 @@ const Chronicle3DayView = ({
         e.touches[0].clientY - e.touches[1].clientY
       );
       const ratio = dist / touchStartDistRef.current;
-      const nextHeight = Math.max(40, Math.min(200, touchStartHeightRef.current * ratio));
+      const nextHeight = Math.max(30, Math.min(200, touchStartHeightRef.current * ratio));
       setHourHeight(nextHeight);
+      userHasZoomedRef.current = true;
     }
   };
 
