@@ -928,6 +928,16 @@ const Chronicle = () => {
     return (h || 0) * 60 + (m || 0);
   };
 
+  const isEventUnscheduled = (event) => {
+    if (event.type === 'task') {
+      return !event.startTime;
+    }
+    if (event.type === 'revision') {
+      return !event.time || event.time === '09:00';
+    }
+    return false;
+  };
+
   const generate5DayCalendar = () => {
     const days = [];
     const base = new Date(currentDate);
@@ -941,28 +951,18 @@ const Chronicle = () => {
 
       // Sort them such that events that naturally have times come first, so unscheduled slots can wrap around them
       const sortedRaw = [...rawEvents].sort((a, b) => {
-        const hasTimeA = a.type === 'task' ? !!a.startTime : !!a.time;
-        const hasTimeB = b.type === 'task' ? !!b.startTime : !!b.time;
-        if (hasTimeA && !hasTimeB) return -1;
-        if (!hasTimeA && hasTimeB) return 1;
+        const unschedA = isEventUnscheduled(a);
+        const unschedB = isEventUnscheduled(b);
+        if (!unschedA && unschedB) return -1;
+        if (unschedA && !unschedB) return 1;
         return 0;
       });
 
-      let unscheduledCount = 0;
+      let unscheduledOffset = 0;
       const processedEvents = sortedRaw.map((event) => {
-        let hasTime = true;
+        const isUnscheduled = isEventUnscheduled(event);
         let timeStr = event.type === 'task' ? event.startTime : event.time;
-        if (!timeStr) {
-          hasTime = false;
-          // Assign sequential times starting at 09:00 AM, 30 mins apart
-          const minutes = 9 * 60 + unscheduledCount * 30;
-          const h = Math.floor(minutes / 60);
-          const m = minutes % 60;
-          timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-          unscheduledCount++;
-        }
 
-        const startMinutes = parseTimeToMinutes(timeStr);
         let duration = 30;
         if (event.type === 'task') {
           duration = event.duration || 30;
@@ -970,12 +970,24 @@ const Chronicle = () => {
           duration = event.difficulty <= 2 ? 5 : (event.difficulty <= 4 ? 10 : 15);
         } else if (event.type === 'event' || event.type === 'festival' || event.type === 'deadline' || event.type === 'meeting') {
           const endMinutes = parseTimeToMinutes(event.endTime || '10:00');
+          const startMinutes = parseTimeToMinutes(event.startTime || '09:00');
           duration = Math.max(15, endMinutes - startMinutes);
         }
 
+        if (isUnscheduled) {
+          // Assign sequential times starting at 09:00 AM
+          const minutes = 9 * 60 + unscheduledOffset;
+          const h = Math.floor(minutes / 60);
+          const m = minutes % 60;
+          timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+          unscheduledOffset += duration;
+        }
+
+        const startMinutes = parseTimeToMinutes(timeStr);
+
         return {
           ...event,
-          hasTime,
+          isUnscheduled,
           resolvedTimeStr: timeStr,
           startMinutes,
           endMinutes: startMinutes + duration,
@@ -1181,7 +1193,8 @@ const Chronicle = () => {
         await loadCalendarData();
       } catch (err) {
         console.error(err);
-        showToast('Failed to reschedule topic revision', 'error');
+        const errMsg = err.error || err.response?.data?.message || err.message || 'Failed to reschedule topic revision';
+        showToast(errMsg, 'error');
       } finally {
         setLoading(false);
       }
