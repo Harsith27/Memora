@@ -112,6 +112,7 @@ const Chronicle = () => {
   const [draggingCard, setDraggingCard] = useState(null); // Reference of drag event card
   const [habitPromptModal, setHabitPromptModal] = useState(null); // Reschedule series options modal
   const [selectedDetailsEvent, setSelectedDetailsEvent] = useState(null); // Selected card details sidebar panel
+  const [popoverPosition, setPopoverPosition] = useState(null); // Popover coordinates { top, left, right, bottom, width, height }
 
   // Settings + Festival preferences
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -328,6 +329,127 @@ const Chronicle = () => {
       navigate('/login');
     }
   }, [user, isLoading, navigate]);
+
+  // Arrow keys shift time by 5 minute jumps (+ or -) on selected block
+  useEffect(() => {
+    const handleKeyDown = async (e) => {
+      if (!selectedDetailsEvent) return;
+
+      // Close popover on Escape
+      if (e.key === 'Escape') {
+        setSelectedDetailsEvent(null);
+        setPopoverPosition(null);
+        return;
+      }
+
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+
+      // Prevent window scrolling when moving items
+      e.preventDefault();
+
+      const delta = e.key === 'ArrowUp' ? -5 : 5;
+      const originalMins = selectedDetailsEvent.startMinutes;
+      const newMinutes = Math.max(0, Math.min(1435, originalMins + delta));
+      if (newMinutes === originalMins) return;
+
+      const hh = Math.floor(newMinutes / 60);
+      const mm = newMinutes % 60;
+      const timeString = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+      const isoDate = selectedDetailsEvent.date || toLocalDateKey(new Date());
+
+      // Each minute represents (hourHeight / 60) pixels. Shift tooltip Y coordinates as card shifts.
+      const deltaY = (delta / 60) * hourHeight;
+
+      setSelectedDetailsEvent((prev) => ({
+        ...prev,
+        startMinutes: newMinutes,
+        resolvedTimeStr: timeString,
+        time: timeString,
+        startTime: timeString
+      }));
+
+      setPopoverPosition((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          top: prev.top + deltaY,
+          bottom: prev.bottom + deltaY
+        };
+      });
+
+      try {
+        if (selectedDetailsEvent.type === 'task') {
+          const userTaskStorageKey = taskService.resolveUserStorageKey(user);
+          const tasks = taskService.getTasks(userTaskStorageKey);
+          const taskObj = tasks.find(t => t.id === selectedDetailsEvent.taskId);
+          if (taskObj) {
+            taskObj.startTime = timeString;
+            taskObj.updatedAt = Date.now();
+            taskService.saveTasks(userTaskStorageKey, tasks);
+            await loadCalendarData();
+          }
+        } else if (selectedDetailsEvent.type === 'event' || selectedDetailsEvent.type === 'meeting' || selectedDetailsEvent.type === 'festival' || selectedDetailsEvent.type === 'deadline') {
+          const events = loadCustomEvents(user?.id);
+          const sourceDateKey = new Date(selectedDetailsEvent.date || currentDate).toDateString();
+          if (events[sourceDateKey]) {
+            const idx = events[sourceDateKey].findIndex(ev => ev.id === selectedDetailsEvent.id);
+            if (idx >= 0) {
+              const evObj = events[sourceDateKey][idx];
+              const origStartMins = parseTimeToMinutes(evObj.startTime || '09:00');
+              const origEndMins = parseTimeToMinutes(evObj.endTime || '10:00');
+              const diff = origEndMins - origStartMins;
+
+              const endHour = Math.floor((newMinutes + diff) / 60);
+              const endMins = (newMinutes + diff) % 60;
+              const endTimeStr = `${String(endHour).padStart(2, '0')}:${String(endMins).padStart(2, '0')}`;
+
+              evObj.startTime = timeString;
+              evObj.endTime = endTimeStr;
+              saveCustomEvents(events, user?.id);
+              await loadCalendarData();
+            }
+          }
+        } else if (selectedDetailsEvent.type === 'revision') {
+          const revisionDate = new Date(`${isoDate}T${timeString}:00`);
+          await apiService.updateTopicRevisionDate(selectedDetailsEvent.topicId, revisionDate.toISOString());
+          await loadCalendarData();
+        }
+      } catch (err) {
+        console.error('Failed to shift event time with arrow keys:', err);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedDetailsEvent, user, currentDate, hourHeight]);
+
+  // Click outside and scroll listener to close dynamic floating popover
+  useEffect(() => {
+    if (!selectedDetailsEvent) return;
+
+    const handleOutsideClick = (e) => {
+      const popoverEl = document.getElementById('details-popover-card');
+      if (popoverEl && !popoverEl.contains(e.target)) {
+        if (!e.target.closest('.cursor-pointer')) {
+          setSelectedDetailsEvent(null);
+          setPopoverPosition(null);
+        }
+      }
+    };
+
+    const handleScroll = () => {
+      setSelectedDetailsEvent(null);
+      setPopoverPosition(null);
+    };
+
+    window.addEventListener('click', handleOutsideClick);
+    window.addEventListener('scroll', handleScroll, true);
+
+    return () => {
+      window.removeEventListener('click', handleOutsideClick);
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [selectedDetailsEvent]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -960,7 +1082,8 @@ const Chronicle = () => {
         return 0;
       });
 
-      let unscheduledOffset = 0;
+      let unscheduledTaskOffset = 0;
+      let unscheduledRevisionOffset = 0;
       const processedEvents = sortedRaw.map((event) => {
         const isUnscheduled = isEventUnscheduled(event);
         let timeStr = event.type === 'task' ? event.startTime : event.time;
@@ -977,12 +1100,19 @@ const Chronicle = () => {
         }
 
         if (isUnscheduled) {
-          // Assign sequential times starting at 09:00 AM
-          const minutes = 9 * 60 + unscheduledOffset;
-          const h = Math.floor(minutes / 60);
-          const m = minutes % 60;
-          timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-          unscheduledOffset += duration;
+          if (event.type === 'revision') {
+            const minutes = 17 * 60 + unscheduledRevisionOffset;
+            const h = Math.floor(minutes / 60);
+            const m = minutes % 60;
+            timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+            unscheduledRevisionOffset += duration;
+          } else {
+            const minutes = 9 * 60 + unscheduledTaskOffset;
+            const h = Math.floor(minutes / 60);
+            const m = minutes % 60;
+            timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+            unscheduledTaskOffset += duration;
+          }
         }
 
         const startMinutes = parseTimeToMinutes(timeStr);
@@ -1104,11 +1234,9 @@ const Chronicle = () => {
     const rect = e.currentTarget.getBoundingClientRect();
     const relativeY = e.clientY - rect.top;
     
-    // Calculate snapped time string
+    // Calculate snapped time string (relative to 12 AM / 00:00 midnight)
     const minutesSinceStart = (relativeY / hourHeight) * 60;
-    const startOfDayMinutes = 7 * 60; // 07:00 AM
-    const totalMinutes = startOfDayMinutes + minutesSinceStart;
-    const snappedMinutes = Math.max(420, Math.min(1380, Math.round(totalMinutes / 15) * 15)); // Clamped between 7 AM and 11 PM
+    const snappedMinutes = Math.max(0, Math.min(1425, Math.round(minutesSinceStart / 15) * 15));
     const snappedHour = Math.floor(snappedMinutes / 60);
     const finalMinutes = snappedMinutes % 60;
     const timeString = `${String(snappedHour).padStart(2, '0')}:${String(finalMinutes).padStart(2, '0')}`;
@@ -1116,9 +1244,10 @@ const Chronicle = () => {
     const sourceCard = draggingCard;
     setDraggingCard(null);
 
-    // Format new date to standard format
-    const targetDate = new Date(dateKey);
-    const isoDate = toLocalDateKey(targetDate);
+    // Format new date to standard format safely avoiding timezone shifts
+    const [yr, mo, dy] = dateKey.split('-').map(Number);
+    const targetDate = new Date(yr, mo - 1, dy); // Local timezone representation
+    const isoDate = dateKey;
 
     if (sourceCard.type === 'task') {
       const userTaskStorageKey = taskService.resolveUserStorageKey(user);
@@ -1910,59 +2039,74 @@ const Chronicle = () => {
                 setShowDayDetails(true);
               }}
               draggingCard={draggingCard}
-              onCardClick={(ev) => setSelectedDetailsEvent(ev)}
+              onCardClick={(ev, pos) => {
+                setSelectedDetailsEvent(ev);
+                setPopoverPosition(pos);
+              }}
             />
-            {selectedDetailsEvent && (
-              <div className="w-80 border-l border-white/10 bg-[#09090b] p-4 overflow-y-auto flex-shrink-0 flex flex-col justify-between z-30">
+            {selectedDetailsEvent && popoverPosition && (
+              <div
+                id="details-popover-card"
+                className="fixed bg-[#1b1b1f] border border-white/10 rounded-lg shadow-2xl p-4 w-80 z-50 flex flex-col justify-between"
+                style={{
+                  top: `${Math.min(window.innerHeight - 260, Math.max(10, popoverPosition.top))}px`,
+                  left: `${popoverPosition.right + 320 > window.innerWidth
+                    ? popoverPosition.left - 328
+                    : popoverPosition.right + 8}px`
+                }}
+              >
                 <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Event Details</h3>
-                    <button
-                      onClick={() => setSelectedDetailsEvent(null)}
-                      className="p-1 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white animate-pulse"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <h3 className="text-sm font-semibold text-white leading-snug truncate">
+                      {selectedDetailsEvent.title}
+                    </h3>
+                    <div className="flex items-center space-x-1 flex-shrink-0">
+                      <button
+                        onClick={() => {
+                          setSelectedDetailsEvent(null);
+                          setPopoverPosition(null);
+                        }}
+                        className="p-1 hover:bg-white/10 rounded-md transition-colors text-gray-400 hover:text-white"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  
-                  <div className="space-y-4">
-                    <div>
-                      <div className="text-[10px] text-gray-500 uppercase font-semibold">Title</div>
-                      <div className="text-sm font-semibold text-white mt-0.5">{selectedDetailsEvent.title}</div>
+
+                  <div className="space-y-3.5 text-[11px]">
+                    <div className="flex items-center space-x-2 text-gray-300">
+                      <Clock className="w-3.5 h-3.5 text-gray-400" />
+                      <span>
+                        {(() => {
+                          const [yr, mo, dy] = (selectedDetailsEvent.date || '').split('-').map(Number);
+                          const dateObj = (yr && mo && dy) ? new Date(yr, mo - 1, dy) : new Date();
+                          const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+                          const dateStr = dateObj.toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+                          return `${weekday} ${dateStr} at ${selectedDetailsEvent.resolvedTimeStr || selectedDetailsEvent.time || '09:00'} (${selectedDetailsEvent.duration}m)`;
+                        })()}
+                      </span>
                     </div>
 
-                    <div>
-                      <div className="text-[10px] text-gray-500 uppercase font-semibold">Type</div>
-                      <div className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase mt-1 bg-yellow-500/10 text-yellow-300">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-[10px] uppercase font-semibold text-gray-500">Category:</span>
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-yellow-500/10 text-yellow-300">
                         {selectedDetailsEvent.type}
-                      </div>
+                      </span>
                     </div>
-
-                    <div>
-                      <div className="text-[10px] text-gray-500 uppercase font-semibold">Duration</div>
-                      <div className="text-xs text-gray-300 mt-0.5">{selectedDetailsEvent.duration} minutes</div>
-                    </div>
-
-                    {selectedDetailsEvent.resolvedTimeStr && (
-                      <div>
-                        <div className="text-[10px] text-gray-500 uppercase font-semibold">Scheduled Time</div>
-                        <div className="text-xs text-gray-300 mt-0.5">{selectedDetailsEvent.resolvedTimeStr}</div>
-                      </div>
-                    )}
 
                     {selectedDetailsEvent.description && (
-                      <div>
-                        <div className="text-[10px] text-gray-500 uppercase font-semibold">Description</div>
-                        <div className="text-xs text-gray-400 mt-0.5 whitespace-pre-wrap leading-relaxed">
+                      <div className="border-t border-white/5 pt-2">
+                        <div className="text-[10px] text-gray-500 uppercase font-semibold mb-0.5">Description</div>
+                        <p className="text-gray-400 whitespace-pre-wrap leading-relaxed">
                           {selectedDetailsEvent.description}
-                        </div>
+                        </p>
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-white/10 mt-6">
-                  {selectedDetailsEvent.type === 'task' && (
+                {selectedDetailsEvent.type === 'task' && (
+                  <div className="pt-4 border-t border-white/5 mt-4">
                     <button
                       type="button"
                       onClick={() => {
@@ -1976,14 +2120,15 @@ const Chronicle = () => {
                           showToast(tasks[idx].completed ? 'Task completed!' : 'Task marked pending');
                           loadCalendarData();
                           setSelectedDetailsEvent(null);
+                          setPopoverPosition(null);
                         }
                       }}
-                      className="w-full py-2 rounded bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 hover:bg-yellow-500/20 text-xs font-semibold transition-all"
+                      className="w-full py-1.5 rounded bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 hover:bg-yellow-500/20 text-xs font-semibold transition-all"
                     >
                       {selectedDetailsEvent.completed ? 'Mark Pending' : 'Mark Completed'}
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2734,20 +2879,25 @@ const CalendarEventCard = ({
       onClick={(e) => {
         // Prevent click events from triggering day selection actions
         e.stopPropagation();
-        onCardClick && onCardClick(event);
+        const rect = e.currentTarget.getBoundingClientRect();
+        const position = {
+          top: rect.top,
+          left: rect.left,
+          right: rect.right,
+          bottom: rect.bottom,
+          width: rect.width,
+          height: rect.height
+        };
+        onCardClick && onCardClick(event, position);
       }}
       className={`absolute rounded-[3px] p-1.5 text-left text-[11px] overflow-hidden select-none cursor-pointer hover:cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${cardClass}`}
       style={style}
-      title={`${event.title} (${duration}m)${event.description ? ` - ${event.description}` : ''}`}
+      title={`${event.title}`}
     >
-      <div className="flex items-center space-x-1 font-semibold truncate">
-        <EventIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-80" />
-        <span className="opacity-70 font-medium">({duration}m)</span>
+      <div className="flex items-center space-x-1.5 font-medium truncate">
+        <EventIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-85" />
+        <span className="truncate">{event.title}</span>
       </div>
-      <div className="font-medium truncate mt-0.5">{event.title}</div>
-      {height > 50 && event.description && (
-        <div className="text-[10px] opacity-70 mt-1 truncate">{event.description}</div>
-      )}
     </div>
   );
 };
