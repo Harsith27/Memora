@@ -2046,7 +2046,7 @@ const Chronicle = () => {
             {selectedDetailsEvent && popoverPosition && (
               <div
                 id="details-popover-card"
-                className="fixed bg-[#1b1b1f] border border-white/10 rounded-lg shadow-2xl p-4 w-80 z-50 flex flex-col justify-between"
+                className="fixed bg-black border border-white/20 rounded-xl shadow-2xl p-5 w-80 z-50 flex flex-col justify-between"
                 style={{
                   top: `${Math.min(window.innerHeight - 260, Math.max(10, popoverPosition.top))}px`,
                   left: `${popoverPosition.right + 320 > window.innerWidth
@@ -2072,9 +2072,9 @@ const Chronicle = () => {
                     </div>
                   </div>
 
-                  <div className="space-y-3.5 text-[11px]">
+                  <div className="space-y-3 text-[11px]">
                     <div className="flex items-center space-x-2 text-gray-300">
-                      <Clock className="w-3.5 h-3.5 text-gray-400" />
+                      <Clock className="w-3.5 h-3.5 text-yellow-300" />
                       <span>
                         {(() => {
                           const [yr, mo, dy] = (selectedDetailsEvent.date || '').split('-').map(Number);
@@ -2088,13 +2088,13 @@ const Chronicle = () => {
 
                     <div className="flex items-center space-x-2">
                       <span className="text-[10px] uppercase font-semibold text-gray-500">Category:</span>
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-yellow-500/10 text-yellow-300">
+                      <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase bg-yellow-500/10 text-yellow-300 border border-yellow-500/20">
                         {selectedDetailsEvent.type}
                       </span>
                     </div>
 
                     {selectedDetailsEvent.description && (
-                      <div className="border-t border-white/5 pt-2">
+                      <div className="border-t border-white/10 pt-2.5">
                         <div className="text-[10px] text-gray-500 uppercase font-semibold mb-0.5">Description</div>
                         <p className="text-gray-400 whitespace-pre-wrap leading-relaxed">
                           {selectedDetailsEvent.description}
@@ -2105,7 +2105,7 @@ const Chronicle = () => {
                 </div>
 
                 {selectedDetailsEvent.type === 'task' && (
-                  <div className="pt-4 border-t border-white/5 mt-4">
+                  <div className="pt-4 border-t border-white/10 mt-4">
                     <button
                       type="button"
                       onClick={() => {
@@ -2122,7 +2122,7 @@ const Chronicle = () => {
                           setPopoverPosition(null);
                         }
                       }}
-                      className="w-full py-1.5 rounded bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 hover:bg-yellow-500/20 text-xs font-semibold transition-all"
+                      className="w-full py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 hover:bg-yellow-500/20 text-xs font-semibold transition-all"
                     >
                       {selectedDetailsEvent.completed ? 'Mark Pending' : 'Mark Completed'}
                     </button>
@@ -2765,30 +2765,34 @@ const Chronicle = () => {
       {/* Habit Prompt Modal */}
       {habitPromptModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0c0d10] border border-white/10 rounded-xl p-6 max-w-sm w-full relative shadow-2xl">
-            <h3 className="text-base font-semibold text-white mb-2">Reschedule Recurring Habit</h3>
-            <p className="text-xs text-gray-400 mb-5">
-              You are moving an occurrence of a recurring habit. How would you like to apply this shift?
-            </p>
-            <div className="flex flex-col gap-2">
+          <div className="bg-black border border-white/20 rounded-xl max-w-sm w-full relative shadow-2xl overflow-hidden">
+            <div className="p-5 border-b border-white/10">
+              <h3 className="text-base font-semibold text-white">Reschedule Recurring Habit</h3>
+              <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">
+                You are moving an occurrence of a recurring habit. How would you like to apply this shift?
+              </p>
+            </div>
+            <div className="p-5 flex flex-col gap-3">
               <button
                 type="button"
                 onClick={() => handleApplyHabitShift('single')}
-                className="w-full py-2.5 px-3 bg-white/5 hover:bg-white/10 text-white rounded-lg text-xs font-medium transition-colors border border-white/10 text-left"
+                className="w-full py-3 px-4 bg-white/[0.04] hover:bg-white/[0.08] text-white rounded-xl text-xs font-semibold transition-all border border-white/10 text-left hover:border-white/20 flex flex-col gap-0.5"
               >
-                <strong>This occurrence only</strong> (Shift only today's card)
+                <span className="text-white font-semibold">This occurrence only</span>
+                <span className="text-[10px] text-gray-400 font-normal">Shift only today's card's schedule</span>
               </button>
               <button
                 type="button"
                 onClick={() => handleApplyHabitShift('future')}
-                className="w-full py-2.5 px-3 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-300 rounded-lg text-xs font-medium transition-colors border border-yellow-500/20 text-left"
+                className="w-full py-3 px-4 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-300 rounded-xl text-xs font-semibold transition-all border border-yellow-500/20 text-left hover:border-yellow-500/30 flex flex-col gap-0.5"
               >
-                <strong>All future occurrences</strong> (Shift this and subsequent cards)
+                <span className="text-yellow-300 font-semibold">All future occurrences</span>
+                <span className="text-[10px] text-yellow-400/70 font-normal">Shift this and all subsequent recurring cards</span>
               </button>
               <button
                 type="button"
                 onClick={() => setHabitPromptModal(null)}
-                className="w-full py-2 text-center text-gray-500 hover:text-white rounded-lg text-xs transition-colors mt-2"
+                className="w-full py-2.5 text-center text-gray-400 hover:text-white rounded-lg text-xs font-medium transition-colors mt-2"
               >
                 Cancel
               </button>

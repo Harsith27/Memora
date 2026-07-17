@@ -1450,8 +1450,11 @@ router.patch('/:id/revision-date', [
       });
     }
 
+    const targetDate = new Date(nextReviewDate);
     const targetDay = startOfDay(nextReviewDate);
-    const targetReviewDate = setPreferredReviewTime(targetDay);
+    const targetReviewDate = (targetDate.getHours() !== 0 || targetDate.getMinutes() !== 0 || targetDate.getSeconds() !== 0)
+      ? targetDate
+      : setPreferredReviewTime(targetDay);
 
     // Allow dragging/rescheduling past hard deadlines since the user requested it
     if (topic.deadlineType === 'hard' && topic.deadlineDate) {
