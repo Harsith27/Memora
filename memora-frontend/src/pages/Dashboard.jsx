@@ -706,7 +706,7 @@ const StreakActivityDialogContent = ({
                 <div className="absolute right-0 mt-1.5 w-60 bg-[#090909] border border-white/10 rounded-lg shadow-2xl p-1 max-h-48 overflow-y-auto scrollbar-themed z-50 flex flex-col">
                   <button
                     type="button"
-                    onClick={() => {
+                    onMouseDown={() => {
                       setSelectedHabitSeriesId('all');
                       setHabitSearchInput('All Habits');
                       setDropdownOpen(false);
@@ -735,7 +735,7 @@ const StreakActivityDialogContent = ({
                         <button
                           type="button"
                           key={h.seriesId}
-                          onClick={() => {
+                          onMouseDown={() => {
                             setSelectedHabitSeriesId(h.seriesId);
                             setHabitSearchInput(h.title);
                             setDropdownOpen(false);

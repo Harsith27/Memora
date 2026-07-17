@@ -111,6 +111,7 @@ const Chronicle = () => {
   const [hourHeight, setHourHeight] = useState(60); // Zoom height in px per hour track
   const [draggingCard, setDraggingCard] = useState(null); // Reference of drag event card
   const [habitPromptModal, setHabitPromptModal] = useState(null); // Reschedule series options modal
+  const [selectedDetailsEvent, setSelectedDetailsEvent] = useState(null); // Selected card details sidebar panel
 
   // Settings + Festival preferences
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -567,7 +568,8 @@ const Chronicle = () => {
         isMissed,
         taskType: task.taskType || taskService.TASK_TYPES.ONE_TIME,
         startTime: task.startTime || null,
-        duration: Number(task.duration || 30)
+        duration: Number(task.duration || 30),
+        completionType: task.completionType || 'boolean'
       });
     });
 
@@ -1022,7 +1024,7 @@ const Chronicle = () => {
         }
       });
 
-      // For each event, determine the maximum column overlaps
+      // For each event, determine the maximum column overlaps locally
       processedEvents.forEach((ev) => {
         const overlaps = processedEvents.filter(other => 
           other.id !== ev.id &&
@@ -1030,9 +1032,14 @@ const Chronicle = () => {
           other.startMinutes < ev.endMinutes
         );
 
-        const uniqueCols = new Set(overlaps.map(o => o.colIndex));
-        uniqueCols.add(ev.colIndex);
-        ev.colCount = Math.max(columns.length, uniqueCols.size);
+        if (overlaps.length === 0) {
+          ev.colIndex = 0;
+          ev.colCount = 1;
+        } else {
+          const uniqueCols = new Set(overlaps.map(o => o.colIndex));
+          uniqueCols.add(ev.colIndex);
+          ev.colCount = Math.max(1, uniqueCols.size);
+        }
       });
 
       days.push({
@@ -1470,7 +1477,17 @@ const Chronicle = () => {
       return 'bg-slate-500/30 text-slate-100 border-slate-300/40';
     }
 
-    return 'bg-teal-500/30 text-teal-100 border-teal-300/55';
+    const ct = String(event?.completionType || 'boolean').toLowerCase();
+    if (ct === 'quantity') {
+      return 'bg-blue-500/30 text-blue-100 border-blue-400/55';
+    }
+    if (ct === 'time') {
+      return 'bg-orange-500/30 text-orange-100 border-orange-400/55';
+    }
+    if (ct === 'percent') {
+      return 'bg-emerald-500/30 text-emerald-100 border-emerald-400/55';
+    }
+    return 'bg-violet-500/30 text-violet-100 border-violet-400/55';
   };
 
   const getDifficultyBadgeColor = (difficulty) => {
@@ -1876,23 +1893,100 @@ const Chronicle = () => {
 
         {/* Calendar Grid */}
         {calendarViewMode === '3-day' ? (
-          <Chronicle3DayView
-            currentDate={currentDate}
-            generate3DayCalendar={generate3DayCalendar}
-            hourHeight={hourHeight}
-            setHourHeight={setHourHeight}
-            handleEventDragStart={handleEventDragStart}
-            handleEventDrop={handleEventDrop}
-            parseTimeToMinutes={parseTimeToMinutes}
-            getEventIcon={getEventIcon}
-            getCalendarTaskColor={getCalendarTaskColor}
-            getEventColor={getEventColor}
-            openDayDetails={(day) => {
-              setSelectedDate(day.date);
-              setShowDayDetails(true);
-            }}
-            draggingCard={draggingCard}
-          />
+          <div className="flex-1 flex overflow-hidden relative">
+            <Chronicle3DayView
+              currentDate={currentDate}
+              generate3DayCalendar={generate3DayCalendar}
+              hourHeight={hourHeight}
+              setHourHeight={setHourHeight}
+              handleEventDragStart={handleEventDragStart}
+              handleEventDrop={handleEventDrop}
+              parseTimeToMinutes={parseTimeToMinutes}
+              getEventIcon={getEventIcon}
+              getCalendarTaskColor={getCalendarTaskColor}
+              getEventColor={getEventColor}
+              openDayDetails={(day) => {
+                setSelectedDate(day.date);
+                setShowDayDetails(true);
+              }}
+              draggingCard={draggingCard}
+              onCardClick={(ev) => setSelectedDetailsEvent(ev)}
+            />
+            {selectedDetailsEvent && (
+              <div className="w-80 border-l border-white/10 bg-[#09090b] p-4 overflow-y-auto flex-shrink-0 flex flex-col justify-between z-30">
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Event Details</h3>
+                    <button
+                      onClick={() => setSelectedDetailsEvent(null)}
+                      className="p-1 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white animate-pulse"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <div className="text-[10px] text-gray-500 uppercase font-semibold">Title</div>
+                      <div className="text-sm font-semibold text-white mt-0.5">{selectedDetailsEvent.title}</div>
+                    </div>
+
+                    <div>
+                      <div className="text-[10px] text-gray-500 uppercase font-semibold">Type</div>
+                      <div className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase mt-1 bg-yellow-500/10 text-yellow-300">
+                        {selectedDetailsEvent.type}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-[10px] text-gray-500 uppercase font-semibold">Duration</div>
+                      <div className="text-xs text-gray-300 mt-0.5">{selectedDetailsEvent.duration} minutes</div>
+                    </div>
+
+                    {selectedDetailsEvent.resolvedTimeStr && (
+                      <div>
+                        <div className="text-[10px] text-gray-500 uppercase font-semibold">Scheduled Time</div>
+                        <div className="text-xs text-gray-300 mt-0.5">{selectedDetailsEvent.resolvedTimeStr}</div>
+                      </div>
+                    )}
+
+                    {selectedDetailsEvent.description && (
+                      <div>
+                        <div className="text-[10px] text-gray-500 uppercase font-semibold">Description</div>
+                        <div className="text-xs text-gray-400 mt-0.5 whitespace-pre-wrap leading-relaxed">
+                          {selectedDetailsEvent.description}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-white/10 mt-6">
+                  {selectedDetailsEvent.type === 'task' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const userTaskStorageKey = taskService.resolveUserStorageKey(user);
+                        const tasks = taskService.getTasks(userTaskStorageKey);
+                        const idx = tasks.findIndex(t => t.id === selectedDetailsEvent.taskId);
+                        if (idx >= 0) {
+                          tasks[idx].completed = !tasks[idx].completed;
+                          tasks[idx].updatedAt = Date.now();
+                          taskService.saveTasks(userTaskStorageKey, tasks);
+                          showToast(tasks[idx].completed ? 'Task completed!' : 'Task marked pending');
+                          loadCalendarData();
+                          setSelectedDetailsEvent(null);
+                        }
+                      }}
+                      className="w-full py-2 rounded bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 hover:bg-yellow-500/20 text-xs font-semibold transition-all"
+                    >
+                      {selectedDetailsEvent.completed ? 'Mark Pending' : 'Mark Completed'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         ) : (
           <div className="flex-1 px-3 sm:px-4 py-3 sm:py-4 overflow-auto scrollbar-hide">
             <div className="bg-black rounded-lg border border-white/10 overflow-hidden">
@@ -2594,7 +2688,8 @@ const CalendarEventCard = ({
   parseTimeToMinutes,
   getEventIcon,
   getCalendarTaskColor,
-  getEventColor
+  getEventColor,
+  onCardClick
 }) => {
   const EventIcon = getEventIcon(event);
   
@@ -2636,9 +2731,14 @@ const CalendarEventCard = ({
     <div
       draggable
       onDragStart={onDragStart}
-      className={`absolute rounded-lg p-1.5 text-left text-[11px] overflow-hidden select-none cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${cardClass}`}
+      onClick={(e) => {
+        // Prevent click events from triggering day selection actions
+        e.stopPropagation();
+        onCardClick && onCardClick(event);
+      }}
+      className={`absolute rounded-[3px] p-1.5 text-left text-[11px] overflow-hidden select-none cursor-pointer hover:cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${cardClass}`}
       style={style}
-      title={`${event.title} (${duration} mins)`}
+      title={`${event.title} (${duration}m)${event.description ? ` - ${event.description}` : ''}`}
     >
       <div className="flex items-center space-x-1 font-semibold truncate">
         <EventIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-80" />
@@ -2664,7 +2764,8 @@ const Chronicle3DayView = ({
   getCalendarTaskColor,
   getEventColor,
   openDayDetails,
-  draggingCard
+  draggingCard,
+  onCardClick
 }) => {
   const days = generate3DayCalendar();
   const HOURS = Array.from({ length: 24 }, (_, i) => i); // 12 AM to 11 PM
@@ -2766,7 +2867,7 @@ const Chronicle3DayView = ({
 
   return (
     <div className="flex-1 flex flex-col px-3 sm:px-4 py-3 sm:py-4 overflow-hidden min-h-[400px]">
-      <div className="flex bg-black border border-white/10 rounded-t-lg divide-x divide-white/10 flex-shrink-0 pl-14 overflow-hidden">
+      <div className="flex bg-black border border-white/10 rounded-t-lg divide-x divide-white/10 flex-shrink-0 pl-20 overflow-hidden">
         {days.map((day) => (
           <button
             type="button"
@@ -2790,11 +2891,11 @@ const Chronicle3DayView = ({
         onTouchEnd={handleTouchEnd}
         className="flex-1 bg-black border-x border-b border-white/10 rounded-b-lg overflow-auto flex select-none relative"
       >
-        <div className="w-14 bg-[#07080a] border-r border-white/10 flex-shrink-0 sticky left-0 z-20">
+        <div className="w-20 bg-[#07080a] border-r border-white/10 flex-shrink-0 sticky left-0 z-20">
           {HOURS.map((hour) => (
             <div
               key={hour}
-              className="text-[10px] text-gray-500 font-mono text-right pr-2 flex items-center justify-end"
+              className="text-[10px] text-gray-400 font-sans font-semibold tracking-wider text-right pr-3 flex items-center justify-end uppercase"
               style={{ height: hourHeight }}
             >
               {hour === 0 ? '12 AM' : hour === 12 ? '12 PM' : hour > 12 ? `${hour - 12} PM` : `${hour} AM`}
@@ -2847,6 +2948,7 @@ const Chronicle3DayView = ({
                   getEventIcon={getEventIcon}
                   getCalendarTaskColor={getCalendarTaskColor}
                   getEventColor={getEventColor}
+                  onCardClick={onCardClick}
                 />
               ))}
             </div>
