@@ -1365,21 +1365,40 @@ router.put('/preferences', [
  */
 router.post('/validate-key', authenticateToken, async (req, res) => {
   try {
-    const keysArray = [];
+    const { groqApiKey } = req.body;
+    const customKeys = [];
     if (groqApiKey && typeof groqApiKey === 'string') {
       const split = groqApiKey.split(',')
         .map(k => String(k || '').trim())
         .filter(k => k && k.toLowerCase() !== 'null' && k.toLowerCase() !== 'undefined');
-      keysArray.push(...split);
+      customKeys.push(...split);
     }
-    
-    if (keysArray.length === 0) {
-      const { getApiKey } = require('../utils/groq');
-      const defaultKey = getApiKey();
-      if (defaultKey) {
-        keysArray.push(defaultKey);
+
+    const sysKeys = [
+      process.env.GROQ_API_KEY1,
+      process.env.GROQ_API_KEY2,
+      process.env.GROQ_API_KEY3,
+      process.env.GROQ_API_KEY
+    ].map(k => String(k || '').trim())
+     .filter(k => k && k.toLowerCase() !== 'null' && k.toLowerCase() !== 'undefined');
+
+    const keysArray = [];
+    customKeys.forEach((key, index) => {
+      keysArray.push({
+        key,
+        label: `User Key #${index + 1}`
+      });
+    });
+
+    sysKeys.forEach((key, index) => {
+      // Deduplicate: don't validate system key if it is identical to user custom key
+      if (!customKeys.includes(key)) {
+        keysArray.push({
+          key,
+          label: `System Key #${index + 1}`
+        });
       }
-    }
+    });
 
     if (keysArray.length === 0) {
       return res.status(400).json({ success: false, message: 'No Groq API Key available to validate.' });
@@ -1387,7 +1406,7 @@ router.post('/validate-key', authenticateToken, async (req, res) => {
 
     const results = [];
     for (let i = 0; i < keysArray.length; i++) {
-      const key = keysArray[i];
+      const { key, label } = keysArray[i];
       const maskedKey = key.length > 12 
         ? `${key.slice(0, 7)}...${key.slice(-4)}` 
         : 'Invalid Key Format';
@@ -1412,6 +1431,7 @@ router.post('/validate-key', authenticateToken, async (req, res) => {
           try { parsed = JSON.parse(errorText); } catch (_) {}
           results.push({
             keyIndex: i + 1,
+            label,
             maskedKey,
             success: false,
             message: parsed?.error?.message || 'Authentication test failed. Key is invalid or expired.'
@@ -1435,6 +1455,7 @@ router.post('/validate-key', authenticateToken, async (req, res) => {
 
         results.push({
           keyIndex: i + 1,
+          label,
           maskedKey,
           success: true,
           limits
@@ -1443,6 +1464,7 @@ router.post('/validate-key', authenticateToken, async (req, res) => {
       } catch (err) {
         results.push({
           keyIndex: i + 1,
+          label,
           maskedKey,
           success: false,
           message: err.message || 'Connection timeout.'

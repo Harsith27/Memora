@@ -411,7 +411,7 @@ const Profile = () => {
       if (response && response.success) {
         setValidateStatus('success');
         setValidateMessage(response.message || 'API Key is active and verified.');
-        setValidateLimits(response.limits);
+        setValidateLimits(response.keys || response.limits);
       } else {
         setValidateStatus('error');
         setValidateMessage(response.message || 'Key validation failed. Make sure it is active.');
@@ -1445,14 +1445,14 @@ const Profile = () => {
                           ? validateLimits 
                           : (validateLimits.keys || [{ keyIndex: 1, success: true, maskedKey: 'Stored key', limits: validateLimits }])
                         ).map((keyData) => {
-                          const { keyIndex, success, limits, message, maskedKey } = keyData;
+                          const { keyIndex, success, limits, message, maskedKey, label } = keyData;
                           const tReset = resetTimes[keyIndex]?.tokens || 0;
                           const rReset = resetTimes[keyIndex]?.requests || 0;
 
                           return (
                             <div key={keyIndex} className="border border-white/10 rounded-xl bg-white/[0.02] p-4 sm:p-5 space-y-4">
                               <h3 className="text-sm font-semibold text-rose-100 tracking-wider uppercase flex items-center justify-between">
-                                <span>Key #{keyIndex} Quota Limits <span className="text-xs text-gray-500 font-mono normal-case">({maskedKey})</span></span>
+                                <span>{label || `Key #${keyIndex}`} Quota Limits <span className="text-xs text-gray-500 font-mono normal-case">( {maskedKey} )</span></span>
                                 {success ? (
                                   <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full font-bold">Active</span>
                                 ) : (

@@ -6,17 +6,17 @@ import { useTimer } from '../contexts/TimerContext';
 import Toast from '../components/Toast';
 import journalService from '../services/journalService';
 
-import bg1 from '../assets/focusmode_bgs/abstract-black-leather-geometric-pattern-with-subtle-highlights-photo.jpg';
-import bg2 from '../assets/focusmode_bgs/abstract-blue-light-pipe-speed-zoom-black-background-technology_1142-9980.avif';
-import bg3 from '../assets/focusmode_bgs/black-background-with-faint-outline-mountain-range_1170794-257886.avif';
-import bg4 from '../assets/focusmode_bgs/images.jpg';
-import bg5 from '../assets/focusmode_bgs/wallpapersden.com_macbook-pro-m3-4k_3456x2234.jpg';
+import bg1 from '../assets/focusmode_bgs/bg1.jpg';
+import bg2 from '../assets/focusmode_bgs/bg2.jpg';
+import bg3 from '../assets/focusmode_bgs/bg3.jpg';
+import bg4 from '../assets/focusmode_bgs/bg4.jpg';
+import bg5 from '../assets/focusmode_bgs/bg5.jpg';
 
 const focusThemes = [
   {
     id: 'geometric-leather',
-    name: 'Geometric Leather',
-    description: 'Black leather geometric patterns with subtle highlights.',
+    name: 'Focus Wallpaper 1',
+    description: 'Custom aesthetic focus wallpaper 1.',
     fontFamily: '"Geist", "Inter", sans-serif',
     backgroundImage: `url(${bg1})`,
     backgroundSize: 'cover',
@@ -26,8 +26,8 @@ const focusThemes = [
   },
   {
     id: 'speed-zoom',
-    name: 'Speed Zoom',
-    description: 'Abstract blue light pipe speed zoom background.',
+    name: 'Focus Wallpaper 2',
+    description: 'Custom aesthetic focus wallpaper 2.',
     fontFamily: '"Space Grotesk", "Inter", sans-serif',
     backgroundImage: `url(${bg2})`,
     backgroundSize: 'cover',
@@ -37,8 +37,8 @@ const focusThemes = [
   },
   {
     id: 'mountain-range',
-    name: 'Mountain Range',
-    description: 'Black background with faint outline mountain range.',
+    name: 'Focus Wallpaper 3',
+    description: 'Custom aesthetic focus wallpaper 3.',
     fontFamily: '"Sora", "Inter", sans-serif',
     backgroundImage: `url(${bg3})`,
     backgroundSize: 'cover',
@@ -48,8 +48,8 @@ const focusThemes = [
   },
   {
     id: 'charcoal-ink',
-    name: 'Charcoal Ink',
-    description: 'Premium dark textured abstract background.',
+    name: 'Focus Wallpaper 4',
+    description: 'Custom aesthetic focus wallpaper 4.',
     fontFamily: '"Manrope", "Inter", sans-serif',
     backgroundImage: `url(${bg4})`,
     backgroundSize: 'cover',
@@ -59,8 +59,8 @@ const focusThemes = [
   },
   {
     id: 'macbook-m3',
-    name: 'MacBook M3',
-    description: 'Stunning dynamic waves inspired by MacBook Pro M3.',
+    name: 'Focus Wallpaper 5',
+    description: 'Custom aesthetic focus wallpaper 5.',
     fontFamily: '"IBM Plex Sans", "Inter", sans-serif',
     backgroundImage: `url(${bg5})`,
     backgroundSize: 'cover',
@@ -239,6 +239,83 @@ const readStoredTimerSnapshot = (storageKey) => {
   }
 };
 
+const renderClockPreview = (styleId) => {
+  switch (styleId) {
+    case 'minimalist':
+      return (
+        <div className="font-mono text-[9px] tracking-wider text-white/70 text-center font-bold">
+          25:00
+        </div>
+      );
+    case 'grid-matrix':
+      return (
+        <div className="grid grid-cols-3 gap-[1.5px] select-none p-[2px] bg-black/40 rounded-sm w-[26px]">
+          {[1,0,1,0,1,0,1,0,1].map((dot, idx) => (
+            <div key={idx} className={`w-[6px] h-[6px] rounded-sm ${dot ? 'bg-white' : 'bg-white/10'}`} />
+          ))}
+        </div>
+      );
+    case 'handdrawn':
+      return (
+        <div className="text-[10px] text-white/80 text-center font-semibold" style={{ fontFamily: '"Architects Daughter", cursive' }}>
+          25:00
+        </div>
+      );
+    case 'roller-card':
+      return (
+        <div className="flex gap-[2px] select-none">
+          <div className="px-1 py-0.5 bg-white text-black rounded text-[8px] font-bold font-mono leading-none">25</div>
+          <div className="px-1 py-0.5 bg-white text-black rounded text-[8px] font-bold font-mono leading-none">00</div>
+        </div>
+      );
+    case 'flap-board':
+      return (
+        <div className="flex gap-[2px] select-none">
+          <div className="relative px-1 py-0.5 bg-white text-black border border-gray-300 rounded text-[8px] font-bold font-mono leading-none overflow-hidden">
+            25
+            <div className="absolute top-1/2 left-0 right-0 h-[0.5px] bg-black/40" />
+          </div>
+          <div className="relative px-1 py-0.5 bg-white text-black border border-gray-300 rounded text-[8px] font-bold font-mono leading-none overflow-hidden">
+            00
+            <div className="absolute top-1/2 left-0 right-0 h-[0.5px] bg-black/40" />
+          </div>
+        </div>
+      );
+    case 'glass':
+      return (
+        <div className="px-1.5 py-0.5 rounded-full border border-white/20 bg-white/10 text-[8px] font-bold text-white font-sans scale-90">
+          25:00
+        </div>
+      );
+    case 'monolith':
+      return (
+        <div className="px-1 py-0.5 bg-black border border-white text-[8px] font-extrabold text-white uppercase select-none tracking-widest font-sans scale-90">
+          25:00
+        </div>
+      );
+    case 'typewriter':
+      return (
+        <div className="text-[9px] text-white/85 select-none text-center font-bold" style={{ fontFamily: '"Special Elite", serif' }}>
+          25:00
+        </div>
+      );
+    case 'gothic':
+      return (
+        <div className="text-[8px] text-white/90 select-none text-center uppercase tracking-widest font-bold" style={{ fontFamily: '"Cinzel", serif' }}>
+          25:00
+        </div>
+      );
+    case 'cartoon':
+      return (
+        <div className="text-[9px] font-bold text-white text-center tracking-wide" style={{ fontFamily: '"Fredoka One", sans-serif', WebkitTextStroke: '0.3px black', textShadow: '1px 1px 0px rgba(0,0,0,0.4)' }}>
+          25:00
+        </div>
+      );
+    default:
+      return <div className="text-[9px] text-white/50">25:00</div>;
+  }
+};
+
 const FocusMode = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -265,6 +342,38 @@ const FocusMode = () => {
     clearCompleted
   } = useTimer();
   const hydratedTimerStateRef = useRef(false);
+
+  const recordUsage = (type, itemId) => {
+    const statsKey = `memora_focus_usage_${user?.id || 'guest'}`;
+    try {
+      const raw = localStorage.getItem(statsKey) || '{}';
+      const stats = JSON.parse(raw);
+      if (!stats[type]) stats[type] = {};
+      stats[type][itemId] = (stats[type][itemId] || 0) + 1;
+      localStorage.setItem(statsKey, JSON.stringify(stats));
+    } catch (e) {
+      console.error('Failed to save usage stats:', e);
+    }
+  };
+
+  const getSortedItems = (items, type) => {
+    const statsKey = `memora_focus_usage_${user?.id || 'guest'}`;
+    try {
+      const raw = localStorage.getItem(statsKey) || '{}';
+      const stats = JSON.parse(raw);
+      const typeStats = stats[type] || {};
+      return [...items].sort((a, b) => {
+        const countA = typeStats[a.id] || 0;
+        const countB = typeStats[b.id] || 0;
+        if (countA !== countB) {
+          return countB - countA;
+        }
+        return items.indexOf(a) - items.indexOf(b);
+      });
+    } catch (e) {
+      return items;
+    }
+  };
 
   const userStorageId = (() => {
     const candidates = [user?.id, user?._id, user?.email, user?.username];
@@ -401,6 +510,25 @@ const FocusMode = () => {
   const [pomodoroSessions, setPomodoroSessions] = useState(defaultSettings.pomodoroSessions);
   const [activeThemeId, setActiveThemeId] = useState('geometric-leather');
   const [activeTimeStyle, setActiveTimeStyle] = useState('minimalist');
+  // Pre-sort themes and clock faces based on popularity rankings stored in local session.
+  // Using a state initializer callback ensures that the sort ordering remains completely static
+  // during active interaction sessions, preventing elements from shifting out of placement under the cursor.
+  const [sortedThemes, setSortedThemes] = useState(() => getSortedItems(focusThemes, 'wallpaper'));
+  const [sortedFaces, setSortedFaces] = useState(() => {
+    const allFaces = [
+      { id: 'minimalist', name: 'Dotted Zero', desc: 'Space-separated monospace with dot-zeros.' },
+      { id: 'grid-matrix', name: 'Grid Dot Matrix', desc: '5x3 square grid block styling.' },
+      { id: 'handdrawn', name: 'Hand-drawn Sketch', desc: 'Blueprint architectural handwriting font.' },
+      { id: 'roller-card', name: 'Roller Card', desc: 'Rounded shuttle panels with slide transition.' },
+      { id: 'flap-board', name: 'Retro Flap Board', desc: 'Classic mechanical board with flap ticks.' },
+      { id: 'glass', name: 'Frosted Glass', desc: 'White text inside glass capsule.' },
+      { id: 'monolith', name: 'Brutalist Monolith', desc: 'Massive block text with raw borders.' },
+      { id: 'typewriter', name: 'Vintage Typewriter', desc: 'Faded ink typewriter style.' },
+      { id: 'gothic', name: 'Gothic Serif', desc: 'Elegant classical gothic layout.' },
+      { id: 'cartoon', name: 'Bubbly Cartoon', desc: 'Bubbly soft numbers outline.' }
+    ];
+    return getSortedItems(allFaces, 'face');
+  });
   const [stars, setStars] = useState([]);
 
   useEffect(() => {
@@ -847,6 +975,7 @@ const FocusMode = () => {
     if (storageKey) {
       localStorage.setItem(storageKey, themeId);
     }
+    recordUsage('wallpaper', themeId);
   };
 
   const activeTheme = focusThemes.find((theme) => theme.id === activeThemeId) || focusThemes[0];
@@ -1192,19 +1321,49 @@ const FocusMode = () => {
     };
   }, [isFullscreen, showPresetDialog, showThemes, showPresetsManager, showSettings, showHistory]);
 
+  // Renders the main clock output based on timeString. Includes support for custom designs,
+  // monospace sizing grids, and transitions.
   const renderClock = (timeString) => {
     const parts = String(timeString || '25:00').split(':');
 
+    // Utility: Splits a proportional text clock string into individual character spans.
+    // Enforces a fixed tabular layout grid using 'tabular-nums' font metrics and custom 'ch' widths,
+    // which prevents the digits from shifting/jumping horizontally as numbers update (e.g. 1 vs 8).
+    const renderTabularString = (str, styleClass, inlineStyles = {}) => {
+      return (
+        <div 
+          className={`flex items-center justify-center select-none ${styleClass}`}
+          style={{
+            ...inlineStyles,
+            fontVariantNumeric: 'tabular-nums'
+          }}
+        >
+          {String(str || '').split('').map((char, idx) => {
+            const isColon = char === ':';
+            const widthClass = isColon ? 'w-[0.4ch]' : 'w-[1.05ch]';
+            return (
+              <span key={idx} className={`inline-flex justify-center text-center ${widthClass} shrink-0`}>
+                {char}
+              </span>
+            );
+          })}
+        </div>
+      );
+    };
+
     const renderDotZeroChar = (char, idx) => {
-      if (char === '0') {
-        return (
-          <span key={idx} className="relative inline-block select-none font-mono">
-            0
-            <span className="absolute top-[50%] left-[50%] w-[1.5px] h-[1.5px] sm:w-[3.5px] sm:h-[3.5px] rounded-full bg-white -translate-x-1/2 -translate-y-1/2 opacity-95 animate-pulse" />
-          </span>
-        );
-      }
-      return <span key={idx}>{char}</span>;
+      const isColon = char === ':';
+      const widthClass = isColon ? 'w-[0.4ch]' : 'w-[1.05ch]';
+      return (
+        <span key={idx} className={`inline-flex justify-center text-center ${widthClass} shrink-0`}>
+          {char === '0' ? (
+            <span className="relative">
+              0
+              <span className="absolute top-[50%] left-[50%] w-[1.5px] h-[1.5px] sm:w-[3.5px] sm:h-[3.5px] rounded-full bg-white -translate-x-1/2 -translate-y-1/2 opacity-95 animate-pulse" />
+            </span>
+          ) : char}
+        </span>
+      );
     };
 
     const renderDotMatrixDigit = (char, idx) => {
@@ -1250,7 +1409,7 @@ const FocusMode = () => {
         return (
           <div className="flex items-center gap-1.5 bg-[#121318] p-1.5 rounded-xl border border-white/10 shadow-2xl">
             {valString.split('').map((char, idx) => (
-              <div key={char} className={`relative bg-white border border-gray-300 rounded-lg ${cardWidth} ${cardHeight} flex items-center justify-center overflow-hidden shadow-2xl shrink-0 animate-flap`}>
+              <div key={`${idx}-${char}`} className={`relative bg-white border border-gray-300 rounded-lg ${cardWidth} ${cardHeight} flex items-center justify-center overflow-hidden shadow-2xl shrink-0 animate-flap`}>
                 {/* Center split line */}
                 <div className="absolute top-1/2 left-0 right-0 h-[1.5px] bg-black/40 z-20" />
                 {/* Hinge Tick */}
@@ -1311,6 +1470,9 @@ const FocusMode = () => {
 
       case 'handdrawn':
         const handdrawnSize = isFullscreen ? 'text-[8rem] sm:text-[15rem] md:text-[20rem]' : 'text-[5rem] sm:text-[9.5rem] md:text-[12.5rem]';
+        const colWidth = isFullscreen 
+          ? 'min-w-[150px] sm:min-w-[280px] md:min-w-[360px]' 
+          : 'min-w-[90px] sm:min-w-[170px] md:min-w-[220px]';
         return (
           <div className="flex items-end justify-center gap-6 sm:gap-10 md:gap-14 select-none font-normal" style={{ fontFamily: '"Architects Daughter", cursive' }}>
             {parts.map((val, idx) => {
@@ -1322,9 +1484,11 @@ const FocusMode = () => {
                 if (idx === 0) label = 'minutes';
               }
               return (
-                <div key={idx} className="flex flex-col items-center">
-                  <span className={`${handdrawnSize} text-white/95 tracking-normal leading-none font-normal`}>{val}</span>
-                  <span className="text-xs sm:text-sm text-gray-400 mt-2 lowercase">{label}</span>
+                <div key={idx} className={`flex flex-col items-center justify-center ${colWidth} text-center`}>
+                  <span className={`${handdrawnSize} text-white/95 tracking-normal leading-none font-normal`}>
+                    {val}
+                  </span>
+                  <span className="text-xs sm:text-sm text-gray-400 mt-2 lowercase text-center">{label}</span>
                 </div>
               );
             })}
@@ -1349,11 +1513,11 @@ const FocusMode = () => {
                 <div key={idx} className="flex flex-col items-center gap-2">
                   <div className={`relative bg-white text-black border border-white/25 rounded-2xl ${rollerWidth} ${rollerHeight} flex items-center justify-center shadow-[0_16px_40px_rgba(0,0,0,0.5)] overflow-hidden`}>
                     <div className="absolute top-1/2 left-0 right-0 h-px bg-black/15 shadow-[0_0.5px_0.5px_rgba(255,255,255,0.2)]" />
-                    <span key={val} className={`${rollerFontSize} font-bold font-serif select-none leading-none z-10 animate-roll`}>
+                    <span key={val} className={`${rollerFontSize} font-bold font-mono select-none leading-none z-10 animate-roll`}>
                       {val}
                     </span>
                   </div>
-                  <span className="text-[10px] sm:text-xs font-serif uppercase tracking-widest text-gray-400 font-semibold">{label}</span>
+                  <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-gray-400 font-semibold">{label}</span>
                 </div>
               );
             })}
@@ -1411,23 +1575,15 @@ const FocusMode = () => {
         const glassSize = isFullscreen ? 'text-[6.5rem] sm:text-[11rem] md:text-[15rem]' : 'text-[4rem] sm:text-[6.5rem] md:text-[8.5rem]';
         return (
           <div className="inline-flex items-center justify-center border border-white/20 bg-white/5 backdrop-blur-xl rounded-[2.5rem] px-8 sm:px-12 py-4 sm:py-6 shadow-2xl max-w-full">
-            <div 
-              className={`font-bold text-white tracking-widest leading-none select-none ${glassSize}`}
-              style={{ fontFamily: '"Space Grotesk", sans-serif' }}
-            >
-              {timeString}
-            </div>
+            {renderTabularString(timeString, `font-bold text-white leading-none ${glassSize}`, { fontFamily: '"Space Grotesk", sans-serif' })}
           </div>
         );
 
       case 'monolith':
         const monoSize = isFullscreen ? 'text-[8rem] sm:text-[14rem] md:text-[19rem]' : 'text-[5rem] sm:text-[8.5rem] md:text-[11rem]';
         return (
-          <div 
-            className={`font-black text-white tracking-tighter select-none leading-none text-center border-[6px] sm:border-[8px] border-white p-4 sm:p-6 bg-black/40 ${monoSize}`}
-            style={{ fontFamily: '"Sora", sans-serif' }}
-          >
-            {timeString}
+          <div className="border-[6px] sm:border-[8px] border-white p-4 sm:p-6 bg-black/40">
+            {renderTabularString(timeString, `font-black text-white leading-none ${monoSize}`, { fontFamily: '"Sora", sans-serif' })}
           </div>
         );
 
@@ -1446,25 +1602,11 @@ const FocusMode = () => {
 
       case 'typewriter':
         const typeSize = isFullscreen ? 'text-[6.5rem] sm:text-[11rem] md:text-[15rem]' : 'text-[4rem] sm:text-[6.5rem] md:text-[8.5rem]';
-        return (
-          <div 
-            className={`text-white select-none text-center ${typeSize}`}
-            style={{ fontFamily: '"Special Elite", serif', filter: 'opacity(0.9)' }}
-          >
-            {timeString}
-          </div>
-        );
+        return renderTabularString(timeString, `text-white leading-none ${typeSize}`, { fontFamily: '"Special Elite", serif', filter: 'opacity(0.9)' });
 
       case 'gothic':
         const gothicSize = isFullscreen ? 'text-[6.5rem] sm:text-[11rem] md:text-[15rem]' : 'text-[4rem] sm:text-[6.5rem] md:text-[8.5rem]';
-        return (
-          <div 
-            className={`text-white select-none text-center tracking-widest uppercase font-bold ${gothicSize}`}
-            style={{ fontFamily: '"Cinzel", serif' }}
-          >
-            {timeString}
-          </div>
-        );
+        return renderTabularString(timeString, `text-white leading-none uppercase font-bold ${gothicSize}`, { fontFamily: '"Cinzel", serif' });
 
       case 'hologram':
         const holoSize = isFullscreen ? 'text-[7rem] sm:text-[13rem] md:text-[18rem]' : 'text-[4.5rem] sm:text-[8rem] md:text-[10.5rem]';
@@ -1482,17 +1624,10 @@ const FocusMode = () => {
 
       case 'cartoon':
         const cartSize = isFullscreen ? 'text-[8rem] sm:text-[14rem] md:text-[19rem]' : 'text-[5rem] sm:text-[8.5rem] md:text-[11rem]';
-        return (
-          <div 
-            className={`text-white select-none text-center font-bold tracking-wider ${cartSize}`}
-            style={{ 
-              fontFamily: '"Fredoka One", sans-serif',
-              textShadow: '3px 3px 0px rgba(0,0,0,0.2)'
-            }}
-          >
-            {timeString}
-          </div>
-        );
+        return renderTabularString(timeString, `text-white leading-none font-bold ${cartSize}`, { 
+          fontFamily: '"Fredoka One", sans-serif',
+          textShadow: '3px 3px 0px rgba(0,0,0,0.2)'
+        });
 
       case 'minimalist':
       default:
@@ -1529,6 +1664,15 @@ const FocusMode = () => {
         .animate-roll {
           animation: roll-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
           display: inline-block;
+        }
+        @keyframes flap-down {
+          0% { transform: perspective(400px) rotateX(0deg); }
+          50% { transform: perspective(400px) rotateX(-90deg); background-color: #f0f0f0; }
+          100% { transform: perspective(400px) rotateX(0deg); }
+        }
+        .animate-flap {
+          animation: flap-down 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+          transform-origin: center;
         }
         @keyframes float-star {
           0% { transform: translateY(0px) translateX(0px); opacity: 0.1; }
@@ -1727,7 +1871,7 @@ const FocusMode = () => {
                   <span>Backdrop Theme</span>
                 </div>
                 <div className="space-y-2">
-                  {focusThemes.map((theme) => {
+                  {sortedThemes.map((theme) => {
                     const isActive = activeThemeId === theme.id;
                     return (
                       <button
@@ -1772,26 +1916,10 @@ const FocusMode = () => {
               <div className="p-4 sm:p-5 space-y-4 overflow-y-auto max-h-[380px] scrollbar-themed bg-black">
                 <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-pink-400 select-none sticky top-0 bg-black pb-2 z-15">
                   <Clock className="w-3.5 h-3.5" />
-                  <span>Clock Face (15 styles)</span>
+                  <span>Clock Face (10 styles)</span>
                 </div>
                 <div className="space-y-2">
-                  {[
-                    { id: 'minimalist', name: 'Dotted Zero', desc: 'Space-separated monospace with dot-zeros.' },
-                    { id: 'grid-matrix', name: 'Grid Dot Matrix', desc: '5x3 square grid block styling.' },
-                    { id: 'handdrawn', name: 'Hand-drawn Sketch', desc: 'Blueprint architectural handwriting font.' },
-                    { id: 'roller-card', name: 'Roller Card', desc: 'Rounded shuttle panels with slide transition.' },
-                    { id: 'flap-board', name: 'Retro Flap Board', desc: 'Classic mechanical board with flap ticks.' },
-                    { id: 'led', name: 'Digital LED', desc: 'Glowing green 7-segment LED calculator.' },
-                    { id: 'neon', name: 'Cyberpunk Neon', desc: 'Laser pink text with drop glow shadow.' },
-                    { id: 'terminal', name: 'Terminal Prompt', desc: 'Command terminal script prompt style.' },
-                    { id: 'glass', name: 'Frosted Glass', desc: 'White text inside glass capsule.' },
-                    { id: 'monolith', name: 'Brutalist Monolith', desc: 'Massive block text with raw borders.' },
-                    { id: 'brackets', name: 'Geometric Brackets', desc: 'Monospace numbers inside brackets.' },
-                    { id: 'typewriter', name: 'Vintage Typewriter', desc: 'Faded ink typewriter style.' },
-                    { id: 'gothic', name: 'Gothic Serif', desc: 'Elegant classical gothic layout.' },
-                    { id: 'hologram', name: 'Hologram Glitch', desc: 'Glitched offset cyan/red shadows.' },
-                    { id: 'cartoon', name: 'Bubbly Cartoon', desc: 'Bubbly soft numbers outline.' }
-                  ].map((styleOption) => {
+                  {sortedFaces.map((styleOption) => {
                     const isActive = activeTimeStyle === styleOption.id;
                     return (
                       <button
@@ -1802,6 +1930,7 @@ const FocusMode = () => {
                           if (storageKey) {
                             localStorage.setItem(storageKey, styleOption.id);
                           }
+                          recordUsage('face', styleOption.id);
                         }}
                         className={`w-full text-left rounded-xl border p-2.5 transition-all flex items-center gap-3 ${
                           isActive
@@ -1809,8 +1938,8 @@ const FocusMode = () => {
                             : 'border-white/10 bg-white/5 hover:border-white/20'
                         }`}
                       >
-                        <div className="w-12 h-10 rounded-lg border border-white/5 bg-white/[0.02] flex items-center justify-center font-mono text-[9px] font-bold text-white/50 shrink-0 select-none">
-                          25:00
+                        <div className="w-12 h-10 rounded-lg border border-white/5 bg-white/[0.02] flex items-center justify-center font-mono text-[9px] font-bold text-white shrink-0 select-none overflow-hidden">
+                          {renderClockPreview(styleOption.id)}
                         </div>
                         <div className="min-w-0">
                           <p className="text-xs font-bold text-white truncate">{styleOption.name}</p>
