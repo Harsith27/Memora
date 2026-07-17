@@ -429,6 +429,9 @@ const StreakActivityDialogContent = ({
   const [habitSearchInput, setHabitSearchInput] = useState('All Habits');
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
+  const selectedSeriesIdRef = useRef(selectedHabitSeriesId);
+  selectedSeriesIdRef.current = selectedHabitSeriesId;
+
   const viewLabel = STREAK_VIEW_OPTIONS[0];
       const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -451,6 +454,9 @@ const StreakActivityDialogContent = ({
   }, [tasks]);
 
   const habitsList = useMemo(() => Array.from(uniqueHabitsMap.values()), [uniqueHabitsMap]);
+
+  const habitsListRef = useRef(habitsList);
+  habitsListRef.current = habitsList;
 
   const activePalette = useMemo(() => {
     if (mode === 'study') return 'cyan';
@@ -677,10 +683,11 @@ const StreakActivityDialogContent = ({
                   }}
                   onBlur={() => {
                     setTimeout(() => {
-                      if (selectedHabitSeriesId === 'all') {
+                      const currentId = selectedSeriesIdRef.current;
+                      if (currentId === 'all') {
                         setHabitSearchInput('All Habits');
                       } else {
-                        const match = habitsList.find((h) => h.seriesId === selectedHabitSeriesId);
+                        const match = habitsListRef.current.find((h) => h.seriesId === currentId);
                         setHabitSearchInput(match ? match.title : 'All Habits');
                       }
                     }, 200);
