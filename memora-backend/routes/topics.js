@@ -1487,10 +1487,7 @@ router.patch('/:id/revision-date', [
     const isSameDay = targetDayStr === currentDayStr;
 
     if (!isSameDay && !isDayFeasible(dayStats, topic, adaptiveLimits, targetDay, preferences)) {
-      return res.status(409).json({
-        success: false,
-        message: 'Selected day is overloaded. Choose another day.'
-      });
+      console.warn(`Manual reschedule overloaded target day: ${targetDayStr} for topic: ${topic._id}`);
     }
 
     topic.nextReviewDate = targetReviewDate;

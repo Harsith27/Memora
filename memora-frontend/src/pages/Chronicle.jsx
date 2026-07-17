@@ -564,10 +564,12 @@ const Chronicle = () => {
 
   const processAllCalendarEvents = (dueResponse, upcomingResp, historyResp, targetYear, targetUser) => {
     const revisionEvents = {};
+    const addedTopicIds = new Set();
 
     if (dueResponse?.success && dueResponse.topics) {
       dueResponse.topics.forEach(topic => {
         if (topic?.isLearning === false) return;
+        addedTopicIds.add(topic._id);
 
         const dateKey = new Date().toDateString(); // Today's date
         if (!revisionEvents[dateKey]) {
@@ -587,14 +589,15 @@ const Chronicle = () => {
           difficulty: topic.difficulty,
           time: timeVal,
           topicId: topic._id,
-          isDue: true
+          isDue: true,
+          date: toLocalDateKey(new Date())
         });
       });
     }
 
     if (upcomingResp?.success && upcomingResp.topics) {
       upcomingResp.topics.forEach(topic => {
-        if (topic?.isLearning === false) return;
+        if (topic?.isLearning === false || addedTopicIds.has(topic._id)) return;
 
         const dateKey = new Date(topic.nextReviewDate).toDateString();
         if (!revisionEvents[dateKey]) {
@@ -613,7 +616,8 @@ const Chronicle = () => {
           color: getDifficultyColor(topic.difficulty),
           difficulty: topic.difficulty,
           time: timeVal,
-          topicId: topic._id
+          topicId: topic._id,
+          date: toLocalDateKey(new Date(topic.nextReviewDate))
         });
       });
     }
@@ -643,7 +647,8 @@ const Chronicle = () => {
           isCompletedRevision: true,
           revisionNumber,
           quality: Number(entry.quality || 0),
-          wasCorrect: Boolean(entry.wasCorrect)
+          wasCorrect: Boolean(entry.wasCorrect),
+          date: toLocalDateKey(completedAt)
         });
       });
     }
@@ -691,7 +696,8 @@ const Chronicle = () => {
         taskType: task.taskType || taskService.TASK_TYPES.ONE_TIME,
         startTime: task.startTime || null,
         duration: Number(task.duration || 30),
-        completionType: task.completionType || 'boolean'
+        completionType: task.completionType || 'boolean',
+        date: normalizedDate
       });
     });
 
