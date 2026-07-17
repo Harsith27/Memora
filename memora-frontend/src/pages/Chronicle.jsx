@@ -450,6 +450,11 @@ const Chronicle = () => {
         if (!revisionEvents[dateKey]) {
           revisionEvents[dateKey] = [];
         }
+
+        const reviewDate = topic.nextReviewDate ? new Date(topic.nextReviewDate) : null;
+        const hasCustomTime = reviewDate && (reviewDate.getHours() !== 0 || reviewDate.getMinutes() !== 0);
+        const timeVal = hasCustomTime ? toLocalTimeHHMM(reviewDate) : null;
+
         revisionEvents[dateKey].push({
           id: `revision-due-${topic._id}`,
           title: topic.title,
@@ -457,7 +462,7 @@ const Chronicle = () => {
           type: 'revision',
           color: getDifficultyColor(topic.difficulty),
           difficulty: topic.difficulty,
-          time: '09:00',
+          time: timeVal,
           topicId: topic._id,
           isDue: true
         });
@@ -472,6 +477,11 @@ const Chronicle = () => {
         if (!revisionEvents[dateKey]) {
           revisionEvents[dateKey] = [];
         }
+
+        const reviewDate = topic.nextReviewDate ? new Date(topic.nextReviewDate) : null;
+        const hasCustomTime = reviewDate && (reviewDate.getHours() !== 0 || reviewDate.getMinutes() !== 0);
+        const timeVal = hasCustomTime ? toLocalTimeHHMM(reviewDate) : null;
+
         revisionEvents[dateKey].push({
           id: `revision-${topic._id}`,
           title: topic.title,
@@ -479,7 +489,7 @@ const Chronicle = () => {
           type: 'revision',
           color: getDifficultyColor(topic.difficulty),
           difficulty: topic.difficulty,
-          time: '09:00',
+          time: timeVal,
           topicId: topic._id
         });
       });
@@ -551,11 +561,13 @@ const Chronicle = () => {
         description: task.description,
         type: 'task',
         color: task.completed ? 'slate' : (isMissed ? 'rose' : 'teal'),
-        time: task.completed ? '23:59' : '20:00',
+        time: task.startTime || (task.completed ? '23:59' : '20:00'),
         taskId: task.id,
         completed: Boolean(task.completed),
         isMissed,
-        taskType: task.taskType || taskService.TASK_TYPES.ONE_TIME
+        taskType: task.taskType || taskService.TASK_TYPES.ONE_TIME,
+        startTime: task.startTime || null,
+        duration: Number(task.duration || 30)
       });
     });
 
@@ -925,14 +937,98 @@ const Chronicle = () => {
       const current = new Date(base);
       current.setDate(base.getDate() + i);
       const dateKey = current.toDateString();
-      const events = filteredCalendarEvents[dateKey] || [];
+      const rawEvents = filteredCalendarEvents[dateKey] || [];
+
+      // Sort them such that events that naturally have times come first, so unscheduled slots can wrap around them
+      const sortedRaw = [...rawEvents].sort((a, b) => {
+        const hasTimeA = a.type === 'task' ? !!a.startTime : !!a.time;
+        const hasTimeB = b.type === 'task' ? !!b.startTime : !!b.time;
+        if (hasTimeA && !hasTimeB) return -1;
+        if (!hasTimeA && hasTimeB) return 1;
+        return 0;
+      });
+
+      let unscheduledCount = 0;
+      const processedEvents = sortedRaw.map((event) => {
+        let hasTime = true;
+        let timeStr = event.type === 'task' ? event.startTime : event.time;
+        if (!timeStr) {
+          hasTime = false;
+          // Assign sequential times starting at 09:00 AM, 30 mins apart
+          const minutes = 9 * 60 + unscheduledCount * 30;
+          const h = Math.floor(minutes / 60);
+          const m = minutes % 60;
+          timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+          unscheduledCount++;
+        }
+
+        const startMinutes = parseTimeToMinutes(timeStr);
+        let duration = 30;
+        if (event.type === 'task') {
+          duration = event.duration || 30;
+        } else if (event.type === 'revision') {
+          duration = event.difficulty <= 2 ? 5 : (event.difficulty <= 4 ? 10 : 15);
+        } else if (event.type === 'event' || event.type === 'festival' || event.type === 'deadline' || event.type === 'meeting') {
+          const endMinutes = parseTimeToMinutes(event.endTime || '10:00');
+          duration = Math.max(15, endMinutes - startMinutes);
+        }
+
+        return {
+          ...event,
+          hasTime,
+          resolvedTimeStr: timeStr,
+          startMinutes,
+          endMinutes: startMinutes + duration,
+          duration
+        };
+      });
+
+      // Sort by startMinutes then duration desc
+      processedEvents.sort((a, b) => {
+        if (a.startMinutes !== b.startMinutes) {
+          return a.startMinutes - b.startMinutes;
+        }
+        return b.duration - a.duration;
+      });
+
+      // Position side-by-side: Column allocation
+      const columns = [];
+      processedEvents.forEach((ev) => {
+        let placed = false;
+        for (let colIdx = 0; colIdx < columns.length; colIdx++) {
+          const lastEvInCol = columns[colIdx][columns[colIdx].length - 1];
+          if (ev.startMinutes >= lastEvInCol.endMinutes) {
+            columns[colIdx].push(ev);
+            ev.colIndex = colIdx;
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) {
+          columns.push([ev]);
+          ev.colIndex = columns.length - 1;
+        }
+      });
+
+      // For each event, determine the maximum column overlaps
+      processedEvents.forEach((ev) => {
+        const overlaps = processedEvents.filter(other => 
+          other.id !== ev.id &&
+          ev.startMinutes < other.endMinutes &&
+          other.startMinutes < ev.endMinutes
+        );
+
+        const uniqueCols = new Set(overlaps.map(o => o.colIndex));
+        uniqueCols.add(ev.colIndex);
+        ev.colCount = Math.max(columns.length, uniqueCols.size);
+      });
 
       days.push({
         date: current,
         dateKey,
         dayLabel: current.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
         isToday: dateKey === todayStr,
-        events
+        events: processedEvents
       });
     }
     return days;
@@ -940,6 +1036,10 @@ const Chronicle = () => {
 
   const handleEventDragStart = (e, event) => {
     setDraggingCard(event);
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', event.id || '');
+    }
   };
 
   const handleApplyHabitShift = async (mode) => {
@@ -2486,33 +2586,32 @@ const CalendarEventCard = ({
 }) => {
   const EventIcon = getEventIcon(event);
   
-  const startMinutes = parseTimeToMinutes(event.startTime || event.time || (event.type === 'task' ? '20:00' : '09:00'));
-  let duration = 30;
-  if (event.type === 'task') {
-    duration = event.duration || 30;
-  } else if (event.type === 'revision') {
-    duration = event.difficulty <= 2 ? 5 : (event.difficulty <= 4 ? 10 : 15);
-  } else if (event.type === 'event' || event.type === 'festival' || event.type === 'deadline' || event.type === 'meeting') {
-    const endMinutes = parseTimeToMinutes(event.endTime || '10:00');
-    duration = Math.max(15, endMinutes - startMinutes);
-  }
+  const startMinutes = event.startMinutes !== undefined
+    ? event.startMinutes
+    : parseTimeToMinutes(event.startTime || event.time || (event.type === 'task' ? '20:00' : '09:00'));
+
+  const duration = event.duration !== undefined
+    ? event.duration
+    : (event.type === 'task'
+        ? event.duration || 30
+        : event.type === 'revision'
+        ? event.difficulty <= 2 ? 5 : (event.difficulty <= 4 ? 10 : 15)
+        : Math.max(15, parseTimeToMinutes(event.endTime || '10:00') - startMinutes));
 
   const minsSinceStart = startMinutes - 420; // relative to 7 AM
   const top = (minsSinceStart / 60) * hourHeight;
   const height = Math.max(22, (duration / 60) * hourHeight);
 
-  let cardClass = "border border-cyan-400/40 bg-cyan-500/10 text-cyan-200";
-  if (event.completed) {
-    cardClass = "border border-slate-500/20 bg-slate-500/5 text-slate-400";
-  } else if (event.isMissed) {
-    cardClass = "border border-rose-500/30 bg-rose-500/5 text-rose-300";
-  } else if (event.type === 'revision') {
-    cardClass = "border border-blue-400/30 bg-blue-500/10 text-blue-200";
-  } else if (event.type === 'event' || event.type === 'meeting') {
-    cardClass = "border border-amber-400/30 bg-amber-500/10 text-amber-200";
-  } else if (event.type === 'festival') {
-    cardClass = "border border-purple-400/30 bg-purple-500/10 text-purple-200";
-  }
+  // Position side-by-side
+  const colIndex = event.colIndex || 0;
+  const colCount = event.colCount || 1;
+  const leftPercent = (colIndex / colCount) * 100;
+  const widthPercent = 100 / colCount;
+
+  // Use the identical colors as monthly view
+  const cardClass = event.type === 'task'
+    ? getCalendarTaskColor(event)
+    : getEventColor(event);
 
   const formatTimeStr = (mins) => {
     const h = Math.floor(mins / 60);
@@ -2522,12 +2621,19 @@ const CalendarEventCard = ({
     return `${displayHour}:${String(m).padStart(2, '0')}${suffix}`;
   };
 
+  const style = {
+    top: `${top}px`,
+    height: `${height}px`,
+    left: `calc(${leftPercent}% + 2px)`,
+    width: `calc(${widthPercent}% - 4px)`
+  };
+
   return (
     <div
       draggable
       onDragStart={onDragStart}
-      className={`absolute left-1 right-1 rounded-lg p-1.5 text-left text-[11px] overflow-hidden select-none cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${cardClass}`}
-      style={{ top, height }}
+      className={`absolute rounded-lg p-1.5 text-left text-[11px] overflow-hidden select-none cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${cardClass}`}
+      style={style}
       title={`${event.title} (${duration} mins)`}
     >
       <div className="flex items-center space-x-1 font-semibold truncate">
