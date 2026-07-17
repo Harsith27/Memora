@@ -1482,7 +1482,11 @@ router.patch('/:id/revision-date', [
     const user = await User.findById(userId).select('preferences').lean();
     const preferences = user?.preferences || {};
 
-    if (!isDayFeasible(dayStats, topic, adaptiveLimits, targetDay, preferences)) {
+    const targetDayStr = dateKey(targetDay);
+    const currentDayStr = topic.nextReviewDate ? dateKey(topic.nextReviewDate) : '';
+    const isSameDay = targetDayStr === currentDayStr;
+
+    if (!isSameDay && !isDayFeasible(dayStats, topic, adaptiveLimits, targetDay, preferences)) {
       return res.status(409).json({
         success: false,
         message: 'Selected day is overloaded. Choose another day.'
