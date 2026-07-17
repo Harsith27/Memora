@@ -107,7 +107,7 @@ const Chronicle = () => {
   const lastFetchIdRef = useRef(0);
 
   // Chronicle 3-day calendar scheduling grid settings
-  const [calendarViewMode, setCalendarViewMode] = useState('month'); // 'month' or '3-day'
+  const [calendarViewMode, setCalendarViewMode] = useState('3-day'); // 'month' or '3-day'
   const [hourHeight, setHourHeight] = useState(60); // Zoom height in px per hour track
   const [draggingCard, setDraggingCard] = useState(null); // Reference of drag event card
   const [habitPromptModal, setHabitPromptModal] = useState(null); // Reschedule series options modal
@@ -706,13 +706,7 @@ const Chronicle = () => {
       allEvents[dateKey] = [...allEvents[dateKey], ...taskEvents[dateKey]];
     });
 
-    // Add festivals
-    Object.keys(festivalEvents).forEach(dateKey => {
-      if (!allEvents[dateKey]) {
-        allEvents[dateKey] = [];
-      }
-      allEvents[dateKey] = [...allEvents[dateKey], ...festivalEvents[dateKey]];
-    });
+    // Festivals are excluded per user preference
 
     // Add custom events
     Object.keys(customEvents).forEach(dateKey => {
@@ -1092,7 +1086,7 @@ const Chronicle = () => {
         if (event.type === 'task') {
           duration = event.duration || 30;
         } else if (event.type === 'revision') {
-          duration = event.difficulty <= 2 ? 5 : (event.difficulty <= 4 ? 10 : 15);
+          duration = isUnscheduled ? 30 : (event.difficulty <= 2 ? 5 : (event.difficulty <= 4 ? 10 : 15));
         } else if (event.type === 'event' || event.type === 'festival' || event.type === 'deadline' || event.type === 'meeting') {
           const endMinutes = parseTimeToMinutes(event.endTime || '10:00');
           const startMinutes = parseTimeToMinutes(event.startTime || '09:00');
@@ -1236,7 +1230,7 @@ const Chronicle = () => {
     
     // Calculate snapped time string (relative to 12 AM / 00:00 midnight)
     const minutesSinceStart = (relativeY / hourHeight) * 60;
-    const snappedMinutes = Math.max(0, Math.min(1425, Math.round(minutesSinceStart / 15) * 15));
+    const snappedMinutes = Math.max(0, Math.min(1435, Math.round(minutesSinceStart / 5) * 5));
     const snappedHour = Math.floor(snappedMinutes / 60);
     const finalMinutes = snappedMinutes % 60;
     const timeString = `${String(snappedHour).padStart(2, '0')}:${String(finalMinutes).padStart(2, '0')}`;
@@ -1320,19 +1314,45 @@ const Chronicle = () => {
         setLoading(false);
       }
     } else if (sourceCard.type === 'revision') {
-      setLoading(true);
-      try {
-        const revisionDate = new Date(`${isoDate}T${timeString}:00`);
-        await apiService.updateTopicRevisionDate(sourceCard.topicId, revisionDate.toISOString());
-        showToast('Revision rescheduled');
-        await loadCalendarData();
-      } catch (err) {
-        console.error(err);
-        const errMsg = err.error || err.response?.data?.message || err.message || 'Failed to reschedule topic revision';
-        showToast(errMsg, 'error');
-      } finally {
-        setLoading(false);
-      }
+      const sourceDateKey = new Date(sourceCard.date || currentDate).toDateString();
+      const targetDateKey = targetDate.toDateString();
+
+      // Optimistically update local calendarEvents state instantly
+      setCalendarEvents(prevEvents => {
+        const nextEvents = { ...prevEvents };
+
+        // 1. Remove from source list
+        if (nextEvents[sourceDateKey]) {
+          nextEvents[sourceDateKey] = nextEvents[sourceDateKey].filter(ev => ev.id !== sourceCard.id);
+        }
+
+        // 2. Add to target list
+        const updatedCard = {
+          ...sourceCard,
+          date: isoDate,
+          time: timeString
+        };
+
+        if (!nextEvents[targetDateKey]) {
+          nextEvents[targetDateKey] = [];
+        }
+        nextEvents[targetDateKey] = [...nextEvents[targetDateKey], updatedCard];
+        return nextEvents;
+      });
+
+      // Run network request in the background
+      (async () => {
+        try {
+          const revisionDate = new Date(`${isoDate}T${timeString}:00`);
+          await apiService.updateTopicRevisionDate(sourceCard.topicId, revisionDate.toISOString());
+          showToast('Revision rescheduled');
+        } catch (err) {
+          console.error(err);
+          const errMsg = err.error || err.response?.data?.message || err.message || 'Failed to reschedule topic revision';
+          showToast(`${errMsg}. Reverting...`, 'error');
+          await loadCalendarData();
+        }
+      })();
     }
   };
 
@@ -3017,7 +3037,7 @@ const Chronicle3DayView = ({
     const rect = e.currentTarget.getBoundingClientRect();
     const relativeY = e.clientY - rect.top;
     const minutesSinceStart = (relativeY / hourHeight) * 60;
-    const snappedMinutes = Math.max(0, Math.min(1425, Math.round(minutesSinceStart / 15) * 15));
+    const snappedMinutes = Math.max(0, Math.min(1435, Math.round(minutesSinceStart / 5) * 5));
     setDragOverDay(dateKey);
     setDragOverMinutes(snappedMinutes);
   };
@@ -3030,7 +3050,10 @@ const Chronicle3DayView = ({
 
   const getDraggingCardDuration = (card) => {
     if (card.type === 'task') return card.duration || 30;
-    if (card.type === 'revision') return card.difficulty <= 2 ? 5 : (card.difficulty <= 4 ? 10 : 15);
+    if (card.type === 'revision') {
+      const isUnscheduled = !card.time || card.time === '09:00';
+      return isUnscheduled ? 30 : (card.difficulty <= 2 ? 5 : (card.difficulty <= 4 ? 10 : 15));
+    }
     return 60;
   };
 
