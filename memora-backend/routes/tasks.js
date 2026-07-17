@@ -61,6 +61,8 @@ const normalizeTaskInput = (rawTask) => {
   const targetValue = toNumberOrFallback(rawTask?.targetValue, 1);
   const currentValue = toNumberOrFallback(rawTask?.currentValue, 0);
   const partiallyCompleted = Boolean(rawTask?.partiallyCompleted);
+  const startTime = rawTask?.startTime ? String(rawTask.startTime).trim() : null;
+  const duration = toNumberOrFallback(rawTask?.duration, 30);
 
   return {
     clientId: id,
@@ -74,6 +76,8 @@ const normalizeTaskInput = (rawTask) => {
     targetValue,
     currentValue,
     partiallyCompleted,
+    startTime,
+    duration,
     createdAtMs,
     updatedAtMs
   };
@@ -112,6 +116,8 @@ const mapTaskForResponse = (taskDoc) => {
     targetValue: Number(taskDoc.targetValue ?? 1),
     currentValue: Number(taskDoc.currentValue ?? 0),
     partiallyCompleted: Boolean(taskDoc.partiallyCompleted),
+    startTime: taskDoc.startTime || null,
+    duration: Number(taskDoc.duration ?? 30),
     createdAt: Number(taskDoc.createdAtMs) || Date.now(),
     updatedAt: Number(taskDoc.updatedAtMs) || Number(taskDoc.createdAtMs) || Date.now()
   };
@@ -193,6 +199,8 @@ router.post('/sync', authenticateToken, async (req, res) => {
               targetValue: task.targetValue,
               currentValue: task.currentValue,
               partiallyCompleted: task.partiallyCompleted,
+              startTime: task.startTime,
+              duration: task.duration,
               createdAtMs: task.createdAtMs,
               updatedAtMs: task.updatedAtMs
             }

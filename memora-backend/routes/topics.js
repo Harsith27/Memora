@@ -95,8 +95,11 @@ const resolveEffectiveRevisionModeForTopic = ({ topicMode = 'inherit', userMode 
     : REVISION_MODES.competitive;
 };
 
-const getDefaultEstimatedMinutesByMode = (effectiveRevisionMode) => {
-  return effectiveRevisionMode === REVISION_MODES.engineering ? 10 : 15;
+const getDefaultEstimatedMinutes = (difficulty) => {
+  const diff = Number(difficulty) || 3;
+  if (diff <= 2) return 5;
+  if (diff <= 4) return 10;
+  return 15;
 };
 
 const isMandatoryFirstRevisionTopic = (topic, todayStart = startOfDay(), todayEnd = (() => {
@@ -1092,7 +1095,7 @@ router.post('/', [
     const parsedEstimatedMinutes = Number(estimatedMinutes);
     const resolvedEstimatedMinutes = Number.isFinite(parsedEstimatedMinutes) && parsedEstimatedMinutes > 0
       ? parsedEstimatedMinutes
-      : getDefaultEstimatedMinutesByMode(effectiveRevisionMode);
+      : getDefaultEstimatedMinutes(difficulty);
 
     const topic = new Topic({
       title,

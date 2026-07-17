@@ -68,6 +68,55 @@ const buildRecurringDatesFromWeekdays = (startDateKey, selectedWeekdays, weeks =
   return sortDateKeys(Array.from(new Set(dates)));
 };
 
+const parseTimeAndDurationFromTitle = (title) => {
+  const text = String(title || '').toLowerCase();
+  let startTime = null;
+  let duration = null;
+
+  // 1. Parse duration (e.g. "1.5 hr", "1 hr", "2 hours", "45 mins", "30m", "10 min")
+  const hrRegex = /(\d+(?:\.\d+)?)\s*(?:hr|hour|hrs|hours)\b/;
+  const minRegex = /(\d+)\s*(?:min|mins|m|minutes)\b/;
+
+  const hrMatch = text.match(hrRegex);
+  if (hrMatch) {
+    duration = Math.round(parseFloat(hrMatch[1]) * 60);
+  } else {
+    const minMatch = text.match(minRegex);
+    if (minMatch) {
+      duration = parseInt(minMatch[1], 10);
+    }
+  }
+
+  // 2. Parse time (am/pm or 24h)
+  const timePmAmRegex = /\b(?:at\s+|@\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/;
+  const time24hRegex = /\b(?:at\s+|@\s*)?(\d{1,2}):(\d{2})\b/;
+
+  const pmAmMatch = text.match(timePmAmRegex);
+  if (pmAmMatch) {
+    let hour = parseInt(pmAmMatch[1], 10);
+    const min = pmAmMatch[2] ? parseInt(pmAmMatch[2], 10) : 0;
+    const ampm = pmAmMatch[3];
+
+    if (ampm === 'pm' && hour < 12) {
+      hour += 12;
+    } else if (ampm === 'am' && hour === 12) {
+      hour = 0;
+    }
+    startTime = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+  } else {
+    const time24Match = text.match(time24hRegex);
+    if (time24Match) {
+      const hour = parseInt(time24Match[1], 10);
+      const min = parseInt(time24Match[2], 10);
+      if (hour >= 0 && hour <= 23 && min >= 0 && min <= 59) {
+        startTime = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+      }
+    }
+  }
+
+  return { startTime, duration };
+};
+
 const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false }) => {
   const [formData, setFormData] = useState({
     title: '',
@@ -76,7 +125,9 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
     taskType: 'task',
     completionType: 'boolean',
     targetValue: 1,
-    recurringWeekdays: [...DEFAULT_WEEKDAY_SELECTION]
+    recurringWeekdays: [...DEFAULT_WEEKDAY_SELECTION],
+    startTime: '',
+    duration: 30
   });
   const [errors, setErrors] = useState({});
   const [isClassifying, setIsClassifying] = useState(false);
@@ -97,10 +148,15 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
 
     setFormData((prev) => ({
       ...prev,
+      title: '',
+      description: '',
       date: getDefaultDateInput(defaultDate),
+      taskType: 'task',
       completionType: 'boolean',
       targetValue: 1,
-      recurringWeekdays: [...DEFAULT_WEEKDAY_SELECTION]
+      recurringWeekdays: [...DEFAULT_WEEKDAY_SELECTION],
+      startTime: '',
+      duration: 30
     }));
     setAiSuggestionMessage('');
   }, [isOpen, defaultDate]);
@@ -157,7 +213,17 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
 
   const handleTitleBlur = async () => {
     const titleVal = String(formData.title).trim();
-    if (!titleVal || titleVal.length < 3) return;
+    if (!titleVal) return;
+
+    // Run local regex parsing first
+    const parsed = parseTimeAndDurationFromTitle(titleVal);
+    setFormData((prev) => ({
+      ...prev,
+      startTime: parsed.startTime !== null ? parsed.startTime : prev.startTime,
+      duration: parsed.duration !== null ? parsed.duration : prev.duration
+    }));
+
+    if (titleVal.length < 3) return;
 
     setIsClassifying(true);
     try {
@@ -193,7 +259,9 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
       taskType: 'task',
       completionType: 'boolean',
       targetValue: 1,
-      recurringWeekdays: [...DEFAULT_WEEKDAY_SELECTION]
+      recurringWeekdays: [...DEFAULT_WEEKDAY_SELECTION],
+      startTime: '',
+      duration: 30
     });
     setErrors({});
     setAiSuggestionMessage('');
@@ -254,6 +322,8 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
       targetValue: finalCompletionType === 'boolean' ? 1 : Number(finalTargetValue || 1),
       currentValue: 0,
       partiallyCompleted: false,
+      startTime: formData.startTime ? String(formData.startTime).trim() : null,
+      duration: Number(formData.duration || 30),
       customDates: []
     };
 
@@ -394,7 +464,28 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
           </div>
         </div>
 
-
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-200">Start Time (Optional)</label>
+            <input
+              type="time"
+              value={formData.startTime || ''}
+              onChange={(e) => setFormData((prev) => ({ ...prev, startTime: e.target.value || '' }))}
+              className="h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-sm text-white outline-none transition-colors focus:border-cyan-300/60"
+            />
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-200">Duration (Minutes)</label>
+            <input
+              type="number"
+              min={5}
+              max={1440}
+              value={formData.duration}
+              onChange={(e) => setFormData((prev) => ({ ...prev, duration: parseInt(e.target.value, 10) || 30 }))}
+              className="h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-sm text-white outline-none transition-colors focus:border-cyan-300/60"
+            />
+          </div>
+        </div>
 
         {formData.taskType === 'habit' && (
           <div data-error-field="customDates">

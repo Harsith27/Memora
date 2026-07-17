@@ -177,6 +177,8 @@ const normalizeTask = (task) => {
     targetValue: Number(task?.targetValue ?? 1),
     currentValue: Number(task?.currentValue ?? 0),
     partiallyCompleted: Boolean(task?.partiallyCompleted ?? false),
+    startTime: task?.startTime ? String(task.startTime).trim() : null,
+    duration: Number(task?.duration ?? 30),
     createdAt,
     updatedAt
   };

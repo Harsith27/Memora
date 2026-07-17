@@ -106,6 +106,12 @@ const Chronicle = () => {
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const lastFetchIdRef = useRef(0);
 
+  // Chronicle 5-day calendar scheduling grid settings
+  const [calendarViewMode, setCalendarViewMode] = useState('month'); // 'month' or '5-day'
+  const [hourHeight, setHourHeight] = useState(60); // Zoom height in px per hour track
+  const [draggingCard, setDraggingCard] = useState(null); // Reference of drag event card
+  const [habitPromptModal, setHabitPromptModal] = useState(null); // Reschedule series options modal
+
   // Settings + Festival preferences
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -839,16 +845,28 @@ const Chronicle = () => {
 
   // Calendar navigation
   const navigateMonth = (direction) => {
-    setCurrentDate((prevDate) => {
-      const safeMonthStart = new Date(prevDate.getFullYear(), prevDate.getMonth(), 1);
-      safeMonthStart.setMonth(safeMonthStart.getMonth() + direction);
-      return safeMonthStart;
-    });
+    if (calendarViewMode === '5-day') {
+      setCurrentDate((prev) => {
+        const next = new Date(prev);
+        next.setDate(next.getDate() + direction * 5);
+        return next;
+      });
+    } else {
+      setCurrentDate((prevDate) => {
+        const safeMonthStart = new Date(prevDate.getFullYear(), prevDate.getMonth(), 1);
+        safeMonthStart.setMonth(safeMonthStart.getMonth() + direction);
+        return safeMonthStart;
+      });
+    }
   };
 
   const goToToday = () => {
     const today = new Date();
-    setCurrentDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    if (calendarViewMode === '5-day') {
+      setCurrentDate(today);
+    } else {
+      setCurrentDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    }
   };
 
   // Calendar grid generation
@@ -890,6 +908,184 @@ const Chronicle = () => {
     }
     
     return days;
+  };
+
+  const parseTimeToMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const [h, m] = timeStr.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+
+  const generate5DayCalendar = () => {
+    const days = [];
+    const base = new Date(currentDate);
+    const todayStr = new Date().toDateString();
+
+    for (let i = 0; i < 5; i++) {
+      const current = new Date(base);
+      current.setDate(base.getDate() + i);
+      const dateKey = current.toDateString();
+      const events = filteredCalendarEvents[dateKey] || [];
+
+      days.push({
+        date: current,
+        dateKey,
+        dayLabel: current.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+        isToday: dateKey === todayStr,
+        events
+      });
+    }
+    return days;
+  };
+
+  const handleEventDragStart = (e, event) => {
+    setDraggingCard(event);
+  };
+
+  const handleApplyHabitShift = async (mode) => {
+    if (!habitPromptModal) return;
+    const { task, nextDate, nextTime } = habitPromptModal;
+    setHabitPromptModal(null);
+    setLoading(true);
+
+    try {
+      if (mode === 'single') {
+        const updated = { ...task, date: nextDate, startTime: nextTime };
+        const userTaskStorageKey = taskService.resolveUserStorageKey(user);
+        const tasks = taskService.getTasks(userTaskStorageKey);
+        const idx = tasks.findIndex(t => t.id === task.id);
+        if (idx >= 0) {
+          tasks[idx] = { ...tasks[idx], ...updated, updatedAt: Date.now() };
+          taskService.saveTasks(userTaskStorageKey, tasks);
+        }
+      } else if (mode === 'future') {
+        const userTaskStorageKey = taskService.resolveUserStorageKey(user);
+        const tasks = taskService.getTasks(userTaskStorageKey);
+        tasks.forEach((t, i) => {
+          if (t.seriesId === task.seriesId && t.date >= task.date) {
+            tasks[i] = { ...t, startTime: nextTime, updatedAt: Date.now() };
+          }
+        });
+        taskService.saveTasks(userTaskStorageKey, tasks);
+      }
+      showToast('Habit shifted successfully');
+      await loadCalendarData();
+    } catch (e) {
+      console.error(e);
+      showToast('Failed to shift habit', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEventDrop = async (e, dateKey) => {
+    e.preventDefault();
+    if (!draggingCard) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relativeY = e.clientY - rect.top;
+    
+    // Calculate snapped time string
+    const minutesSinceStart = (relativeY / hourHeight) * 60;
+    const startOfDayMinutes = 7 * 60; // 07:00 AM
+    const totalMinutes = startOfDayMinutes + minutesSinceStart;
+    const snappedMinutes = Math.max(420, Math.min(1380, Math.round(totalMinutes / 15) * 15)); // Clamped between 7 AM and 11 PM
+    const snappedHour = Math.floor(snappedMinutes / 60);
+    const finalMinutes = snappedMinutes % 60;
+    const timeString = `${String(snappedHour).padStart(2, '0')}:${String(finalMinutes).padStart(2, '0')}`;
+
+    const sourceCard = draggingCard;
+    setDraggingCard(null);
+
+    // Format new date to standard format
+    const targetDate = new Date(dateKey);
+    const isoDate = toLocalDateKey(targetDate);
+
+    if (sourceCard.type === 'task') {
+      const userTaskStorageKey = taskService.resolveUserStorageKey(user);
+      const tasks = taskService.getTasks(userTaskStorageKey);
+      const taskObj = tasks.find(t => t.id === sourceCard.taskId);
+      if (!taskObj) return;
+
+      if (taskObj.taskType === 'recurring' || taskObj.taskType === 'custom-recurring') {
+        setHabitPromptModal({
+          task: taskObj,
+          nextDate: isoDate,
+          nextTime: timeString
+        });
+      } else {
+        setLoading(true);
+        try {
+          const updated = { ...taskObj, date: isoDate, startTime: timeString, updatedAt: Date.now() };
+          const idx = tasks.findIndex(t => t.id === taskObj.id);
+          if (idx >= 0) {
+            tasks[idx] = updated;
+            taskService.saveTasks(userTaskStorageKey, tasks);
+          }
+          showToast('Task rescheduled');
+          await loadCalendarData();
+        } catch (err) {
+          console.error(err);
+          showToast('Failed to reschedule task', 'error');
+        } finally {
+          setLoading(false);
+        }
+      }
+    } else if (sourceCard.type === 'event' || sourceCard.type === 'meeting' || sourceCard.type === 'festival' || sourceCard.type === 'deadline') {
+      setLoading(true);
+      try {
+        const events = loadCustomEvents(user?.id);
+        const sourceDateKey = new Date(sourceCard.date || currentDate).toDateString();
+        if (events[sourceDateKey]) {
+          const idx = events[sourceDateKey].findIndex(ev => ev.id === sourceCard.id);
+          if (idx >= 0) {
+            const evObj = events[sourceDateKey][idx];
+            events[sourceDateKey].splice(idx, 1);
+            if (events[sourceDateKey].length === 0) delete events[sourceDateKey];
+
+            const origStartMins = parseTimeToMinutes(evObj.startTime || '09:00');
+            const origEndMins = parseTimeToMinutes(evObj.endTime || '10:00');
+            const diff = origEndMins - origStartMins;
+
+            const endHour = Math.floor((snappedMinutes + diff) / 60);
+            const endMins = (snappedMinutes + diff) % 60;
+            const endTimeStr = `${String(endHour).padStart(2, '0')}:${String(endMins).padStart(2, '0')}`;
+
+            const targetDateKey = targetDate.toDateString();
+            const updatedEv = {
+              ...evObj,
+              date: isoDate,
+              startTime: timeString,
+              endTime: endTimeStr
+            };
+
+            if (!events[targetDateKey]) events[targetDateKey] = [];
+            events[targetDateKey].push(updatedEv);
+            saveCustomEvents(events, user?.id);
+          }
+        }
+        showToast('Event rescheduled');
+        await loadCalendarData();
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to reschedule event', 'error');
+      } finally {
+        setLoading(false);
+      }
+    } else if (sourceCard.type === 'revision') {
+      setLoading(true);
+      try {
+        const revisionDate = new Date(`${isoDate}T${timeString}:00`);
+        await apiService.updateTopicRevisionDate(sourceCard.topicId, revisionDate.toISOString());
+        showToast('Revision rescheduled');
+        await loadCalendarData();
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to reschedule topic revision', 'error');
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
   // Event management
@@ -1463,10 +1659,36 @@ const Chronicle = () => {
               >
                 Today
               </button>
+
+              <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-0.5 ml-1 sm:ml-2">
+                <button
+                  type="button"
+                  onClick={() => setCalendarViewMode('month')}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                    calendarViewMode === 'month'
+                      ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/20'
+                      : 'text-gray-400 hover:text-white border border-transparent'
+                  }`}
+                >
+                  Month
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCalendarViewMode('5-day')}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                    calendarViewMode === '5-day'
+                      ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/20'
+                      : 'text-gray-400 hover:text-white border border-transparent'
+                  }`}
+                >
+                  5-Day
+                </button>
+              </div>
+
               <button
                 onClick={() => openEventModal()}
                 data-tour="chronicle-add-event"
-                className="bg-yellow-500 hover:bg-yellow-600 text-black px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg inline-flex items-center space-x-1.5 transition-colors"
+                className="border border-yellow-400/35 bg-yellow-500/12 text-yellow-100 hover:bg-yellow-500/18 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg inline-flex items-center space-x-1.5 transition-colors"
               >
                 <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 <span className="hidden sm:inline">Add Event</span>
@@ -1488,7 +1710,20 @@ const Chronicle = () => {
               </button>
               <div className="min-w-0 flex-1 sm:flex-none sm:w-[260px] text-center">
                 <h2 className="text-lg sm:text-xl font-semibold whitespace-nowrap">
-                  {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+                  {calendarViewMode === '5-day' ? (
+                    (() => {
+                      const endD = new Date(currentDate);
+                      endD.setDate(endD.getDate() + 4);
+                      const startM = monthNames[currentDate.getMonth()].slice(0, 3);
+                      const endM = monthNames[endD.getMonth()].slice(0, 3);
+                      if (currentDate.getMonth() === endD.getMonth()) {
+                        return `${startM} ${currentDate.getDate()} - ${endD.getDate()}, ${currentDate.getFullYear()}`;
+                      }
+                      return `${startM} ${currentDate.getDate()} - ${endM} ${endD.getDate()}, ${currentDate.getFullYear()}`;
+                    })()
+                  ) : (
+                    `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`
+                  )}
                 </h2>
               </div>
               <button
@@ -1527,96 +1762,115 @@ const Chronicle = () => {
         </div>
 
         {/* Calendar Grid */}
-        <div className="flex-1 px-3 sm:px-4 py-3 sm:py-4 overflow-auto scrollbar-hide">
-          <div className="bg-black rounded-lg border border-white/10 overflow-hidden">
-            {/* Day headers */}
-            <div className="grid grid-cols-7 border-b border-white/10">
-              {dayNames.map((day) => (
-                <div key={day} className="p-2 sm:p-3 text-center text-xs sm:text-sm font-medium text-gray-400 border-r border-white/10 last:border-r-0">
-                  {isPhoneViewport ? day.charAt(0) : day}
-                </div>
-              ))}
-            </div>
-
-            {/* Calendar days */}
-            <div className="grid grid-cols-7">
-              {calendarDays.map((day, index) => (
-                <div
-                  key={index}
-                  className={`relative overflow-hidden border-r border-b border-white/10 last:border-r-0 p-1.5 sm:p-2 cursor-pointer hover:bg-white/5 transition-colors ${
-                    isPhoneViewport ? 'min-h-[64px]' : 'min-h-[120px]'
-                  } ${!day.isCurrentMonth ? 'opacity-40' : ''} ${day.isToday ? 'bg-yellow-500/10' : ''}`}
-                  onClick={() => openDayDetails(day)}
-                >
-                  {day.isPastDayInCurrentMonth && (
-                    <div
-                      className="absolute inset-0 pointer-events-none"
-                      style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
-                    />
-                  )}
-
-                  <div className={`text-xs sm:text-sm font-medium ${isPhoneViewport ? 'mb-0.5' : 'mb-1'} ${
-                    day.isToday ? 'text-yellow-300' : day.isCurrentMonth ? 'text-white' : 'text-gray-500'
-                  }`}>
-                    {day.day}
+        {calendarViewMode === '5-day' ? (
+          <Chronicle5DayView
+            currentDate={currentDate}
+            generate5DayCalendar={generate5DayCalendar}
+            hourHeight={hourHeight}
+            setHourHeight={setHourHeight}
+            handleEventDragStart={handleEventDragStart}
+            handleEventDrop={handleEventDrop}
+            parseTimeToMinutes={parseTimeToMinutes}
+            getEventIcon={getEventIcon}
+            getCalendarTaskColor={getCalendarTaskColor}
+            getEventColor={getEventColor}
+            openDayDetails={(day) => {
+              setSelectedDate(day.date);
+              setShowDayDetails(true);
+            }}
+          />
+        ) : (
+          <div className="flex-1 px-3 sm:px-4 py-3 sm:py-4 overflow-auto scrollbar-hide">
+            <div className="bg-black rounded-lg border border-white/10 overflow-hidden">
+              {/* Day headers */}
+              <div className="grid grid-cols-7 border-b border-white/10">
+                {dayNames.map((day) => (
+                  <div key={day} className="p-2 sm:p-3 text-center text-xs sm:text-sm font-medium text-gray-400 border-r border-white/10 last:border-r-0">
+                    {isPhoneViewport ? day.charAt(0) : day}
                   </div>
+                ))}
+              </div>
 
-                  {isPhoneViewport ? (
-                    <div className="flex flex-col items-start gap-0.5">
-                      <div className="grid grid-cols-3 gap-1 w-fit">
-                        {day.events.slice(0, 6).map((event, eventIndex) => (
-                          <span
-                            key={eventIndex}
-                            className={`h-1.5 w-1.5 rounded-full ${getEventDotColor(event)}`}
-                            title={`${event.isDue ? 'DUE: ' : (event.type === 'revision' && event.completed ? 'DONE: ' : '')}${event.title}${event.type === 'revision' && Number(event.revisionNumber) > 0 ? ` (R${event.revisionNumber})` : ''}`}
-                          />
-                        ))}
-                      </div>
-                      {day.events.length > 6 && (
-                        <span className="text-[10px] text-gray-400 leading-none">+{day.events.length - 6}</span>
-                      )}
+              {/* Calendar days */}
+              <div className="grid grid-cols-7">
+                {calendarDays.map((day, index) => (
+                  <div
+                    key={index}
+                    className={`relative overflow-hidden border-r border-b border-white/10 last:border-r-0 p-1.5 sm:p-2 cursor-pointer hover:bg-white/5 transition-colors ${
+                      isPhoneViewport ? 'min-h-[64px]' : 'min-h-[120px]'
+                    } ${!day.isCurrentMonth ? 'opacity-40' : ''} ${day.isToday ? 'bg-yellow-500/10' : ''}`}
+                    onClick={() => openDayDetails(day)}
+                  >
+                    {day.isPastDayInCurrentMonth && (
+                      <div
+                        className="absolute inset-0 pointer-events-none"
+                        style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+                      />
+                    )}
+
+                    <div className={`text-xs sm:text-sm font-medium ${isPhoneViewport ? 'mb-0.5' : 'mb-1'} ${
+                      day.isToday ? 'text-yellow-300' : day.isCurrentMonth ? 'text-white' : 'text-gray-500'
+                    }`}>
+                      {day.day}
                     </div>
-                  ) : (
-                    <div className="space-y-1">
-                      {day.events.slice(0, 3).map((event, eventIndex) => {
-                        const EventIcon = getEventIcon(event);
-                        const eventColorClass = event.type === 'task'
-                          ? getCalendarTaskColor(event)
-                          : getEventColor(event);
-                        const isCompletedRevision = event.type === 'revision' && Boolean(event.completed);
-                        const monthCellEventClass = isCompletedRevision
-                          ? 'bg-transparent text-slate-100 border-slate-300/45'
-                          : eventColorClass;
 
-                        return (
-                          <div
-                            key={eventIndex}
-                            className={`text-xs p-1 rounded border ${monthCellEventClass} truncate`}
-                            title={`${event.isDue ? 'DUE: ' : (isCompletedRevision ? 'DONE: ' : '')}${event.title}${event.type === 'revision' && Number(event.revisionNumber) > 0 ? ` (R${event.revisionNumber})` : ''}`}
-                          >
-                            <div className="flex items-center space-x-1">
-                              <EventIcon className="w-3 h-3 flex-shrink-0" />
-                              {(event.isDue || event.isMissed) && <span className="text-red-400 font-bold">•</span>}
-                              {event.type === 'revision' && Number(event.revisionNumber) > 0 && (
-                                <span className="text-[10px] px-1 py-0.5 rounded bg-white/15 shrink-0">R{event.revisionNumber}</span>
-                              )}
-                              <span className={`truncate ${isCompletedRevision ? 'line-through opacity-85' : ''}`}>{event.title}</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {day.events.length > 3 && (
-                        <div className="text-xs text-gray-400 pl-1">
-                          +{day.events.length - 3} more
+                    {isPhoneViewport ? (
+                      <div className="flex flex-col items-start gap-0.5">
+                        <div className="grid grid-cols-3 gap-1 w-fit">
+                          {day.events.slice(0, 6).map((event, eventIndex) => (
+                            <span
+                              key={eventIndex}
+                              className={`h-1.5 w-1.5 rounded-full ${getEventDotColor(event)}`}
+                              title={`${event.isDue ? 'DUE: ' : (event.type === 'revision' && event.completed ? 'DONE: ' : '')}${event.title}${event.type === 'revision' && Number(event.revisionNumber) > 0 ? ` (R${event.revisionNumber})` : ''}`}
+                            />
+                          ))}
                         </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
+                        {day.events.length > 6 && (
+                          <span className="text-[10px] text-gray-400 leading-none">+{day.events.length - 6}</span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {day.events.slice(0, 3).map((event, eventIndex) => {
+                          const EventIcon = getEventIcon(event);
+                          const eventColorClass = event.type === 'task'
+                            ? getCalendarTaskColor(event)
+                            : getEventColor(event);
+                          const isCompletedRevision = event.type === 'revision' && Boolean(event.completed);
+                          const monthCellEventClass = isCompletedRevision
+                            ? 'bg-transparent text-slate-100 border-slate-300/45'
+                            : eventColorClass;
+
+                          return (
+                            <div
+                              key={eventIndex}
+                              className={`text-xs p-1 rounded border ${monthCellEventClass} truncate`}
+                              title={`${event.isDue ? 'DUE: ' : (isCompletedRevision ? 'DONE: ' : '')}${event.title}${event.type === 'revision' && Number(event.revisionNumber) > 0 ? ` (R${event.revisionNumber})` : ''}`}
+                            >
+                              <div className="flex items-center space-x-1">
+                                <EventIcon className="w-3 h-3 flex-shrink-0" />
+                                {(event.isDue || event.isMissed) && <span className="text-red-400 font-bold">•</span>}
+                                {event.type === 'revision' && Number(event.revisionNumber) > 0 && (
+                                  <span className="text-[10px] px-1 py-0.5 rounded bg-white/15 shrink-0">R{event.revisionNumber}</span>
+                                )}
+                                <span className={`truncate ${isCompletedRevision ? 'line-through opacity-85' : ''}`}>{event.title}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {day.events.length > 3 && (
+                          <div className="text-xs text-gray-400 pl-1">
+                            +{day.events.length - 3} more
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <DashboardFooter className="mt-1 border-t border-white/10 py-5 sm:py-6" />
       </div>
@@ -2155,8 +2409,278 @@ const Chronicle = () => {
         type={toast.type}
         onClose={() => setToast((prev) => ({ ...prev, show: false }))}
       />
+
+      {/* Habit Prompt Modal */}
+      {habitPromptModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0c0d10] border border-white/10 rounded-xl p-6 max-w-sm w-full relative shadow-2xl">
+            <h3 className="text-base font-semibold text-white mb-2">Reschedule Recurring Habit</h3>
+            <p className="text-xs text-gray-400 mb-5">
+              You are moving an occurrence of a recurring habit. How would you like to apply this shift?
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => handleApplyHabitShift('single')}
+                className="w-full py-2.5 px-3 bg-white/5 hover:bg-white/10 text-white rounded-lg text-xs font-medium transition-colors border border-white/10 text-left"
+              >
+                <strong>This occurrence only</strong> (Shift only today's card)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyHabitShift('future')}
+                className="w-full py-2.5 px-3 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-300 rounded-lg text-xs font-medium transition-colors border border-yellow-500/20 text-left"
+              >
+                <strong>All future occurrences</strong> (Shift this and subsequent cards)
+              </button>
+              <button
+                type="button"
+                onClick={() => setHabitPromptModal(null)}
+                className="w-full py-2 text-center text-gray-500 hover:text-white rounded-lg text-xs transition-colors mt-2"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default Chronicle;
+
+const LiveTimeIndicator = ({ hourHeight }) => {
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const hours = now.getHours();
+  const minutes = now.getMinutes();
+
+  if (hours < 7 || hours >= 23) return null;
+
+  const topOffset = ((hours - 7) * hourHeight) + ((minutes / 60) * hourHeight);
+
+  return (
+    <div
+      className="absolute left-0 right-0 border-t-2 border-red-500 z-10 flex items-center pointer-events-none"
+      style={{ top: topOffset }}
+    >
+      <div className="w-2 h-2 rounded-full bg-red-500 -ml-1" />
+    </div>
+  );
+};
+
+const CalendarEventCard = ({
+  event,
+  hourHeight,
+  onDragStart,
+  parseTimeToMinutes,
+  getEventIcon,
+  getCalendarTaskColor,
+  getEventColor
+}) => {
+  const EventIcon = getEventIcon(event);
+  
+  const startMinutes = parseTimeToMinutes(event.startTime || event.time || (event.type === 'task' ? '20:00' : '09:00'));
+  let duration = 30;
+  if (event.type === 'task') {
+    duration = event.duration || 30;
+  } else if (event.type === 'revision') {
+    duration = event.difficulty <= 2 ? 5 : (event.difficulty <= 4 ? 10 : 15);
+  } else if (event.type === 'event' || event.type === 'festival' || event.type === 'deadline' || event.type === 'meeting') {
+    const endMinutes = parseTimeToMinutes(event.endTime || '10:00');
+    duration = Math.max(15, endMinutes - startMinutes);
+  }
+
+  const minsSinceStart = startMinutes - 420; // relative to 7 AM
+  const top = (minsSinceStart / 60) * hourHeight;
+  const height = Math.max(22, (duration / 60) * hourHeight);
+
+  let cardClass = "border border-cyan-400/40 bg-cyan-500/10 text-cyan-200";
+  if (event.completed) {
+    cardClass = "border border-slate-500/20 bg-slate-500/5 text-slate-400";
+  } else if (event.isMissed) {
+    cardClass = "border border-rose-500/30 bg-rose-500/5 text-rose-300";
+  } else if (event.type === 'revision') {
+    cardClass = "border border-blue-400/30 bg-blue-500/10 text-blue-200";
+  } else if (event.type === 'event' || event.type === 'meeting') {
+    cardClass = "border border-amber-400/30 bg-amber-500/10 text-amber-200";
+  } else if (event.type === 'festival') {
+    cardClass = "border border-purple-400/30 bg-purple-500/10 text-purple-200";
+  }
+
+  const formatTimeStr = (mins) => {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    const suffix = h >= 12 ? 'pm' : 'am';
+    const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${displayHour}:${String(m).padStart(2, '0')}${suffix}`;
+  };
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      className={`absolute left-1 right-1 rounded-lg p-1.5 text-left text-[11px] overflow-hidden select-none cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${cardClass}`}
+      style={{ top, height }}
+      title={`${event.title} (${duration} mins)`}
+    >
+      <div className="flex items-center space-x-1 font-semibold truncate">
+        <EventIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-80" />
+        <span>{formatTimeStr(startMinutes)}</span>
+        <span className="opacity-60 font-normal">({duration}m)</span>
+      </div>
+      <div className="font-medium truncate mt-0.5">{event.title}</div>
+      {height > 50 && event.description && (
+        <div className="text-[10px] opacity-70 mt-1 truncate">{event.description}</div>
+      )}
+    </div>
+  );
+};
+
+const Chronicle5DayView = ({
+  currentDate,
+  generate5DayCalendar,
+  hourHeight,
+  setHourHeight,
+  handleEventDragStart,
+  handleEventDrop,
+  parseTimeToMinutes,
+  getEventIcon,
+  getCalendarTaskColor,
+  getEventColor,
+  openDayDetails
+}) => {
+  const days = generate5DayCalendar();
+  const HOURS = Array.from({ length: 16 }, (_, i) => i + 7); // 7 AM to 10 PM
+  const gridContainerRef = useRef(null);
+
+  useEffect(() => {
+    const grid = gridContainerRef.current;
+    if (!grid) return;
+    const onWheel = (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const delta = e.deltaY * -0.5;
+        setHourHeight((prev) => Math.max(40, Math.min(200, prev + delta)));
+      }
+    };
+    grid.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      grid.removeEventListener('wheel', onWheel);
+    };
+  }, [setHourHeight]);
+
+  const touchStartDistRef = useRef(0);
+  const touchStartHeightRef = useRef(0);
+
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      touchStartDistRef.current = dist;
+      touchStartHeightRef.current = hourHeight;
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 2 && touchStartDistRef.current > 0) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const ratio = dist / touchStartDistRef.current;
+      const nextHeight = Math.max(40, Math.min(200, touchStartHeightRef.current * ratio));
+      setHourHeight(nextHeight);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    touchStartDistRef.current = 0;
+  };
+
+  return (
+    <div className="flex-1 flex flex-col px-3 sm:px-4 py-3 sm:py-4 overflow-hidden min-h-[400px]">
+      <div className="flex bg-black border border-white/10 rounded-t-lg divide-x divide-white/10 flex-shrink-0 pl-14 overflow-hidden">
+        {days.map((day) => (
+          <button
+            type="button"
+            key={day.dateKey}
+            onClick={() => openDayDetails(day)}
+            className={`flex-1 text-center py-2 sm:py-3 transition-colors hover:bg-white/5 ${
+              day.isToday ? 'bg-yellow-500/10 text-yellow-300' : 'text-gray-300'
+            }`}
+          >
+            <div className="text-xs sm:text-sm font-semibold truncate px-1">
+              {day.dayLabel}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div
+        ref={gridContainerRef}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        className="flex-1 bg-black border-x border-b border-white/10 rounded-b-lg overflow-auto flex select-none relative"
+      >
+        <div className="w-14 bg-[#07080a] border-r border-white/10 flex-shrink-0 sticky left-0 z-20">
+          {HOURS.map((hour) => (
+            <div
+              key={hour}
+              className="text-[10px] text-gray-500 font-mono text-right pr-2 flex items-center justify-end"
+              style={{ height: hourHeight }}
+            >
+              {hour === 12 ? '12 PM' : hour > 12 ? `${hour - 12} PM` : `${hour} AM`}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex-1 flex divide-x divide-white/10 relative min-w-[700px]">
+          {days.map((day) => (
+            <div
+              key={day.dateKey}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => handleEventDrop(e, day.dateKey)}
+              className={`flex-1 relative ${
+                day.isToday ? 'bg-white/[0.01]' : ''
+              }`}
+              style={{ height: hourHeight * 16 }}
+            >
+              {HOURS.map((hour) => (
+                <div
+                  key={hour}
+                  className="absolute left-0 right-0 border-b border-white/5 pointer-events-none"
+                  style={{ top: (hour - 7) * hourHeight, height: hourHeight }}
+                />
+              ))}
+
+              {day.isToday && <LiveTimeIndicator hourHeight={hourHeight} />}
+
+              {day.events.map((event) => (
+                <CalendarEventCard
+                  key={event.id}
+                  event={event}
+                  hourHeight={hourHeight}
+                  onDragStart={(e) => handleEventDragStart(e, event)}
+                  parseTimeToMinutes={parseTimeToMinutes}
+                  getEventIcon={getEventIcon}
+                  getCalendarTaskColor={getCalendarTaskColor}
+                  getEventColor={getEventColor}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};

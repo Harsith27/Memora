@@ -11,7 +11,12 @@ import { formatDateDDMMYYYY, getTodayIsoDateKey, parseDateInputToIso } from '../
 import { getEffectiveRevisionMode, getRevisionModeDifficultyOptions, normalizeDifficultyForRevisionMode } from '../utils/revisionModes';
 
 const formatDateForUi = (value) => formatDateDDMMYYYY(value);
-const getDefaultEstimatedMinutes = (revisionMode) => (revisionMode === 'engineering' ? 10 : 15);
+const getDefaultEstimatedMinutes = (difficulty) => {
+  const diff = Number(difficulty) || 3;
+  if (diff <= 2) return 5;
+  if (diff <= 4) return 10;
+  return 15;
+};
 
 const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
   const { user } = useAuth();
@@ -23,7 +28,7 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
     revisionMode: 'inherit',
     deadlineDate: '',
     deadlineType: 'soft',
-    estimatedMinutes: 15,
+    estimatedMinutes: 10,
     externalLinks: [], // Will store all resources (links, files, etc.)
   });
   const [estimatedMinutesTouched, setEstimatedMinutesTouched] = useState(false);
@@ -46,7 +51,10 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
   }, [formData.deadlineDate]);
 
   const userRevisionMode = user?.preferences?.revisionMode || 'competitive';
-  const effectiveRevisionMode = getEffectiveRevisionMode(formData.revisionMode, userRevisionMode);
+  const effectiveRevisionMode = useMemo(() => {
+    return getEffectiveRevisionMode(formData.revisionMode, userRevisionMode);
+  }, [formData.revisionMode, userRevisionMode]);
+
   const difficultyOptions = useMemo(
     () => getRevisionModeDifficultyOptions(effectiveRevisionMode),
     [effectiveRevisionMode]
@@ -133,11 +141,11 @@ const AddTopicModal = ({ isOpen, onClose, onSubmit, loading = false }) => {
   useEffect(() => {
     if (!isOpen || estimatedMinutesTouched) return;
 
-    const nextDefaultMinutes = getDefaultEstimatedMinutes(effectiveRevisionMode);
+    const nextDefaultMinutes = getDefaultEstimatedMinutes(formData.difficulty);
     if (Number(formData.estimatedMinutes) !== nextDefaultMinutes) {
       setFormData((prev) => ({ ...prev, estimatedMinutes: nextDefaultMinutes }));
     }
-  }, [effectiveRevisionMode, estimatedMinutesTouched, formData.estimatedMinutes, isOpen]);
+  }, [formData.difficulty, estimatedMinutesTouched, formData.estimatedMinutes, isOpen]);
 
   const filteredExistingTags = useMemo(() => {
     const typed = tagInput.trim().toLowerCase();

@@ -20,6 +20,7 @@ import MinimalistTimer from '../components/MinimalistTimer';
 import GraphModeView from '../components/GraphModeView';
 import GlobalSearchBar from '../components/GlobalSearchBar';
 import DashboardGlyph from '../components/DashboardGlyph';
+import ScheduleWindowWidget from '../components/ScheduleWindowWidget';
 import logoImg from '../assets/logo.jpg';
 import { getSidebarNavItems } from '../constants/sidebarNavigation';
 import { useAuth } from '../contexts/AuthContext';
@@ -4734,38 +4735,9 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {/* Today's Topics Mini Graph */}
+            {/* Today's Schedule Window */}
             <div className="bg-black border border-white/20 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-white">Today's Topic Mix</h3>
-                <span className="inline-flex items-center whitespace-nowrap rounded-full border border-emerald-300/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-100">
-                  {todayTopicMix.total} {todayTopicMix.total === 1 ? 'topic' : 'topics'}
-                </span>
-              </div>
-
-              {todayTopicMix.total > 0 ? (
-                <>
-                  <div className="grid grid-cols-5 gap-2 items-end h-28">
-                    {todayTopicMix.bars.map((bar) => (
-                      <div key={bar.label} className="flex flex-col items-center">
-                        <div className="h-20 w-full max-w-[30px] rounded-md bg-white/5 border border-white/10 flex items-end overflow-hidden">
-                          <div
-                            className={`w-full ${bar.color} shadow-[0_0_18px_rgba(34,211,238,0.12)]`}
-                            style={{ height: `${(bar.value / todayTopicMix.max) * 100}%` }}
-                            title={`${bar.label}: ${bar.value}`}
-                          />
-                        </div>
-                        <span className="mt-2 text-[10px] text-gray-400">{bar.label}</span>
-                        <span className="text-xs text-white">{bar.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div className="h-28 rounded-lg border border-white/10 bg-white/[0.03] flex items-center justify-center">
-                  <p className="text-sm text-gray-400">No topics due today.</p>
-                </div>
-              )}
+              <ScheduleWindowWidget tasks={tasks} dueTopics={dueTopics} />
             </div>
           </div>
         </div>

@@ -65,6 +65,15 @@ const taskSchema = new mongoose.Schema({
     default: false,
     index: true
   },
+  startTime: {
+    type: String,
+    default: null,
+    trim: true
+  },
+  duration: {
+    type: Number,
+    default: 30
+  },
   createdAtMs: {
     type: Number,
     required: true,
