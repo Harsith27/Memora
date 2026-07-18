@@ -21,7 +21,9 @@ Each item has:
 
 Rules for scheduling:
 1. Sleep and Work hours are strict blockouts:
-   - Do NOT schedule any tasks or revisions during the user's designated sleep or work periods. Sleeping times must be treated as absolute hard blockouts.
+   - Identify the user's sleep and work periods for weekdays and weekends from their routine.
+   - For example, if weekend sleep is "12 AM to 7:30 AM", this corresponds to 24h range [00:00 - 07:30].
+   - Do NOT schedule any tasks or revisions during these blockout periods. Sleeping times must be treated as absolute hard blockouts.
 2. Revision Items (type: "revision"):
    - Revisions are small review blocks (usually 5, 10, or 15 minutes long). They are NOT general study times.
    - You MUST place all revisions strictly inside the user's specified "revision study" or "optimal task/revision blocks" time windows.
@@ -33,6 +35,7 @@ Rules for scheduling:
 4. Output Schema:
    - Return ONLY a valid JSON object matching the output schema. Do NOT wrap in markdown codeblocks.
    {
+     "reasoning": "Step-by-step blockout identification and scheduling checks",
      "optimizations": [
        {
          "id": "string",

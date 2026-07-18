@@ -571,7 +571,7 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
             className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-300/40 bg-cyan-500/15 px-4 py-2 text-sm font-medium text-cyan-100 transition-colors hover:bg-cyan-500/25 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Plus className="h-4 w-4" />
-            {loading ? 'Adding...' : 'Add Task'}
+            {loading ? 'Adding...' : 'Add'}
           </button>
         </div>
       </form>
