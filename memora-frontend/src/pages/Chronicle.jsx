@@ -1721,6 +1721,10 @@ const Chronicle = () => {
   };
 
   const getCalendarTaskColor = (event) => {
+    if (event?.title && /sleep/i.test(event.title)) {
+      return 'bg-gray-800/60 text-gray-400 border-gray-700/50';
+    }
+
     if (event?.isMissed && !event?.completed) {
       return 'bg-rose-500/30 text-rose-100 border-rose-400/50';
     }
@@ -2039,10 +2043,10 @@ const Chronicle = () => {
                 <button
                   type="button"
                   onClick={openSmartSchedule}
-                  className="h-8 sm:h-9 px-2.5 sm:px-3 text-xs sm:text-sm border border-cyan-400/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20 rounded-lg transition-all inline-flex items-center gap-1.5"
+                  className="h-8 sm:h-9 px-2.5 sm:px-3 text-xs sm:text-sm border border-yellow-400/30 bg-yellow-500/10 text-yellow-200 hover:bg-yellow-500/20 rounded-lg transition-all inline-flex items-center gap-1.5"
                   title="AI Smart Schedule"
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-cyan-300 animate-pulse" />
+                  <Sparkles className="w-3.5 h-3.5 text-yellow-300 animate-pulse" />
                   <span className="hidden md:inline">Smart Schedule</span>
                   <span className="md:hidden">Smart</span>
                 </button>
@@ -2880,13 +2884,13 @@ const Chronicle = () => {
       {/* Smart Schedule Modal */}
       {showSmartScheduleModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3 sm:p-4">
-          <div className="bg-[#080808] rounded-2xl border border-cyan-500/20 w-full max-w-xl max-h-[85vh] flex flex-col shadow-[0_24px_70px_rgba(0,136,204,0.15)] overflow-hidden">
+          <div className="bg-[#080808] rounded-2xl border border-yellow-500/25 w-full max-w-xl max-h-[85vh] flex flex-col shadow-[0_24px_70px_rgba(217,164,4,0.15)] overflow-hidden">
             
             {/* Header */}
             <div className="p-4 sm:p-6 border-b border-white/10 flex-shrink-0">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-cyan-400 animate-pulse" />
+                  <Sparkles className="w-5 h-5 text-yellow-400 animate-pulse" />
                   <h3 className="text-lg sm:text-xl font-semibold text-white tracking-tight">AI Smart Schedule</h3>
                 </div>
                 <button
@@ -2917,7 +2921,7 @@ const Chronicle = () => {
                   placeholder="Describe your routine (e.g. sleep hours, work hours, optimal study blocks)..."
                   disabled={optimizing}
                   rows={6}
-                  className="w-full rounded-xl border border-white/15 bg-white/5 p-3 text-sm text-white outline-none transition-colors focus:border-cyan-400/50 resize-none font-sans"
+                  className="w-full rounded-xl border border-white/15 bg-white/5 p-3 text-sm text-white outline-none transition-colors focus:border-yellow-400/50 resize-none font-sans"
                 />
                 <p className="text-[11px] text-gray-500 leading-normal">
                   💡 Tip: You can edit this live! Describe sleep ranges, work schedules, or weekends to get customized slot recommendations.
@@ -2925,10 +2929,10 @@ const Chronicle = () => {
               </div>
 
               {optimizing && (
-                <div className="rounded-xl border border-cyan-500/20 bg-cyan-950/10 p-4 flex flex-col items-center justify-center space-y-3 mt-2">
-                  <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                <div className="rounded-xl border border-yellow-500/20 bg-yellow-950/10 p-4 flex flex-col items-center justify-center space-y-3 mt-2">
+                  <div className="w-8 h-8 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
                   <div className="text-center">
-                    <p className="text-sm font-medium text-cyan-200">Analyzing layout & routing events...</p>
+                    <p className="text-sm font-medium text-yellow-200">Analyzing layout & routing events...</p>
                     <p className="text-xs text-gray-400 mt-1">This takes about 5-10 seconds as LLM recalculates timelines</p>
                   </div>
                 </div>
@@ -2949,7 +2953,7 @@ const Chronicle = () => {
                 type="button"
                 onClick={handleRunOptimize}
                 disabled={optimizing}
-                className="px-4 py-2 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 hover:bg-cyan-500/30 text-sm font-medium transition-all inline-flex items-center gap-1.5"
+                className="px-4 py-2 rounded-lg bg-yellow-500/20 border border-yellow-500/40 text-yellow-200 hover:bg-yellow-500/30 text-sm font-medium transition-all inline-flex items-center gap-1.5"
               >
                 <Sparkles className="w-4 h-4" />
                 {optimizing ? 'Optimizing...' : 'Generate Plan'}
@@ -3300,9 +3304,8 @@ const Chronicle3DayView = ({
               {hour === 0 ? '12 AM' : hour === 12 ? '12 PM' : hour > 12 ? `${hour - 12} PM` : `${hour} AM`}
             </div>
           ))}
-          <div className="text-[10px] text-cyan-400 font-sans font-bold tracking-wider text-right pr-3 pt-4 uppercase border-t border-white/10 flex items-start justify-end gap-1 h-32 select-none sticky bottom-0 bg-black z-20">
-            <Sparkles className="w-3 h-3 text-cyan-400 mt-0.5" />
-            <span>Habits</span>
+          <div className="text-[10px] text-gray-500 font-sans font-bold tracking-wider text-right pr-3 pt-4 uppercase border-t border-white/10 h-32 select-none sticky bottom-0 bg-black z-20">
+            Habits
           </div>
         </div>
 
@@ -3358,40 +3361,24 @@ const Chronicle3DayView = ({
               </div>
 
               {/* Habits list below 11pm track */}
-              <div className="flex-1 bg-[#090909] p-3 min-h-32 flex flex-col justify-start">
+              <div className="flex-1 bg-black p-3 min-h-32 flex flex-col justify-start">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Habits</span>
-                  {day.habits && day.habits.length > 0 && (
-                    <span className="text-[9px] font-medium text-cyan-400 bg-cyan-950/40 border border-cyan-800/30 px-1.5 py-0.5 rounded-full select-none">
-                      {day.habits.filter(h => h.completed).length}/{day.habits.length} Done
-                    </span>
-                  )}
                 </div>
                 {(!day.habits || day.habits.length === 0) ? (
                   <p className="text-[10.5px] text-gray-600 italic">No habits scheduled today</p>
                 ) : (
                   <div className="space-y-1.5 overflow-y-auto max-h-24 pr-1 scrollbar-themed">
                     {day.habits.map((habit) => (
-                      <label
+                      <div
                         key={habit.id}
-                        onClick={(e) => e.stopPropagation()}
-                        className="group flex items-start gap-2 text-xs text-gray-300 hover:text-white cursor-pointer select-none py-0.5 transition-colors"
+                        className="text-xs text-gray-400 py-0.5 truncate flex items-center gap-1.5"
                       >
-                        <input
-                          type="checkbox"
-                          checked={habit.completed}
-                          onChange={(e) => handleToggleHabitCompletion(habit.taskId, e.target.checked)}
-                          className="rounded border-white/20 bg-white/5 text-cyan-500 focus:ring-cyan-500/50 w-3.5 h-3.5 mt-0.5 cursor-pointer"
-                        />
-                        <span className={`truncate leading-normal ${habit.completed ? 'line-through text-gray-500' : 'text-gray-300'}`}>
+                        <span className="text-gray-600 select-none">•</span>
+                        <span className="truncate">
                           {habit.title}
-                          {habit.startTime && (
-                            <span className="text-[9px] text-gray-500 ml-1.5 font-mono">
-                              ({habit.startTime})
-                            </span>
-                          )}
                         </span>
-                      </label>
+                      </div>
                     ))}
                   </div>
                 )}
