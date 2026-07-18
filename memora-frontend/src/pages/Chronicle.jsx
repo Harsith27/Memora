@@ -129,6 +129,7 @@ const Chronicle = () => {
     description: '',
     date: formatDateDDMMYYYY(getTodayIsoDateKey()),
     time: '',
+    duration: 60,
     type: 'revision', // revision, event, festival, deadline
     color: 'blue'
   });
@@ -1590,6 +1591,7 @@ const Chronicle = () => {
       description: '',
       date: formatDateDDMMYYYY(date ? toLocalDateKey(date) : getTodayIsoDateKey()),
       time: '09:00',
+      duration: 60,
       type,
       color: eventTypes[type]?.color || 'blue'
     });
@@ -1606,6 +1608,7 @@ const Chronicle = () => {
       description: event.description || '',
       date: formatDateDDMMYYYY(eventDateKey),
       time: event.time || '09:00',
+      duration: event.duration || 60,
       type: event.type || 'event',
       color: event.color || 'blue'
     });
@@ -1658,6 +1661,7 @@ const Chronicle = () => {
       description: eventForm.description,
       date: eventDate,
       time: eventForm.time,
+      duration: Number(eventForm.duration) || 60,
       type: eventForm.type,
       color: eventForm.color,
       source: 'custom'
@@ -1798,6 +1802,10 @@ const Chronicle = () => {
       return colors[event?.color] || colors.cyan;
     }
 
+    // custom/user-created events use solid colors
+    if (event?.source === 'custom') {
+      return colors[event?.color] || colors.blue;
+    }
     return outlineColors[event?.color] || outlineColors.blue;
   };
 
@@ -2322,6 +2330,20 @@ const Chronicle = () => {
                       {selectedDetailsEvent.title}
                     </h3>
                     <div className="flex items-center space-x-1 flex-shrink-0">
+                      {selectedDetailsEvent.source === 'custom' && (
+                        <button
+                          onClick={() => {
+                            const ev = selectedDetailsEvent;
+                            setSelectedDetailsEvent(null);
+                            setPopoverPosition(null);
+                            openEditEventModal(ev);
+                          }}
+                          className="p-1 hover:bg-white/10 rounded-md transition-colors text-gray-400 hover:text-yellow-300"
+                          title="Edit event"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           setSelectedDetailsEvent(null);
@@ -2715,6 +2737,38 @@ const Chronicle = () => {
                     onChange={(e) => setEventForm({ ...eventForm, time: e.target.value })}
                     className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-500"
                   />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Duration
+                  <span className="ml-2 text-[10px] text-gray-500 font-normal">(minutes — default 60)</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEventForm(prev => ({ ...prev, duration: Math.max(5, (Number(prev.duration) || 60) - 5) }))}
+                    className="w-8 h-9 flex items-center justify-center bg-white/5 border border-white/20 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-colors text-sm font-bold"
+                  >
+                    −
+                  </button>
+                  <input
+                    type="number"
+                    min="5"
+                    step="5"
+                    value={eventForm.duration}
+                    onChange={(e) => setEventForm({ ...eventForm, duration: Math.max(5, Number(e.target.value) || 60) })}
+                    className="flex-1 bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white text-center focus:outline-none focus:border-yellow-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setEventForm(prev => ({ ...prev, duration: (Number(prev.duration) || 60) + 5 }))}
+                    className="w-8 h-9 flex items-center justify-center bg-white/5 border border-white/20 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-colors text-sm font-bold"
+                  >
+                    +
+                  </button>
+                  <span className="text-xs text-gray-500 ml-1">min</span>
                 </div>
               </div>
 
@@ -3219,6 +3273,8 @@ const CalendarEventCard = ({
         ? event.duration || 30
         : event.type === 'revision'
         ? event.difficulty <= 2 ? 5 : (event.difficulty <= 4 ? 10 : 15)
+        : event.source === 'custom'
+        ? 60
         : Math.max(15, parseTimeToMinutes(event.endTime || '10:00') - startMinutes));
 
   const minsSinceStart = startMinutes; // relative to midnight (0 AM)
