@@ -523,6 +523,8 @@ const addTask = (userOrKey, taskInput) => {
     targetValue: taskInput?.targetValue,
     currentValue: taskInput?.currentValue,
     partiallyCompleted: taskInput?.partiallyCompleted,
+    startTime: taskInput?.startTime,
+    duration: taskInput?.duration,
     createdAt: now + index,
     updatedAt: now + index
   }));
