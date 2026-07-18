@@ -1188,7 +1188,7 @@ const Chronicle = () => {
       return !event.startTime;
     }
     if (event.type === 'revision') {
-      return !event.time || event.time === '09:00';
+      return !event.time;
     }
     return false;
   };
@@ -1251,7 +1251,7 @@ const Chronicle = () => {
         if (event.type === 'task') {
           duration = event.duration || 30;
         } else if (event.type === 'revision') {
-          duration = isUnscheduled ? 30 : (event.difficulty <= 2 ? 5 : (event.difficulty <= 4 ? 10 : 15));
+          duration = event.duration || (isUnscheduled ? 30 : (event.difficulty <= 2 ? 5 : (event.difficulty <= 4 ? 10 : 15)));
         } else if (event.type === 'event' || event.type === 'festival' || event.type === 'deadline' || event.type === 'meeting') {
           const endMinutes = parseTimeToMinutes(event.endTime || '10:00');
           const startMinutes = parseTimeToMinutes(event.startTime || '09:00');
@@ -3358,8 +3358,7 @@ const Chronicle3DayView = ({
   const getDraggingCardDuration = (card) => {
     if (card.type === 'task') return card.duration || 30;
     if (card.type === 'revision') {
-      const isUnscheduled = !card.time || card.time === '09:00';
-      return isUnscheduled ? 30 : (card.difficulty <= 2 ? 5 : (card.difficulty <= 4 ? 10 : 15));
+      return card.duration || (card.difficulty <= 2 ? 5 : (card.difficulty <= 4 ? 10 : 15));
     }
     return 60;
   };
