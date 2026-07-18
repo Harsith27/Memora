@@ -150,6 +150,10 @@ const userSchema = new mongoose.Schema({
     groqApiKey: {
       type: String,
       default: ''
+    },
+    weeklyRoutine: {
+      type: String,
+      default: 'Weekdays: Sleep 11:30 PM to 7:30 AM, work/college 9 AM to 5 PM. Optimal task/revision study blocks: 6 PM to 11 PM.\nWeekends: Sleep 12 AM to 9 AM, free time all day.'
     }
   },
   hasCompletedEvaluation: {

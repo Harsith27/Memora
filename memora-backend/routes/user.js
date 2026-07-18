@@ -1303,7 +1303,11 @@ router.put('/preferences', [
   body('groqApiKey')
     .optional()
     .custom((value) => typeof value === 'string')
-    .withMessage('Groq API Key must be a string')
+    .withMessage('Groq API Key must be a string'),
+  body('weeklyRoutine')
+    .optional()
+    .custom((value) => typeof value === 'string')
+    .withMessage('Weekly Routine must be a string')
 ], handleValidationErrors, async (req, res) => {
   try {
     const {
@@ -1317,7 +1321,8 @@ router.put('/preferences', [
       studyBoostTopicBonus,
       studyBoostDifficultyBonus,
       studyBoostMinutesBonus,
-      groqApiKey
+      groqApiKey,
+      weeklyRoutine
     } = req.body;
     const user = await User.findById(req.user.id);
     
@@ -1340,6 +1345,7 @@ router.put('/preferences', [
     if (studyBoostDifficultyBonus !== undefined) user.preferences.studyBoostDifficultyBonus = Math.max(0, Number(studyBoostDifficultyBonus) || 0);
     if (studyBoostMinutesBonus !== undefined) user.preferences.studyBoostMinutesBonus = Math.max(0, Number(studyBoostMinutesBonus) || 0);
     if (groqApiKey !== undefined) user.preferences.groqApiKey = String(groqApiKey || '').trim();
+    if (weeklyRoutine !== undefined) user.preferences.weeklyRoutine = String(weeklyRoutine || '').trim();
 
     await user.save();
 

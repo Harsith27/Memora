@@ -6,7 +6,7 @@ import {
   CheckSquare, Clock,
   FileText, BarChart3, Settings, PanelLeft, PanelLeftClose,
   X, Edit3, Trash2, Save, MapPin, Users, Gift,
-  Globe, GitBranch, Award, Mic
+  Globe, GitBranch, Award, Mic, Sparkles
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import Logo from '../components/Logo';
@@ -144,6 +144,12 @@ const Chronicle = () => {
     cancelText: 'Cancel',
     showCancel: false
   });
+
+  // Smart Schedule state
+  const [showSmartScheduleModal, setShowSmartScheduleModal] = useState(false);
+  const [weeklyRoutine, setWeeklyRoutine] = useState('');
+  const [optRoutineInput, setOptRoutineInput] = useState('');
+  const [optimizing, setOptimizing] = useState(false);
 
   // Sidebar navigation items
   const sidebarItems = getSidebarNavItems(location.pathname);
@@ -1002,6 +1008,58 @@ const Chronicle = () => {
       setCurrentDate(today);
     } else {
       setCurrentDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    }
+  };
+
+  const getVisibleDateKeys = () => {
+    const dates = [];
+    const base = new Date(currentDate);
+    for (let i = 0; i < 3; i++) {
+      const d = new Date(base);
+      d.setDate(base.getDate() + i);
+      dates.push(toLocalDateKey(d));
+    }
+    return dates;
+  };
+
+  const openSmartSchedule = async () => {
+    try {
+      setLoading(true);
+      const res = await apiService.getUserPreferences();
+      if (res?.success && res.preferences) {
+        const routine = res.preferences.weeklyRoutine || 'Weekdays: Sleep 11:30 PM to 7:30 AM, work/college 9 AM to 5 PM. Optimal task/revision study blocks: 6 PM to 11 PM.\nWeekends: Sleep 12 AM to 9 AM, free time all day.';
+        setWeeklyRoutine(routine);
+        setOptRoutineInput(routine);
+      }
+      setShowSmartScheduleModal(true);
+    } catch (err) {
+      console.error('Failed to fetch preferences:', err);
+      showToast('Failed to load user routine preferences', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRunOptimize = async () => {
+    setOptimizing(true);
+    try {
+      const dates = getVisibleDateKeys();
+      if (optRoutineInput !== weeklyRoutine) {
+        await apiService.updateUserPreferences({ weeklyRoutine: optRoutineInput });
+      }
+      const res = await apiService.optimizeSchedule(dates, optRoutineInput);
+      if (res?.success) {
+        showToast(res.message || 'Schedule optimized successfully!');
+        await loadCalendarData();
+        setShowSmartScheduleModal(false);
+      } else {
+        showToast(res?.message || 'Optimization failed', 'error');
+      }
+    } catch (err) {
+      console.error('Optimization failed:', err);
+      showToast(err.message || 'Failed to optimize schedule', 'error');
+    } finally {
+      setOptimizing(false);
     }
   };
 
@@ -1958,6 +2016,18 @@ const Chronicle = () => {
               >
                 <Filter className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
+              {calendarViewMode === '3-day' && (
+                <button
+                  type="button"
+                  onClick={openSmartSchedule}
+                  className="h-8 sm:h-9 px-2.5 sm:px-3 text-xs sm:text-sm border border-cyan-400/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20 rounded-lg transition-all inline-flex items-center gap-1.5"
+                  title="AI Smart Schedule"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-300 animate-pulse" />
+                  <span className="hidden md:inline">Smart Schedule</span>
+                  <span className="md:hidden">Smart</span>
+                </button>
+              )}
               <button
                 onClick={goToToday}
                 className="px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
@@ -2784,6 +2854,89 @@ const Chronicle = () => {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Smart Schedule Modal */}
+      {showSmartScheduleModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3 sm:p-4">
+          <div className="bg-[#080808] rounded-2xl border border-cyan-500/20 w-full max-w-xl max-h-[85vh] flex flex-col shadow-[0_24px_70px_rgba(0,136,204,0.15)] overflow-hidden">
+            
+            {/* Header */}
+            <div className="p-4 sm:p-6 border-b border-white/10 flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-cyan-400 animate-pulse" />
+                  <h3 className="text-lg sm:text-xl font-semibold text-white tracking-tight">AI Smart Schedule</h3>
+                </div>
+                <button
+                  onClick={() => setShowSmartScheduleModal(false)}
+                  disabled={optimizing}
+                  className="p-2 hover:bg-white/10 rounded-lg transition-colors text-gray-300 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+              <div>
+                <p className="text-xs sm:text-sm text-gray-400">
+                  AI will distribute your due revisions, habits, and tasks into non-overlapping blocks on your timeline based on your routine.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                  Your Daily Routine / Preferences
+                </label>
+                <textarea
+                  value={optRoutineInput}
+                  onChange={(e) => setOptRoutineInput(e.target.value)}
+                  placeholder="Describe your routine (e.g. sleep hours, work hours, optimal study blocks)..."
+                  disabled={optimizing}
+                  rows={6}
+                  className="w-full rounded-xl border border-white/15 bg-white/5 p-3 text-sm text-white outline-none transition-colors focus:border-cyan-400/50 resize-none font-sans"
+                />
+                <p className="text-[11px] text-gray-500 leading-normal">
+                  💡 Tip: You can edit this live! Describe sleep ranges, work schedules, or weekends to get customized slot recommendations.
+                </p>
+              </div>
+
+              {optimizing && (
+                <div className="rounded-xl border border-cyan-500/20 bg-cyan-950/10 p-4 flex flex-col items-center justify-center space-y-3 mt-2">
+                  <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-cyan-200">Analyzing layout & routing events...</p>
+                    <p className="text-xs text-gray-400 mt-1">This takes about 5-10 seconds as LLM recalculates timelines</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Actions */}
+            <div className="p-4 sm:p-6 border-t border-white/10 flex justify-end gap-2.5 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowSmartScheduleModal(false)}
+                disabled={optimizing}
+                className="px-4 py-2 rounded-lg border border-white/10 text-gray-300 hover:text-white hover:bg-white/5 text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRunOptimize}
+                disabled={optimizing}
+                className="px-4 py-2 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 hover:bg-cyan-500/30 text-sm font-medium transition-all inline-flex items-center gap-1.5"
+              >
+                <Sparkles className="w-4 h-4" />
+                {optimizing ? 'Optimizing...' : 'Generate Plan'}
+              </button>
+            </div>
+
           </div>
         </div>
       )}

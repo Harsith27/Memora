@@ -384,6 +384,10 @@ class ApiService {
     return this.post('/user/validate-key', { groqApiKey });
   }
 
+  async optimizeSchedule(dateKeys, weeklyRoutineOverride = null) {
+    return this.post('/schedule/optimize', { dateKeys, weeklyRoutineOverride });
+  }
+
   async recordStudySession() {
     return this.post('/user/study-session');
   }

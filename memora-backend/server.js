@@ -277,6 +277,7 @@ app.use('/api/doctags', require('./routes/doctags'));
 app.use('/api/journal', require('./routes/journal'));
 app.use('/api/mindmaps', require('./routes/mindmaps'));
 app.use('/api/listener', require('./routes/listener'));
+app.use('/api/schedule', require('./routes/schedule'));
 // app.use('/api/revisions', require('./routes/revisions'));
 // app.use('/api/neuro', require('./routes/neuro'));
 
