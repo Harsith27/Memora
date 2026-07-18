@@ -230,7 +230,18 @@ const userSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+  // Microsoft Teams Calendar Integration
+  msTeamsIntegration: {
+    connected: { type: Boolean, default: false },
+    accessToken: { type: String, default: '', select: false },
+    refreshToken: { type: String, default: '', select: false },
+    tokenExpiresAt: { type: Date, default: null },
+    connectedEmail: { type: String, default: '' },
+    connectedAt: { type: Date, default: null },
+    showInChronicle: { type: Boolean, default: true }
   }
+
 }, {
   timestamps: true,
   toJSON: {

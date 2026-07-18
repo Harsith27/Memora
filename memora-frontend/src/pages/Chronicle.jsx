@@ -19,6 +19,8 @@ import apiService from '../services/api';
 import { getSidebarNavItems } from '../constants/sidebarNavigation';
 import journalService from '../services/journalService';
 import taskService from '../services/taskService';
+import teamsService from '../services/teamsService';
+import ConnectionsModal from '../components/ConnectionsModal';
 import { formatDateDDMMYYYY, formatDateWithWeekday, getTodayIsoDateKey, parseDateInputToIso } from '../utils/dateFormat';
 
 const toLocalDateKey = (value = new Date()) => {
@@ -116,6 +118,7 @@ const Chronicle = () => {
 
   // Settings + Festival preferences
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showConnectionsModal, setShowConnectionsModal] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [selectedReligions, setSelectedReligions] = useState(['general', 'indian_national', 'christian', 'hindu', 'telugu', 'muslim']);
   const [eventFilters, setEventFilters] = useState(DEFAULT_EVENT_FILTERS);
@@ -208,6 +211,7 @@ const Chronicle = () => {
   // Quick actions for Chronicle
   const quickActions = [
     { icon: Plus, label: "Add Event", action: () => openEventModal(), primary: true },
+    { icon: Globe, label: "Connections", action: () => setShowConnectionsModal(true), primary: false },
     { icon: Settings, label: "Settings", action: () => setShowSettingsModal(true), primary: false }
   ];
 
@@ -817,6 +821,26 @@ const Chronicle = () => {
       localStorage.setItem(`memora_chronicle_history_cache_${userId}`, JSON.stringify(historyResponse));
 
       const freshEvents = processAllCalendarEvents(dueResponse, upcomingResponse, historyResponse, targetYear, targetUser);
+
+      // Merge Teams calendar events if connected
+      try {
+        const base = new Date(currentDate);
+        const endDate = new Date(currentDate);
+        endDate.setDate(endDate.getDate() + 2);
+        const startKey = base.toISOString().split('T')[0];
+        const endKey = endDate.toISOString().split('T')[0];
+        const teamsEvents = await teamsService.fetchTeamsEvents(startKey, endKey);
+        teamsEvents.forEach((ev) => {
+          const dateObj = new Date(`${ev.date}T00:00:00`);
+          const dk = dateObj.toDateString();
+          if (!freshEvents[dk]) freshEvents[dk] = [];
+          freshEvents[dk] = [...freshEvents[dk].filter(e => e.id !== ev.id), ev];
+        });
+      } catch (teamsErr) {
+        console.warn('[Teams] Could not load Teams events:', teamsErr.message);
+      }
+
+
       setCalendarEvents(freshEvents);
       setLoading(false);
 
@@ -2435,6 +2459,21 @@ const Chronicle = () => {
                     </button>
                   </div>
                 )}
+
+                {selectedDetailsEvent.source === 'teams' && selectedDetailsEvent.meetingUrl && (
+                  <div className="pt-4 border-t border-white/10 mt-4">
+                    <a
+                      href={selectedDetailsEvent.meetingUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/25 text-xs font-semibold transition-all"
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      Join Meeting
+                    </a>
+                  </div>
+                )}
+
               </div>
             )}
           </div>
@@ -3063,6 +3102,15 @@ const Chronicle = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Connections Modal */}
+      {showConnectionsModal && (
+        <ConnectionsModal onClose={() => {
+          setShowConnectionsModal(false);
+          // Reload calendar so any newly connected Teams events appear immediately
+          loadCalendarData(false);
+        }} />
       )}
 
       {/* Smart Schedule Modal */}
