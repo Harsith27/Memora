@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Calendar, CheckSquare, FileText, Plus } from 'lucide-react';
+import { Calendar, CheckSquare, FileText, Plus, Trash2 } from 'lucide-react';
 import DatePicker from 'react-datepicker';
 import Modal from './Modal';
 import ShadcnSelect from './ShadcnSelect';
@@ -242,14 +242,6 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
   const handleTitleBlur = async () => {
     const titleVal = String(formData.title).trim();
     if (!titleVal) return;
-
-    // Run local regex parsing first
-    const parsed = parseTimeAndDurationFromTitle(titleVal);
-    setFormData((prev) => ({
-      ...prev,
-      startTime: parsed.startTime !== null ? parsed.startTime : prev.startTime,
-      duration: parsed.duration !== null ? parsed.duration : prev.duration
-    }));
 
     if (titleVal.length < 3) return;
 
@@ -506,21 +498,33 @@ const AddTaskModal = ({ isOpen, onClose, onSubmit, defaultDate, loading = false 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-200">Start Time (Optional)</label>
-            <input
-              type="time"
-              value={formData.startTime || ''}
-              onChange={(e) => setFormData((prev) => ({ ...prev, startTime: e.target.value || '' }))}
-              className="h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-sm text-white outline-none transition-colors focus:border-cyan-300/60"
-            />
+            <div className="flex gap-2">
+              <input
+                type="time"
+                value={formData.startTime || ''}
+                onChange={(e) => setFormData((prev) => ({ ...prev, startTime: e.target.value || '' }))}
+                className="h-11 flex-1 rounded-lg border border-white/15 bg-white/5 px-3 text-sm text-white outline-none transition-colors focus:border-cyan-300/60"
+              />
+              {formData.startTime && (
+                <button
+                  type="button"
+                  onClick={() => setFormData((prev) => ({ ...prev, startTime: '' }))}
+                  className="h-11 w-11 flex items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
+                  title="Clear Start Time"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-200">Duration (Minutes)</label>
             <input
               type="number"
-              min={5}
+              min={0}
               max={1440}
               value={formData.duration}
-              onChange={(e) => setFormData((prev) => ({ ...prev, duration: parseInt(e.target.value, 10) || 30 }))}
+              onChange={(e) => setFormData((prev) => ({ ...prev, duration: parseInt(e.target.value, 10) || 0 }))}
               className="h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-sm text-white outline-none transition-colors focus:border-cyan-300/60"
             />
           </div>

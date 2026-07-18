@@ -28,8 +28,9 @@ Rules for scheduling (strict constraints):
 3. Revision Items (type: "revision"):
    - Revisions are short review blocks (usually 5 to 15 mins). They are not general study blocks.
    - You MUST place ALL revisions sequentially and non-overlapping, starting at the user's designated "revision study" or "optimal task/revision blocks" time windows (e.g., "10:30 PM" / 22:30).
-   - Revisions on the same day must be sequential and non-overlapping.
-   - If the total duration of due revisions exceeds the available time in the optimal revision window (e.g. 10:30 PM to 12:00 AM), do NOT schedule them in the morning or spread them throughout the day. Instead, keep them packed sequentially starting from 10:30 PM, letting the overflow spill over past midnight (12:00 AM) into the early morning sleep hours.
+   - Revisions on the same day must be scheduled continuously as a single sequential group.
+   - If the total duration of due revisions exceeds the available time in the optimal revision window (e.g. 10:30 PM to 12:00 AM), they must start at 10:30 PM and run continuously past midnight.
+   - CRITICAL: For any revision scheduled past midnight (12:00 AM / 24:00), you MUST return start times greater than 24 hours (e.g. 12:00 AM is "24:00", 12:30 AM is "24:30", 1:00 AM is "25:00", 2:00 AM is "26:00", etc.). Do NOT schedule them at "00:00" - "04:00" of the current day itself. Any start time between "00:00" and "04:00" is strictly forbidden for the target day's revisions, as they must only start at 10:30 PM (22:30) and run forward.
 4. Task Items (type: "task"):
    - Place tasks in the user's free time study blocks (excluding sleep and work hours).
    - Tasks must not overlap with other tasks or revisions.
@@ -40,7 +41,7 @@ Rules for scheduling (strict constraints):
      "optimizations": [
        {
          "id": "string",
-         "startTime": "HH:MM" // 24-hour format
+         "startTime": "HH:MM" // 24-hour format (may use hours >= 24 for midnight rollover)
        }
      ]
    }`;
@@ -187,11 +188,18 @@ router.post('/optimize', authenticateToken, async (req, res) => {
         const topic = await Topic.findOne({ userId: user._id, _id: topicId });
         if (topic && topic.nextReviewDate) {
           const currentReviewDate = new Date(topic.nextReviewDate);
-          const [h, m] = opt.startTime.split(':').map(Number);
+          const [hStr, mStr] = opt.startTime.split(':');
+          let h = Number(hStr);
+          let m = Number(mStr);
           
-          // Construct target date keeping day/month/year from original nextReviewDate but using AI start time
+          // Construct target date keeping day/month/year from original nextReviewDate but using AI start time.
+          // Support values >= 24 representing midnight spillover (YYYY-MM-DD + 1 day).
           const optimizedDate = new Date(currentReviewDate);
-          optimizedDate.setHours(h || 0, m || 0, 0, 0);
+          if (h >= 24) {
+            optimizedDate.setDate(optimizedDate.getDate() + 1);
+            h = h - 24;
+          }
+          optimizedDate.setHours(h, m, 0, 0);
 
           await Topic.updateOne(
             { userId: user._id, _id: topicId },
