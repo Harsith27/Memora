@@ -3369,6 +3369,8 @@ const Dashboard = () => {
         description: taskData.description,
         date: taskData.date,
         taskType: nextTaskType,
+        startTime: taskData.startTime,
+        duration: taskData.duration,
         seriesId: null
       });
     } else {
@@ -3394,6 +3396,8 @@ const Dashboard = () => {
           description: taskData.description,
           date: taskData.date,
           taskType: 'custom-recurring',
+          startTime: taskData.startTime,
+          duration: taskData.duration,
           customDates: providedCustomDates
         });
       } else if (providedCustomDates.length > 0) {
@@ -3403,6 +3407,8 @@ const Dashboard = () => {
           description: taskData.description,
           date: taskData.date,
           taskType: 'custom-recurring',
+          startTime: taskData.startTime,
+          duration: taskData.duration,
           customDates: providedCustomDates
         });
       } else {
@@ -3411,6 +3417,8 @@ const Dashboard = () => {
           description: taskData.description,
           date: taskData.date,
           taskType: nextTaskType,
+          startTime: taskData.startTime,
+          duration: taskData.duration,
           seriesId: nextTaskType === 'one-time' ? null : editingTaskEntry.seriesId
         });
       }
