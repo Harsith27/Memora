@@ -1084,6 +1084,8 @@ const Chronicle = () => {
 
       let unscheduledTaskOffset = 0;
       let unscheduledRevisionOffset = 0;
+      const revisionTimeOffsetMap = {};
+
       const processedEvents = sortedRaw.map((event) => {
         const isUnscheduled = isEventUnscheduled(event);
         let timeStr = event.type === 'task' ? event.startTime : event.time;
@@ -1113,6 +1115,20 @@ const Chronicle = () => {
             timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
             unscheduledTaskOffset += duration;
           }
+        } else if (event.type === 'revision') {
+          const key = timeStr || '08:00';
+          if (revisionTimeOffsetMap[key] === undefined) {
+            revisionTimeOffsetMap[key] = 0;
+          }
+          const offsetMinutes = revisionTimeOffsetMap[key];
+          if (offsetMinutes > 0) {
+            const baseMinutes = parseTimeToMinutes(key);
+            const newMinutes = baseMinutes + offsetMinutes;
+            const h = Math.floor(newMinutes / 60) % 24;
+            const m = newMinutes % 60;
+            timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+          }
+          revisionTimeOffsetMap[key] += duration;
         }
 
         const startMinutes = parseTimeToMinutes(timeStr);
