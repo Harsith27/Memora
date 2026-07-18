@@ -1894,7 +1894,7 @@ const Chronicle = () => {
       )}
 
       {/* Main Content */}
-      <div className={`flex-1 flex flex-col transition-[margin] duration-300 ${
+      <div className={`flex-1 h-screen overflow-hidden flex flex-col transition-[margin] duration-300 ${
         isDesktopViewport
           ? (isSidebarCollapsed ? 'ml-16' : 'ml-64')
           : 'ml-0'
@@ -2960,15 +2960,15 @@ const Chronicle3DayView = ({
   const [dragOverDay, setDragOverDay] = useState(null);
   const [dragOverMinutes, setDragOverMinutes] = useState(null);
 
-  // Adjust hourHeight so exactly 12 hours are visible in viewport (half size) on layout load & resize
+  // Adjust hourHeight so exactly 4 hours are visible in viewport on layout load & resize
   useEffect(() => {
     const updateHourHeight = () => {
       if (userHasZoomedRef.current) return;
       const grid = gridContainerRef.current;
       if (!grid) return;
       const gridHeight = grid.clientHeight || 500;
-      // Show exactly 12 hours (reducing block height by half)
-      const calculatedHeight = Math.max(30, gridHeight / 12);
+      // Show exactly 4 hours
+      const calculatedHeight = Math.max(30, gridHeight / 4);
       setHourHeight(calculatedHeight);
     };
 
@@ -2985,7 +2985,7 @@ const Chronicle3DayView = ({
     const grid = gridContainerRef.current;
     if (!grid || hasScrolledRef.current) return;
     const gridHeight = grid.clientHeight || 500;
-    if (Math.abs(hourHeight - (gridHeight / 12)) > 5) return;
+    if (Math.abs(hourHeight - (gridHeight / 4)) > 5) return;
 
     const now = new Date();
     const currentMins = now.getHours() * 60 + now.getMinutes();
