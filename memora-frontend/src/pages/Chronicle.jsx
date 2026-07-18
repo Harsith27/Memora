@@ -1120,6 +1120,19 @@ const Chronicle = () => {
     return false;
   };
 
+  const handleToggleHabitCompletion = (habitId, isCompleted) => {
+    const userTaskStorageKey = taskService.resolveUserStorageKey(user);
+    const tasks = taskService.getTasks(userTaskStorageKey);
+    const idx = tasks.findIndex(t => t.id === habitId);
+    if (idx >= 0) {
+      tasks[idx].completed = isCompleted;
+      tasks[idx].updatedAt = Date.now();
+      taskService.saveTasks(userTaskStorageKey, tasks);
+      showToast(tasks[idx].completed ? 'Habit completed!' : 'Habit marked pending');
+      loadCalendarData();
+    }
+  };
+
   const generate3DayCalendar = () => {
     const days = [];
     const base = new Date(currentDate);
@@ -1131,8 +1144,13 @@ const Chronicle = () => {
       const dateKey = current.toDateString();
       const rawEvents = filteredCalendarEvents[dateKey] || [];
 
-      // Sort them such that events that naturally have times come first, so unscheduled slots can wrap around them
-      const sortedRaw = [...rawEvents].sort((a, b) => {
+      // Extract habits (recurring or custom-recurring tasks)
+      const dayHabits = rawEvents.filter(ev => ev.type === 'task' && (ev.taskType === 'recurring' || ev.taskType === 'custom-recurring'));
+      // Keep only non-habit events for the grid timeline
+      const gridEvents = rawEvents.filter(ev => !(ev.type === 'task' && (ev.taskType === 'recurring' || ev.taskType === 'custom-recurring')));
+
+      // Sort grid events such that naturally timed ones come first
+      const sortedRaw = [...gridEvents].sort((a, b) => {
         const unschedA = isEventUnscheduled(a);
         const unschedB = isEventUnscheduled(b);
         if (!unschedA && unschedB) return -1;
@@ -1251,7 +1269,8 @@ const Chronicle = () => {
         dateKey,
         dayLabel: current.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
         isToday: dateKey === todayStr,
-        events: processedEvents
+        events: processedEvents,
+        habits: dayHabits
       });
     }
     return days;
@@ -3281,55 +3300,103 @@ const Chronicle3DayView = ({
               {hour === 0 ? '12 AM' : hour === 12 ? '12 PM' : hour > 12 ? `${hour - 12} PM` : `${hour} AM`}
             </div>
           ))}
+          <div className="text-[10px] text-cyan-400 font-sans font-bold tracking-wider text-right pr-3 pt-4 uppercase border-t border-white/10 flex items-start justify-end gap-1 h-32 select-none sticky bottom-0 bg-black z-20">
+            <Sparkles className="w-3 h-3 text-cyan-400 mt-0.5" />
+            <span>Habits</span>
+          </div>
         </div>
 
         <div className="flex-1 flex divide-x divide-white/10 relative min-w-[700px]">
           {days.map((day) => (
-            <div
-              key={day.dateKey}
-              onDragOver={(e) => handleDragOverTrack(e, day.dateKey)}
-              onDragLeave={() => { setDragOverDay(null); setDragOverMinutes(null); }}
-              onDrop={(e) => handleEventDropWithReset(e, day.dateKey)}
-              className={`flex-1 relative ${
-                day.isToday ? 'bg-white/[0.01]' : ''
-              }`}
-              style={{ height: hourHeight * 24 }}
-            >
-              {HOURS.map((hour) => (
-                <div
-                  key={hour}
-                  className="absolute left-0 right-0 border-b border-white/5 pointer-events-none"
-                  style={{ top: hour * hourHeight, height: hourHeight }}
-                />
-              ))}
+            <div key={day.dateKey} className="flex-1 flex flex-col min-w-0">
+              
+              {/* Hour tracks absolute layout container */}
+              <div
+                onDragOver={(e) => handleDragOverTrack(e, day.dateKey)}
+                onDragLeave={() => { setDragOverDay(null); setDragOverMinutes(null); }}
+                onDrop={(e) => handleEventDropWithReset(e, day.dateKey)}
+                className={`w-full relative border-b border-white/10 flex-shrink-0 ${
+                  day.isToday ? 'bg-white/[0.01]' : ''
+                }`}
+                style={{ height: hourHeight * 24 }}
+              >
+                {HOURS.map((hour) => (
+                  <div
+                    key={hour}
+                    className="absolute left-0 right-0 border-b border-white/5 pointer-events-none"
+                    style={{ top: hour * hourHeight, height: hourHeight }}
+                  />
+                ))}
 
-              {dragOverDay === day.dateKey && dragOverMinutes !== null && draggingCard && (
-                <div
-                  className="absolute border border-dashed border-amber-400 bg-amber-500/10 text-amber-200 rounded-lg p-1.5 text-[11px] overflow-hidden opacity-75 pointer-events-none z-30"
-                  style={{
-                    top: `${(dragOverMinutes / 60) * hourHeight}px`,
-                    height: `${(getDraggingCardDuration(draggingCard) / 60) * hourHeight}px`,
-                    left: '2px',
-                    width: 'calc(100% - 4px)'
-                  }}
-                >
-                  <div className="font-semibold truncate">{draggingCard.title}</div>
+                {dragOverDay === day.dateKey && dragOverMinutes !== null && draggingCard && (
+                  <div
+                    className="absolute border border-dashed border-amber-400 bg-amber-500/10 text-amber-200 rounded-lg p-1.5 text-[11px] overflow-hidden opacity-75 pointer-events-none z-30"
+                    style={{
+                      top: `${(dragOverMinutes / 60) * hourHeight}px`,
+                      height: `${(getDraggingCardDuration(draggingCard) / 60) * hourHeight}px`,
+                      left: '2px',
+                      width: 'calc(100% - 4px)'
+                    }}
+                  >
+                    <div className="font-semibold truncate">{draggingCard.title}</div>
+                  </div>
+                )}
+
+                {day.events.map((event) => (
+                  <CalendarEventCard
+                    key={event.id}
+                    event={event}
+                    hourHeight={hourHeight}
+                    onDragStart={(e) => handleEventDragStart(e, event)}
+                    parseTimeToMinutes={parseTimeToMinutes}
+                    getEventIcon={getEventIcon}
+                    getCalendarTaskColor={getCalendarTaskColor}
+                    getEventColor={getEventColor}
+                    onCardClick={onCardClick}
+                  />
+                ))}
+              </div>
+
+              {/* Habits list below 11pm track */}
+              <div className="flex-1 bg-[#090909] p-3 min-h-32 flex flex-col justify-start">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Habits</span>
+                  {day.habits && day.habits.length > 0 && (
+                    <span className="text-[9px] font-medium text-cyan-400 bg-cyan-950/40 border border-cyan-800/30 px-1.5 py-0.5 rounded-full select-none">
+                      {day.habits.filter(h => h.completed).length}/{day.habits.length} Done
+                    </span>
+                  )}
                 </div>
-              )}
+                {(!day.habits || day.habits.length === 0) ? (
+                  <p className="text-[10.5px] text-gray-600 italic">No habits scheduled today</p>
+                ) : (
+                  <div className="space-y-1.5 overflow-y-auto max-h-24 pr-1 scrollbar-themed">
+                    {day.habits.map((habit) => (
+                      <label
+                        key={habit.id}
+                        onClick={(e) => e.stopPropagation()}
+                        className="group flex items-start gap-2 text-xs text-gray-300 hover:text-white cursor-pointer select-none py-0.5 transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={habit.completed}
+                          onChange={(e) => handleToggleHabitCompletion(habit.taskId, e.target.checked)}
+                          className="rounded border-white/20 bg-white/5 text-cyan-500 focus:ring-cyan-500/50 w-3.5 h-3.5 mt-0.5 cursor-pointer"
+                        />
+                        <span className={`truncate leading-normal ${habit.completed ? 'line-through text-gray-500' : 'text-gray-300'}`}>
+                          {habit.title}
+                          {habit.startTime && (
+                            <span className="text-[9px] text-gray-500 ml-1.5 font-mono">
+                              ({habit.startTime})
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-              {day.events.map((event) => (
-                <CalendarEventCard
-                  key={event.id}
-                  event={event}
-                  hourHeight={hourHeight}
-                  onDragStart={(e) => handleEventDragStart(e, event)}
-                  parseTimeToMinutes={parseTimeToMinutes}
-                  getEventIcon={getEventIcon}
-                  getCalendarTaskColor={getCalendarTaskColor}
-                  getEventColor={getEventColor}
-                  onCardClick={onCardClick}
-                />
-              ))}
             </div>
           ))}
 
