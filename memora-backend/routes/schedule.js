@@ -20,21 +20,23 @@ Each item has:
 - "currentStartTime": HH:MM or null.
 
 Rules for scheduling (strict constraints):
-1. Sleep and Work blockouts:
+1. User-defined Priority (currentStartTime):
+   - If any task or revision has a non-null "currentStartTime" (e.g., "12:30"), you MUST keep its start time exactly as given in "currentStartTime". Do NOT reschedule or change its start time under any circumstances.
+2. Sleep and Work blockouts:
    - Identify the user's sleep and work periods from their routine (e.g., Sleep: "12 AM to 7:30 AM", Work: "1:30 PM to 10:30 PM").
    - Under no circumstances may any general tasks (type: "task") start, run, or overlap with sleep or work hours.
-2. Revision Items (type: "revision"):
+3. Revision Items (type: "revision"):
    - Revisions are short review blocks (usually 5 to 15 mins). They are not general study blocks.
    - You MUST place ALL revisions sequentially and non-overlapping, starting at the user's designated "revision study" or "optimal task/revision blocks" time windows (e.g., "10:30 PM" / 22:30).
    - Revisions on the same day must be sequential and non-overlapping.
    - If the total duration of due revisions exceeds the available time in the optimal revision window (e.g. 10:30 PM to 12:00 AM), do NOT schedule them in the morning or spread them throughout the day. Instead, keep them packed sequentially starting from 10:30 PM, letting the overflow spill over past midnight (12:00 AM) into the early morning sleep hours.
-3. Task Items (type: "task"):
+4. Task Items (type: "task"):
    - Place tasks in the user's free time study blocks (excluding sleep and work hours).
    - Tasks must not overlap with other tasks or revisions.
-4. Output Schema:
+5. Output Schema:
    - Return ONLY a valid JSON object matching the schema below. Do NOT wrap in markdown codeblocks.
    {
-     "reasoning": "Step-by-step sleep/work blockout identification and revision overflow scheduling logic",
+     "reasoning": "Step-by-step sleep/work blockout identification, prioritizing currentStartTime constraints, and revision scheduling",
      "optimizations": [
        {
          "id": "string",
@@ -96,13 +98,20 @@ router.post('/optimize', authenticateToken, async (req, res) => {
       const items = [];
 
       tasks.forEach(t => {
-        items.push({
-          id: `task-${t.clientId}`,
-          title: t.title,
-          type: 'task',
-          duration: t.duration || 30,
-          currentStartTime: t.startTime || null
-        });
+        const isRecurring = t.taskType === 'recurring' || t.taskType === 'custom-recurring';
+        const hasStartTime = t.startTime && t.startTime.trim() !== '';
+        const isSleep = t.title && t.title.toLowerCase().includes('sleep');
+
+        // Only optimize one-time tasks, recurring habits with a set start time, or sleep habits
+        if (!isRecurring || hasStartTime || isSleep) {
+          items.push({
+            id: `task-${t.clientId}`,
+            title: t.title,
+            type: 'task',
+            duration: t.duration || 30,
+            currentStartTime: t.startTime || null
+          });
+        }
       });
 
       topics.forEach(tp => {

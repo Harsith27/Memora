@@ -1217,17 +1217,17 @@ const Chronicle = () => {
       const dateKey = current.toDateString();
       const rawEvents = filteredCalendarEvents[dateKey] || [];
 
-      // Extract habits (recurring or custom-recurring tasks EXCEPT those with title containing 'sleep')
+      // Extract habits (recurring or custom-recurring tasks WITHOUT a start time)
       const dayHabits = rawEvents.filter(ev => 
         ev.type === 'task' && 
         (ev.taskType === 'recurring' || ev.taskType === 'custom-recurring') &&
-        !(ev.title && ev.title.toLowerCase().includes('sleep'))
+        (!ev.startTime || ev.startTime.trim() === '')
       );
-      // Keep only other events and habits containing 'sleep' for the grid timeline
+      // Keep only other events and habits WITH a start time for the grid timeline
       const gridEvents = rawEvents.filter(ev => 
         !(ev.type === 'task' && 
           (ev.taskType === 'recurring' || ev.taskType === 'custom-recurring') &&
-          !(ev.title && ev.title.toLowerCase().includes('sleep')))
+          (!ev.startTime || ev.startTime.trim() === ''))
       );
 
       // Sort grid events such that naturally timed ones come first
