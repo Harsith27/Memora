@@ -19,21 +19,27 @@ Each item has:
 - "duration": Duration in minutes.
 - "currentStartTime": HH:MM or null.
 
-Your Goal:
-- Assign an optimized "startTime" (HH:MM format, 24-hour) to each item on its respective day.
-- Do NOT schedule items during the user's sleeping or working hours.
-- Space out items logically to prevent overlaps.
-- Return ONLY a valid JSON object matching the output schema. Do NOT wrap in markdown codeblocks.
-
-Output Schema:
-{
-  "optimizations": [
-    {
-      "id": "string",
-      "startTime": "HH:MM"
-    }
-  ]
-}`;
+Rules for scheduling:
+1. Sleep and Work hours are strict blockouts:
+   - Do NOT schedule any tasks or revisions during the user's designated sleep or work periods. Sleeping times must be treated as absolute hard blockouts.
+2. Revision Items (type: "revision"):
+   - Revisions are small review blocks (usually 5, 10, or 15 minutes long). They are NOT general study times.
+   - You MUST place all revisions strictly inside the user's specified "revision study" or "optimal task/revision blocks" time windows.
+   - If there are multiple revision items, schedule them sequentially without any overlap (e.g. if one starts at 22:30 and takes 10 mins, the next should start at 22:40 or later).
+   - If there are too many revision items to fit the specified window, you may expand the window slightly (e.g. starting a bit earlier or ending a bit later), but keep them packed sequentially and non-overlapping.
+3. Task Items (type: "task"):
+   - Place tasks inside the user's free time study blocks or active hours, avoiding sleep and work blockouts.
+   - Ensure tasks do not overlap with each other or with revisions.
+4. Output Schema:
+   - Return ONLY a valid JSON object matching the output schema. Do NOT wrap in markdown codeblocks.
+   {
+     "optimizations": [
+       {
+         "id": "string",
+         "startTime": "HH:MM" // 24-hour format
+       }
+     ]
+   }`;
 
 // Helper to convert date to YYYY-MM-DD
 const toDateStr = (date) => {

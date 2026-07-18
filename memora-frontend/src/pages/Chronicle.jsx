@@ -1063,6 +1063,59 @@ const Chronicle = () => {
     }
   };
 
+  const handleAdjustDuration = async (eventItem, deltaMinutes) => {
+    if (!eventItem) return;
+    const newDuration = Math.max(5, Math.min(1440, (eventItem.duration || 30) + deltaMinutes));
+
+    try {
+      if (eventItem.type === 'task') {
+        const userTaskStorageKey = taskService.resolveUserStorageKey(user);
+        taskService.updateTask(userTaskStorageKey, eventItem.taskId, {
+          duration: newDuration
+        });
+        showToast(`Duration updated to ${newDuration} mins`);
+        loadCalendarData();
+        setSelectedDetailsEvent(prev => ({
+          ...prev,
+          duration: newDuration
+        }));
+      } else if (eventItem.type === 'revision') {
+        await apiService.updateTopic(eventItem.topicId, {
+          estimatedMinutes: newDuration
+        });
+        showToast(`Revision duration updated to ${newDuration} mins`);
+        loadCalendarData();
+        setSelectedDetailsEvent(prev => ({
+          ...prev,
+          duration: newDuration
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to adjust duration:', err);
+      showToast('Failed to update duration', 'error');
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (!selectedDetailsEvent) return;
+
+      const tag = e.target.tagName.toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleAdjustDuration(selectedDetailsEvent, -5);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleAdjustDuration(selectedDetailsEvent, 5);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedDetailsEvent]);
+
   // Calendar grid generation
   const generateCalendarDays = () => {
     const year = currentDate.getFullYear();
@@ -2223,15 +2276,38 @@ const Chronicle = () => {
                   <div className="space-y-3 text-[11px]">
                     <div className="flex items-center space-x-2 text-gray-300">
                       <Clock className="w-3.5 h-3.5 text-yellow-300" />
-                      <span>
-                        {(() => {
-                          const [yr, mo, dy] = (selectedDetailsEvent.date || '').split('-').map(Number);
-                          const dateObj = (yr && mo && dy) ? new Date(yr, mo - 1, dy) : new Date();
-                          const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-                          const dateStr = dateObj.toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
-                          return `${weekday} ${dateStr} at ${selectedDetailsEvent.resolvedTimeStr || selectedDetailsEvent.time || '09:00'} (${selectedDetailsEvent.duration}m)`;
-                        })()}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span>
+                          {(() => {
+                            const [yr, mo, dy] = (selectedDetailsEvent.date || '').split('-').map(Number);
+                            const dateObj = (yr && mo && dy) ? new Date(yr, mo - 1, dy) : new Date();
+                            const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+                            const dateStr = dateObj.toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+                            return `${weekday} ${dateStr} at ${selectedDetailsEvent.resolvedTimeStr || selectedDetailsEvent.time || '09:00'}`;
+                          })()}
+                        </span>
+                        <div className="inline-flex items-center bg-white/5 border border-white/10 rounded-md p-0.5 ml-1">
+                          <button
+                            type="button"
+                            onClick={() => handleAdjustDuration(selectedDetailsEvent, -5)}
+                            className="px-1.5 py-0.5 hover:bg-white/10 rounded text-[9.5px] font-mono text-gray-400 hover:text-white transition-colors"
+                            title="Decrease duration (Left Arrow)"
+                          >
+                            -5m
+                          </button>
+                          <span className="px-1.5 text-[9.5px] font-semibold text-yellow-300 font-mono">
+                            {selectedDetailsEvent.duration}m
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleAdjustDuration(selectedDetailsEvent, 5)}
+                            className="px-1.5 py-0.5 hover:bg-white/10 rounded text-[9.5px] font-mono text-gray-400 hover:text-white transition-colors"
+                            title="Increase duration (Right Arrow)"
+                          >
+                            +5m
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="flex items-center space-x-2">
