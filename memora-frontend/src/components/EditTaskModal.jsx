@@ -88,8 +88,8 @@ const parseTimeAndDurationFromTitle = (title) => {
   }
 
   // 2. Parse time (am/pm or 24h)
-  const timePmAmRegex = /\b(?:at\s+|@\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/;
-  const time24hRegex = /\b(?:at\s+|@\s*)?(\d{1,2}):(\d{2})\b/;
+  const timePmAmRegex = /\b(?:at\s+|@\s*)?(\d{1,2})(?:[.:](\d{2}))?\s*(am|pm)\b/;
+  const time24hRegex = /\b(?:at\s+|@\s*)?(\d{1,2})[.:](\d{2})\b/;
 
   const pmAmMatch = text.match(timePmAmRegex);
   if (pmAmMatch) {
