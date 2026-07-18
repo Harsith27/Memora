@@ -19,23 +19,24 @@ Each item has:
 - "duration": Duration in minutes.
 - "currentStartTime": HH:MM or null.
 
-Rules for scheduling:
-1. Sleep and Work hours are strict blockouts:
-   - Identify the user's sleep and work periods for weekdays and weekends from their routine.
-   - For example, if weekend sleep is "12 AM to 7:30 AM", this corresponds to 24h range [00:00 - 07:30].
-   - Do NOT schedule any tasks or revisions during these blockout periods. Sleeping times must be treated as absolute hard blockouts.
-2. Revision Items (type: "revision"):
-   - Revisions are small review blocks (usually 5, 10, or 15 minutes long). They are NOT general study times.
-   - You MUST place all revisions strictly inside the user's specified "revision study" or "optimal task/revision blocks" time windows.
-   - If there are multiple revision items, schedule them sequentially without any overlap (e.g. if one starts at 22:30 and takes 10 mins, the next should start at 22:40 or later).
-   - If there are too many revision items to fit the specified window, you may expand the window slightly (e.g. starting a bit earlier or ending a bit later), but keep them packed sequentially and non-overlapping.
-3. Task Items (type: "task"):
-   - Place tasks inside the user's free time study blocks or active hours, avoiding sleep and work blockouts.
-   - Ensure tasks do not overlap with each other or with revisions.
-4. Output Schema:
-   - Return ONLY a valid JSON object matching the output schema. Do NOT wrap in markdown codeblocks.
+Rules for scheduling (strict constraints):
+1. Sleep hours are absolute hard blockouts:
+   - Identify the user's sleep period from their routine (e.g., weekday/weekend sleep is usually "12 AM to 7:30 AM", which is [00:00 - 07:30] in 24h format).
+   - Under no circumstances may any revision, task, or habit start, run, or overlap with the sleep hours. Any scheduled item at night must completely finish before 12:00 AM (00:00) / midnight. For example, if an item starts at 11:30 PM (23:30) and takes 45 minutes, it is invalid because it ends at 12:15 AM (which is inside the 12:00 AM - 7:30 AM sleep blockout). Any item that would spill over even by a single minute past midnight (00:00) must be scheduled in the morning study block instead. There are absolutely no exceptions.
+2. Work hours are strict blockouts:
+   - Do not schedule any items during the user's work hours (e.g., "1:30 PM to 10:30 PM").
+3. Revision Items (type: "revision"):
+   - Revisions are short review blocks (usually 5 to 15 mins). They are not general study blocks.
+   - You MUST place revisions primarily inside the user's designated "revision study" or "optimal task/revision blocks" time windows (e.g., "10:30 PM to 12:00 AM").
+   - Revisions on the same day must be sequential and non-overlapping.
+   - If the number/duration of revisions exceeds the revision window, do NOT extend revisions into sleep hours. Instead, schedule the overflow revisions in the user's other free awake hours (e.g., morning study hours like "8:30 AM to 12:30 PM" or other non-sleep, non-work times).
+4. Task Items (type: "task"):
+   - Place tasks in the user's free time study blocks, avoiding sleep and work hours.
+   - Ensure tasks do not overlap with each other or revisions.
+5. Output Schema:
+   - Return ONLY a valid JSON object matching the schema below. Do NOT wrap in markdown codeblocks.
    {
-     "reasoning": "Step-by-step blockout identification and scheduling checks",
+     "reasoning": "Step-by-step sleep/work blockout identification and revision overflow scheduling logic",
      "optimizations": [
        {
          "id": "string",
