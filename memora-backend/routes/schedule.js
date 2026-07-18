@@ -27,10 +27,10 @@ Rules for scheduling (strict constraints):
    - Under no circumstances may any general tasks (type: "task") start, run, or overlap with sleep or work hours.
 3. Revision Items (type: "revision"):
    - Revisions are short review blocks (usually 5 to 15 mins). They are not general study blocks.
-   - You MUST place ALL revisions sequentially and non-overlapping, starting at the user's designated "revision study" or "optimal task/revision blocks" time windows (e.g., "10:30 PM" / 22:30).
+   - You MUST place ALL revisions sequentially and non-overlapping, starting EXACTLY at the beginning of the user's designated "revision study" or "optimal task/revision blocks" time windows (e.g., exactly at "10:30 PM" / 22:30 on weekends, or exactly at "10:30 PM" / 22:30 or "11:00 PM" / 23:00 on weekdays depending on the user's weekly routine). Do not start them early.
    - Revisions on the same day must be scheduled continuously as a single sequential group.
-   - If the total duration of due revisions exceeds the available time in the optimal revision window (e.g. 10:30 PM to 12:00 AM), they must start at 10:30 PM and run continuously past midnight.
-   - CRITICAL: For any revision scheduled past midnight (12:00 AM / 24:00), you MUST return start times greater than 24 hours (e.g. 12:00 AM is "24:00", 12:30 AM is "24:30", 1:00 AM is "25:00", 2:00 AM is "26:00", etc.). Do NOT schedule them at "00:00" - "04:00" of the current day itself. Any start time between "00:00" and "04:00" is strictly forbidden for the target day's revisions, as they must only start at 10:30 PM (22:30) and run forward.
+   - If the total duration of due revisions exceeds the available time in the optimal revision window (e.g. 10:30 PM to 12:00 AM), they must start exactly at the start of the window (10:30 PM) and run continuously past midnight.
+   - CRITICAL: For any revision scheduled past midnight (12:00 AM / 24:00), you MUST return start times greater than 24 hours (e.g. 12:00 AM is "24:00", 12:30 AM is "24:30", 1:00 AM is "25:00", 2:00 AM is "26:00", etc.). Do NOT schedule them at "00:00" - "04:00" of the current day itself. Any start time between "00:00" and "04:00" is strictly forbidden for the target day's revisions, as they must only start at the exact window start time and run forward.
 4. Task Items (type: "task"):
    - Place tasks in the user's free time study blocks (excluding sleep and work hours).
    - Tasks must not overlap with other tasks or revisions.
