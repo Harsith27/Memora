@@ -2740,50 +2740,35 @@ const Chronicle = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Duration
-                  <span className="ml-2 text-[10px] text-gray-500 font-normal">(minutes — default 60)</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setEventForm(prev => ({ ...prev, duration: Math.max(5, (Number(prev.duration) || 60) - 5) }))}
-                    className="w-8 h-9 flex items-center justify-center bg-white/5 border border-white/20 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-colors text-sm font-bold"
-                  >
-                    −
-                  </button>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Type</label>
+                  <ShadcnSelect
+                    value={eventForm.type}
+                    onChange={(value) => setEventForm({ ...eventForm, type: value, color: eventTypes[value]?.color || 'blue' })}
+                    options={Object.entries(eventTypes).map(([key, type]) => ({
+                      value: key,
+                      label: type.label
+                    }))}
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Duration
+                    <span className="ml-1.5 text-[10px] text-gray-500 font-normal">(mins)</span>
+                  </label>
                   <input
                     type="number"
                     min="5"
                     step="5"
                     value={eventForm.duration}
                     onChange={(e) => setEventForm({ ...eventForm, duration: Math.max(5, Number(e.target.value) || 60) })}
-                    className="flex-1 bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white text-center focus:outline-none focus:border-yellow-500"
+                    className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-yellow-500"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setEventForm(prev => ({ ...prev, duration: (Number(prev.duration) || 60) + 5 }))}
-                    className="w-8 h-9 flex items-center justify-center bg-white/5 border border-white/20 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-colors text-sm font-bold"
-                  >
-                    +
-                  </button>
-                  <span className="text-xs text-gray-500 ml-1">min</span>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Type</label>
-                <ShadcnSelect
-                  value={eventForm.type}
-                  onChange={(value) => setEventForm({ ...eventForm, type: value, color: eventTypes[value]?.color || 'blue' })}
-                  options={Object.entries(eventTypes).map(([key, type]) => ({
-                    value: key,
-                    label: type.label
-                  }))}
-                  className="w-full"
-                />
-              </div>
 
               <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 sm:gap-3 pt-2 sm:pt-4">
                 <button
