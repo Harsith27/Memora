@@ -3339,7 +3339,7 @@ const Chronicle3DayView = ({
         e.preventDefault();
         const delta = e.deltaY * -0.5;
         const gridHeight = grid.clientHeight || 500;
-        setHourHeight((prev) => Math.max(30, Math.min(gridHeight, prev + delta)));
+        setHourHeight((prev) => Math.max(30, Math.min(gridHeight * 2.5, prev + delta)));
         userHasZoomedRef.current = true;
       }
     };
@@ -3372,7 +3372,7 @@ const Chronicle3DayView = ({
       const ratio = dist / touchStartDistRef.current;
       const grid = gridContainerRef.current;
       const gridHeight = grid ? (grid.clientHeight || 500) : 500;
-      const nextHeight = Math.max(30, Math.min(gridHeight, touchStartHeightRef.current * ratio));
+      const nextHeight = Math.max(30, Math.min(gridHeight * 2.5, touchStartHeightRef.current * ratio));
       setHourHeight(nextHeight);
       userHasZoomedRef.current = true;
     }
