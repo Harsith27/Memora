@@ -1327,9 +1327,14 @@ const Chronicle = () => {
       setCalendarEvents(prevEvents => {
         const nextEvents = { ...prevEvents };
 
-        // 1. Remove from source list
+        // 1. Remove from source list (match topicId for revisions to clean up any due/upcoming duplicates)
         if (nextEvents[sourceDateKey]) {
-          nextEvents[sourceDateKey] = nextEvents[sourceDateKey].filter(ev => ev.id !== sourceCard.id);
+          nextEvents[sourceDateKey] = nextEvents[sourceDateKey].filter(ev => {
+            if (sourceCard.type === 'revision' && ev.type === 'revision') {
+              return ev.topicId !== sourceCard.topicId;
+            }
+            return ev.id !== sourceCard.id;
+          });
         }
 
         // 2. Add to target list
