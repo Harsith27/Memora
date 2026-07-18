@@ -374,6 +374,31 @@ const Chronicle = () => {
         startTime: timeString
       }));
 
+      setCalendarEvents((prev) => {
+        const next = { ...prev };
+        for (const dKey in next) {
+          if (!Array.isArray(next[dKey])) continue;
+          next[dKey] = next[dKey].map((ev) => {
+            const isMatch =
+              (selectedDetailsEvent.type === 'task' && ev.type === 'task' && ev.taskId === selectedDetailsEvent.taskId) ||
+              (selectedDetailsEvent.type === 'revision' && ev.type === 'revision' && ev.topicId === selectedDetailsEvent.topicId) ||
+              (ev.id === selectedDetailsEvent.id);
+            if (isMatch) {
+              const dur = ev.duration || 30;
+              return {
+                ...ev,
+                startTime: timeString,
+                time: timeString,
+                startMinutes: newMinutes,
+                endMinutes: newMinutes + dur
+              };
+            }
+            return ev;
+          });
+        }
+        return next;
+      });
+
       setPopoverPosition((prev) => {
         if (!prev) return null;
         return {
@@ -392,7 +417,6 @@ const Chronicle = () => {
             taskObj.startTime = timeString;
             taskObj.updatedAt = Date.now();
             taskService.saveTasks(userTaskStorageKey, tasks);
-            await loadCalendarData();
           }
         } else if (selectedDetailsEvent.type === 'event' || selectedDetailsEvent.type === 'meeting' || selectedDetailsEvent.type === 'festival' || selectedDetailsEvent.type === 'deadline') {
           const events = loadCustomEvents(user?.id);
@@ -412,13 +436,11 @@ const Chronicle = () => {
               evObj.startTime = timeString;
               evObj.endTime = endTimeStr;
               saveCustomEvents(events, user?.id);
-              await loadCalendarData();
             }
           }
         } else if (selectedDetailsEvent.type === 'revision') {
           const revisionDate = new Date(`${isoDate}T${timeString}:00`);
-          await apiService.updateTopicRevisionDate(selectedDetailsEvent.topicId, revisionDate.toISOString());
-          await loadCalendarData();
+          apiService.updateTopicRevisionDate(selectedDetailsEvent.topicId, revisionDate.toISOString()).catch(console.error);
         }
       } catch (err) {
         console.error('Failed to shift event time with arrow keys:', err);
@@ -427,7 +449,7 @@ const Chronicle = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedDetailsEvent, user, currentDate, hourHeight]);
+  }, [selectedDetailsEvent, user, currentDate, hourHeight, setCalendarEvents, setPopoverPosition]);
 
   // Click outside and scroll listener to close dynamic floating popover
   useEffect(() => {
@@ -594,6 +616,7 @@ const Chronicle = () => {
           color: getDifficultyColor(topic.difficulty),
           difficulty: topic.difficulty,
           time: timeVal,
+          duration: topic.estimatedMinutes || null,
           topicId: topic._id,
           isDue: true,
           date: toLocalDateKey(new Date())
@@ -622,6 +645,7 @@ const Chronicle = () => {
           color: getDifficultyColor(topic.difficulty),
           difficulty: topic.difficulty,
           time: timeVal,
+          duration: topic.estimatedMinutes || null,
           topicId: topic._id,
           date: toLocalDateKey(new Date(topic.nextReviewDate))
         });
@@ -1536,6 +1560,25 @@ const Chronicle = () => {
           await loadCalendarData();
         }
       })();
+    }
+
+    // Update the currently open details sidebar card instantly if it was the one dragged
+    if (selectedDetailsEvent) {
+      const isMatchingTask = sourceCard.type === 'task' && selectedDetailsEvent.type === 'task' && selectedDetailsEvent.taskId === sourceCard.taskId;
+      const isMatchingRevision = sourceCard.type === 'revision' && selectedDetailsEvent.type === 'revision' && selectedDetailsEvent.topicId === sourceCard.topicId;
+      const isMatchingCustomEvent = selectedDetailsEvent.id === sourceCard.id;
+
+      if (isMatchingTask || isMatchingRevision || isMatchingCustomEvent) {
+        setSelectedDetailsEvent(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            date: isoDate,
+            startTime: timeString, // for tasks / custom events
+            time: timeString       // for revisions
+          };
+        });
+      }
     }
   };
 
@@ -3295,7 +3338,8 @@ const Chronicle3DayView = ({
       if (e.ctrlKey) {
         e.preventDefault();
         const delta = e.deltaY * -0.5;
-        setHourHeight((prev) => Math.max(30, Math.min(200, prev + delta)));
+        const gridHeight = grid.clientHeight || 500;
+        setHourHeight((prev) => Math.max(30, Math.min(gridHeight, prev + delta)));
         userHasZoomedRef.current = true;
       }
     };
@@ -3326,7 +3370,9 @@ const Chronicle3DayView = ({
         e.touches[0].clientY - e.touches[1].clientY
       );
       const ratio = dist / touchStartDistRef.current;
-      const nextHeight = Math.max(30, Math.min(200, touchStartHeightRef.current * ratio));
+      const grid = gridContainerRef.current;
+      const gridHeight = grid ? (grid.clientHeight || 500) : 500;
+      const nextHeight = Math.max(30, Math.min(gridHeight, touchStartHeightRef.current * ratio));
       setHourHeight(nextHeight);
       userHasZoomedRef.current = true;
     }
