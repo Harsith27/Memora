@@ -297,15 +297,26 @@ const EditTaskModal = ({ isOpen, onClose, onSubmit, task, seriesTasks = [], load
     setErrors((prev) => ({ ...prev, customDates: '' }));
   };
 
+  const descRef = useRef(null);
+
+  useEffect(() => {
+    if (descRef.current) {
+      descRef.current.style.height = '44px';
+      if (formData.description) {
+        descRef.current.style.height = `${descRef.current.scrollHeight}px`;
+      }
+    }
+  }, [formData.description, isOpen]);
+
   const openDatePicker = () => {
     datePickerRef.current?.setOpen?.(true);
   };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Edit Task" size="md">
-      <form ref={formRef} onSubmit={handleSubmit} className="space-y-5">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-3">
         <div>
-          <label className="mb-2 block text-sm font-medium text-gray-200">Task Title</label>
+          <label className="mb-1 block text-sm font-medium text-gray-200">Task Title</label>
           <div className="relative">
             <CheckSquare className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-gray-500" />
             <input
@@ -320,30 +331,30 @@ const EditTaskModal = ({ isOpen, onClose, onSubmit, task, seriesTasks = [], load
               maxLength={140}
             />
           </div>
-          <div className="mt-1.5 flex items-center justify-between text-xs">
+          <div className="mt-1 flex items-center justify-between text-xs">
             <span className="text-red-300">{errors.title || ''}</span>
             <span className={`${titleLength > 120 ? 'text-amber-300' : 'text-gray-500'}`}>{titleLength}/140</span>
           </div>
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-gray-200">Description</label>
+          <label className="mb-1 block text-sm font-medium text-gray-200">Description</label>
           <div className="relative">
             <FileText className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-gray-500" />
             <textarea
+              ref={descRef}
               value={formData.description}
               onChange={(event) => setFormData((prev) => ({ ...prev, description: event.target.value }))}
               placeholder="Optional details"
-              rows={4}
               maxLength={600}
-              className="w-full rounded-lg border border-white/15 bg-white/5 pl-10 pr-3 pt-3 text-sm text-white outline-none transition-colors placeholder:text-gray-500 focus:border-cyan-300/60"
+              className="w-full rounded-lg border border-white/15 bg-white/5 pl-10 pr-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-gray-500 focus:border-cyan-300/60 resize-none overflow-hidden h-11"
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
-            <label className="mb-2 block text-sm font-medium text-gray-200">Date</label>
+            <label className="mb-1 block text-sm font-medium text-gray-200">Date</label>
             <div className="relative">
               <DatePicker
                 ref={datePickerRef}
@@ -379,26 +390,26 @@ const EditTaskModal = ({ isOpen, onClose, onSubmit, task, seriesTasks = [], load
                 <Calendar className="h-4 w-4" />
               </button>
             </div>
-            <p className="mt-1.5 text-xs text-red-300">{errors.date || ''}</p>
+            <p className="mt-1 text-xs text-red-300">{errors.date || ''}</p>
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-gray-200">Task Type</label>
+            <label className="mb-1 block text-sm font-medium text-gray-200">Task Type</label>
             <ShadcnSelect
               value={formData.taskType}
               onChange={(value) => setFormData((prev) => ({ ...prev, taskType: value }))}
               options={TASK_TYPE_OPTIONS}
               className="h-11 w-full"
             />
-            <p className="mt-1.5 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-gray-500">
               Editing a habit updates this occurrence and lets you reset upcoming weekdays.
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
-            <label className="mb-2 block text-sm font-medium text-gray-200">Start Time (Optional)</label>
+            <label className="mb-1 block text-sm font-medium text-gray-200">Start Time (Optional)</label>
             <input
               type="time"
               value={formData.startTime || ''}
@@ -407,7 +418,7 @@ const EditTaskModal = ({ isOpen, onClose, onSubmit, task, seriesTasks = [], load
             />
           </div>
           <div>
-            <label className="mb-2 block text-sm font-medium text-gray-200">Duration (Minutes)</label>
+            <label className="mb-1 block text-sm font-medium text-gray-200">Duration (Minutes)</label>
             <input
               type="number"
               min={5}
@@ -421,7 +432,7 @@ const EditTaskModal = ({ isOpen, onClose, onSubmit, task, seriesTasks = [], load
 
         {formData.taskType === 'habit' && (
           <div data-error-field="customDates">
-            <label className="mb-2 block text-sm font-medium text-gray-200">Recurring Weekdays</label>
+            <label className="mb-1 block text-sm font-medium text-gray-200">Recurring Weekdays</label>
             <div className="grid grid-cols-7 gap-2">
               {WEEKDAY_OPTIONS.map((day) => {
                 const isSelected = formData.recurringWeekdays.includes(day.value);
@@ -443,14 +454,14 @@ const EditTaskModal = ({ isOpen, onClose, onSubmit, task, seriesTasks = [], load
               })}
             </div>
 
-            <p className="mt-2 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-gray-500">
               Selected days repeat from the chosen date for the next 12 weeks.
             </p>
-            <p className="mt-1.5 text-xs text-red-300">{errors.customDates || ''}</p>
+            <p className="mt-1 text-xs text-red-300">{errors.customDates || ''}</p>
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-4">
+        <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-3">
           <button
             type="button"
             onClick={onClose}

@@ -4588,7 +4588,7 @@ const Dashboard = () => {
                   </span>
                 </div>
 
-                <div className="h-44 overflow-y-auto pr-1 space-y-2">
+                <div className="h-36 overflow-y-auto pr-1 space-y-2">
                   {selectedDayTasks.length > 0 ? (
                     selectedDayTasks.map((task, index) => {
                       const isPastDayTask = task.date < todayKey;

@@ -229,11 +229,11 @@ export default function ScheduleWindowWidget({ tasks = [], dueTopics = [], upcom
         })}
 
         {/* Live Indicator Line (Centered at 50% for local time passing) */}
-        <div className="absolute top-[50%] left-0 right-0 border-t border-dashed border-yellow-400/50 z-20 flex items-center pointer-events-none">
-          <span className="text-[8px] font-bold text-black bg-yellow-400 px-1.5 py-0.5 border border-yellow-400/20 rounded ml-16 -mt-2 shadow-lg tracking-wider">
+        <div className="absolute top-[50%] left-0 right-0 border-t border-dashed border-cyan-500/50 z-20 flex items-center pointer-events-none">
+          <span className="text-[8px] font-bold text-black bg-cyan-400 px-1.5 py-0.5 border border-cyan-400/20 rounded ml-16 -mt-2 shadow-lg tracking-wider">
             NOW
           </span>
-          <div className="w-2 h-2 rounded-full bg-yellow-400 ml-auto -mr-1 shadow-md shadow-yellow-400/50" />
+          <div className="w-2 h-2 rounded-full bg-cyan-400 ml-auto -mr-1 shadow-md shadow-cyan-400/50" />
         </div>
 
         {/* Schedule Cards */}
