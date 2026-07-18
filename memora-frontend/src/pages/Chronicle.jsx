@@ -1144,10 +1144,18 @@ const Chronicle = () => {
       const dateKey = current.toDateString();
       const rawEvents = filteredCalendarEvents[dateKey] || [];
 
-      // Extract habits (recurring or custom-recurring tasks)
-      const dayHabits = rawEvents.filter(ev => ev.type === 'task' && (ev.taskType === 'recurring' || ev.taskType === 'custom-recurring'));
-      // Keep only non-habit events for the grid timeline
-      const gridEvents = rawEvents.filter(ev => !(ev.type === 'task' && (ev.taskType === 'recurring' || ev.taskType === 'custom-recurring')));
+      // Extract habits (recurring or custom-recurring tasks WITHOUT a start time)
+      const dayHabits = rawEvents.filter(ev => 
+        ev.type === 'task' && 
+        (ev.taskType === 'recurring' || ev.taskType === 'custom-recurring') &&
+        (!ev.startTime || ev.startTime.trim() === '')
+      );
+      // Keep only other events and habits WITH a start time for the grid timeline
+      const gridEvents = rawEvents.filter(ev => 
+        !(ev.type === 'task' && 
+          (ev.taskType === 'recurring' || ev.taskType === 'custom-recurring') &&
+          (!ev.startTime || ev.startTime.trim() === ''))
+      );
 
       // Sort grid events such that naturally timed ones come first
       const sortedRaw = [...gridEvents].sort((a, b) => {
@@ -3294,8 +3302,8 @@ const Chronicle3DayView = ({
         onTouchEnd={handleTouchEnd}
         className="flex-1 bg-black border-x border-b border-white/10 rounded-b-lg overflow-auto flex select-none relative"
       >
-        <div className="w-16 bg-black border-r border-white/10 flex-shrink-0 sticky left-0 z-20">
-          <div className="relative" style={{ height: hourHeight * 24 }}>
+        <div className="w-16 bg-black border-r border-white/10 flex-shrink-0 sticky left-0 z-20 flex flex-col">
+          <div className="flex-shrink-0" style={{ height: hourHeight * 24 }}>
             {HOURS.map((hour) => (
               <div
                 key={hour}
@@ -3306,7 +3314,7 @@ const Chronicle3DayView = ({
               </div>
             ))}
           </div>
-          <div className="text-[10px] text-gray-500 font-sans font-bold tracking-wider text-right pr-3 pt-4 uppercase border-t border-white/10 h-28 select-none sticky bottom-0 bg-black z-20 flex items-start justify-end">
+          <div className="text-[10px] text-gray-500 font-sans font-bold tracking-wider text-right pr-3 pt-4 uppercase border-t border-white/10 h-28 select-none bg-black flex items-start justify-end flex-shrink-0">
             Habits
           </div>
         </div>
@@ -3314,7 +3322,7 @@ const Chronicle3DayView = ({
         <div className="flex-1 flex flex-col relative min-w-[700px]">
           
           {/* Grid tracks container (Vertical scroll area) */}
-          <div className="flex divide-x divide-white/10 relative" style={{ height: hourHeight * 24 }}>
+          <div className="flex divide-x divide-white/10 relative flex-shrink-0" style={{ height: hourHeight * 24 }}>
             {days.map((day) => (
               <div
                 key={day.dateKey}
@@ -3366,8 +3374,8 @@ const Chronicle3DayView = ({
             {days.some(d => d.isToday) && <LiveTimeIndicator hourHeight={hourHeight} />}
           </div>
 
-          {/* Sticky Habits list below the hourly grid */}
-          <div className="sticky bottom-0 bg-black border-t border-white/10 flex divide-x divide-white/10 h-28 z-10 flex-shrink-0">
+          {/* Habits list below the hourly grid (Non-sticky) */}
+          <div className="bg-black border-t border-white/10 flex divide-x divide-white/10 h-28 flex-shrink-0">
             {days.map((day) => (
               <div key={day.dateKey} className="flex-1 p-3 bg-black flex flex-col justify-start min-w-0">
                 {(!day.habits || day.habits.length === 0) ? (
