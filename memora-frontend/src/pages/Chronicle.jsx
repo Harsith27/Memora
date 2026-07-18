@@ -2255,7 +2255,7 @@ const Chronicle = () => {
           </div>
         )}
 
-        <DashboardFooter className="mt-1 border-t border-white/10 py-5 sm:py-6" />
+
       </div>
 
       {/* Day Details Modal */}
