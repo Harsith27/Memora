@@ -1090,6 +1090,11 @@ const Chronicle = () => {
       return next;
     });
 
+    setSelectedDetailsEvent(prev => prev ? {
+      ...prev,
+      duration: newDuration
+    } : null);
+
     try {
       if (eventItem.type === 'task') {
         const userTaskStorageKey = taskService.resolveUserStorageKey(user);
@@ -1097,22 +1102,15 @@ const Chronicle = () => {
           duration: newDuration
         });
         showToast(`Duration updated to ${newDuration} mins`);
-        await loadCalendarData(false);
       } else if (eventItem.type === 'revision') {
         await apiService.updateTopic(eventItem.topicId, {
           estimatedMinutes: newDuration
         });
         showToast(`Revision duration updated to ${newDuration} mins`);
-        await loadCalendarData(false);
       }
-
-      setSelectedDetailsEvent(prev => ({
-        ...prev,
-        duration: newDuration
-      }));
     } catch (err) {
       console.error('Failed to adjust duration:', err);
-      showToast('Failed to update duration', 'error');
+      showToast('Failed to update duration on server', 'error');
     }
   };
 
