@@ -16,7 +16,7 @@ const parseTimeToMinutes = (timeStr) => {
   return (h || 0) * 60 + (m || 0);
 };
 
-export default function ScheduleWindowWidget({ tasks = [], dueTopics = [] }) {
+export default function ScheduleWindowWidget({ tasks = [], dueTopics = [], upcomingTopics = [] }) {
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -28,13 +28,39 @@ export default function ScheduleWindowWidget({ tasks = [], dueTopics = [] }) {
   const windowStart = currentMinutes - 30; // 30 mins in the past
   const windowEnd = currentMinutes + 30;   // 30 mins in the future
 
+  const getVisualDuration = (ev) => Math.max(10, ev.duration || 30);
+
   const events = useMemo(() => {
     const list = [];
     const todayStr = toLocalDateKey(now);
 
+    // Merge dueTopics and upcomingTopics (filtering out duplicates by topic ID)
+    const allRevisions = [];
+    const seenTopicIds = new Set();
+
+    (dueTopics || []).forEach(t => {
+      if (t && !seenTopicIds.has(t._id)) {
+        seenTopicIds.add(t._id);
+        allRevisions.push(t);
+      }
+    });
+
+    (upcomingTopics || []).forEach(t => {
+      if (t && !seenTopicIds.has(t._id)) {
+        const reviewDate = t.nextReviewDate ? new Date(t.nextReviewDate) : null;
+        if (reviewDate) {
+          const reviewDateKey = toLocalDateKey(reviewDate);
+          if (reviewDateKey === todayStr) {
+            seenTopicIds.add(t._id);
+            allRevisions.push(t);
+          }
+        }
+      }
+    });
+
     // Revisions
     let unscheduledRevisionOffset = 0;
-    const sortedDueTopics = [...(dueTopics || [])].sort((a, b) => a.title.localeCompare(b.title));
+    const sortedDueTopics = [...allRevisions].sort((a, b) => a.title.localeCompare(b.title));
 
     sortedDueTopics.forEach(topic => {
       if (topic.isLearning === false) return;
@@ -66,7 +92,10 @@ export default function ScheduleWindowWidget({ tasks = [], dueTopics = [] }) {
 
     // Tasks
     let unscheduledTaskOffset = 0;
-    const todayTasks = (tasks || []).filter(task => task.date === todayStr);
+    const todayTasks = (tasks || []).filter(task => {
+      const taskDateStr = taskService.normalizeDate(task?.date || task?.datetime);
+      return taskDateStr === todayStr;
+    });
 
     todayTasks.forEach(task => {
       const isUnscheduled = !task.startTime || task.startTime === '09:00';
@@ -109,9 +138,11 @@ export default function ScheduleWindowWidget({ tasks = [], dueTopics = [] }) {
     const columns = [];
     filtered.forEach((ev) => {
       let placed = false;
+      const visualDur = getVisualDuration(ev);
       for (let colIdx = 0; colIdx < columns.length; colIdx++) {
         const lastEvInCol = columns[colIdx][columns[colIdx].length - 1];
-        if (ev.startMinutes >= lastEvInCol.startMinutes + lastEvInCol.duration) {
+        const lastVisualDur = getVisualDuration(lastEvInCol);
+        if (ev.startMinutes >= lastEvInCol.startMinutes + lastVisualDur) {
           columns[colIdx].push(ev);
           ev.colIndex = colIdx;
           placed = true;
@@ -124,13 +155,15 @@ export default function ScheduleWindowWidget({ tasks = [], dueTopics = [] }) {
       }
     });
 
-    // Overlap checks
+    // Overlap checks using visualDuration to prevent overlap collisions
     filtered.forEach((ev) => {
-      const overlaps = filtered.filter(other => 
-        other.id !== ev.id &&
-        ev.startMinutes < (other.startMinutes + other.duration) &&
-        other.startMinutes < (ev.startMinutes + ev.duration)
-      );
+      const visualDur = getVisualDuration(ev);
+      const overlaps = filtered.filter(other => {
+        const otherVisualDur = getVisualDuration(other);
+        return other.id !== ev.id &&
+          ev.startMinutes < (other.startMinutes + otherVisualDur) &&
+          other.startMinutes < (ev.startMinutes + visualDur);
+      });
 
       if (overlaps.length === 0) {
         ev.colIndex = 0;
@@ -143,7 +176,7 @@ export default function ScheduleWindowWidget({ tasks = [], dueTopics = [] }) {
     });
 
     return filtered;
-  }, [tasks, dueTopics, now, windowStart, windowEnd]);
+  }, [tasks, dueTopics, upcomingTopics, now, windowStart, windowEnd]);
 
   // Format time label for hour grid ticks
   const formatHourLabel = (totalMins) => {
@@ -166,19 +199,19 @@ export default function ScheduleWindowWidget({ tasks = [], dueTopics = [] }) {
   }, [windowStart, windowEnd]);
 
   return (
-    <div className="h-44 w-full relative bg-black border border-white/20 rounded-xl overflow-hidden flex flex-col shadow-xl select-none">
+    <div className="bg-black border border-white/20 rounded-xl p-4 flex flex-col shadow-xl select-none w-full">
       {/* Time Header Indicator */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-white/10 bg-white/[0.02] text-[10px] text-gray-400 font-sans tracking-wide">
-        <span className="flex items-center gap-1.5 font-semibold text-white">
-          <Clock className="w-3.5 h-3.5 text-yellow-400" />
-          Live Schedule Window (1 Hr)
-        </span>
-        <span className="text-yellow-400 font-bold font-mono">
-          {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+      <div className="flex items-center justify-between mb-3 border-b border-white/10 pb-2">
+        <h3 className="text-sm font-semibold text-white tracking-tight flex items-center gap-1.5">
+          <Clock className="w-4 h-4 text-cyan-400" />
+          Live Schedule (1h)
+        </h3>
+        <span className="text-xs font-mono font-bold text-cyan-400">
+          {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }).toLowerCase()}
         </span>
       </div>
 
-      <div className="flex-1 relative overflow-hidden bg-black">
+      <div className="h-40 w-full relative bg-white/[0.01] border border-white/5 rounded-lg overflow-hidden flex flex-col">
         {/* Hour Grid Lines */}
         {hourTicks.map(mins => {
           const topPercent = ((mins - windowStart) / 60) * 100;
@@ -206,7 +239,7 @@ export default function ScheduleWindowWidget({ tasks = [], dueTopics = [] }) {
         {/* Schedule Cards */}
         <div className="absolute inset-0 pl-16 pr-4 py-1.5">
           {events.length === 0 ? (
-            <div className="h-full flex items-center justify-center">
+            <div className="h-full flex items-center pl-16 pr-4 pointer-events-none">
               <span className="text-[10px] text-gray-500 font-semibold">No active events in this window.</span>
             </div>
           ) : (
@@ -214,7 +247,7 @@ export default function ScheduleWindowWidget({ tasks = [], dueTopics = [] }) {
               const start = Math.max(windowStart, ev.startMinutes);
               const end = Math.min(windowEnd, ev.startMinutes + ev.duration);
               const top = ((start - windowStart) / 60) * 100;
-              const height = Math.max(15, ((end - start) / 60) * 100);
+              const height = Math.max(12, ((end - start) / 60) * 100);
 
               const colIndex = ev.colIndex || 0;
               const colCount = ev.colCount || 1;
@@ -224,7 +257,7 @@ export default function ScheduleWindowWidget({ tasks = [], dueTopics = [] }) {
               const colorClass = ev.completed
                 ? 'border-slate-500/25 bg-slate-500/10 text-slate-400'
                 : ev.type === 'revision'
-                ? 'border-yellow-400/25 bg-yellow-500/10 text-yellow-300'
+                ? 'border-cyan-400/25 bg-cyan-500/10 text-cyan-300'
                 : 'border-teal-400/25 bg-teal-500/10 text-teal-300';
 
               return (

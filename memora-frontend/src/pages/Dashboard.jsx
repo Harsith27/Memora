@@ -4743,9 +4743,7 @@ const Dashboard = () => {
             </div>
 
             {/* Today's Schedule Window */}
-            <div className="bg-black border border-white/20 rounded-xl p-6">
-              <ScheduleWindowWidget tasks={tasks} dueTopics={dueTopics} />
-            </div>
+            <ScheduleWindowWidget tasks={tasks} dueTopics={dueTopics} upcomingTopics={upcomingTopics} />
           </div>
         </div>
           )}
