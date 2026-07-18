@@ -130,3 +130,6 @@ memora-backend/uploads/
 # Private architecture planning docs
 Planning/
 Future Plans/
+
+# Generated apply snippets
+memora-frontend/public/star_60d_frontend_apply_snippet.js
