@@ -735,7 +735,7 @@ const Chronicle = () => {
     return allEvents;
   };
 
-  const loadCalendarData = async () => {
+  const loadCalendarData = async (useCache = true) => {
     if (!user) return;
     setLoading(true);
     lastFetchIdRef.current += 1;
@@ -745,33 +745,35 @@ const Chronicle = () => {
     const targetUser = user;
     const userId = user.id || user._id || user.email;
 
-    // Check if we have cached data in localStorage
-    const cachedDue = localStorage.getItem(`memora_chronicle_due_cache_${userId}`);
-    const cachedUpcoming = localStorage.getItem(`memora_chronicle_upcoming_cache_${userId}`);
-    const cachedHistory = localStorage.getItem(`memora_chronicle_history_cache_${userId}`);
-
     let loadedFromCache = false;
     let initialEvents = {};
 
-    if (cachedDue && cachedUpcoming && cachedHistory) {
-      try {
-        const dueResponse = JSON.parse(cachedDue);
-        const upcomingResponse = JSON.parse(cachedUpcoming);
-        const revisionHistoryResponse = JSON.parse(cachedHistory);
+    if (useCache) {
+      // Check if we have cached data in localStorage
+      const cachedDue = localStorage.getItem(`memora_chronicle_due_cache_${userId}`);
+      const cachedUpcoming = localStorage.getItem(`memora_chronicle_upcoming_cache_${userId}`);
+      const cachedHistory = localStorage.getItem(`memora_chronicle_history_cache_${userId}`);
 
-        initialEvents = processAllCalendarEvents(dueResponse, upcomingResponse, revisionHistoryResponse, targetYear, targetUser);
-        setCalendarEvents(initialEvents);
-        setLoading(false);
-        loadedFromCache = true;
-      } catch (err) {
-        console.warn('Failed to load Chronicle data from cache:', err);
+      if (cachedDue && cachedUpcoming && cachedHistory) {
+        try {
+          const dueResponse = JSON.parse(cachedDue);
+          const upcomingResponse = JSON.parse(cachedUpcoming);
+          const revisionHistoryResponse = JSON.parse(cachedHistory);
+
+          initialEvents = processAllCalendarEvents(dueResponse, upcomingResponse, revisionHistoryResponse, targetYear, targetUser);
+          setCalendarEvents(initialEvents);
+          setLoading(false);
+          loadedFromCache = true;
+        } catch (err) {
+          console.warn('Failed to load Chronicle data from cache:', err);
+        }
       }
-    }
 
-    // If cache wasn't found or loaded, set the fallback synchronous state (tasks/festivals)
-    if (!loadedFromCache) {
-      const syncEvents = processAllCalendarEvents(null, null, null, targetYear, targetUser);
-      setCalendarEvents(syncEvents);
+      // If cache wasn't found or loaded, set the fallback synchronous state (tasks/festivals)
+      if (!loadedFromCache) {
+        const syncEvents = processAllCalendarEvents(null, null, null, targetYear, targetUser);
+        setCalendarEvents(syncEvents);
+      }
     }
 
     try {
@@ -1067,6 +1069,27 @@ const Chronicle = () => {
     if (!eventItem) return;
     const newDuration = Math.max(5, Math.min(1440, (eventItem.duration || 30) + deltaMinutes));
 
+    // Update local state instantly so grid height updates with 0ms latency
+    setCalendarEvents(prev => {
+      const next = { ...prev };
+      for (const dateKey in next) {
+        if (!Array.isArray(next[dateKey])) continue;
+        next[dateKey] = next[dateKey].map(ev => {
+          if (ev.id === eventItem.id) {
+            const startMins = ev.startMinutes !== undefined ? ev.startMinutes : parseTimeToMinutes(ev.startTime || ev.time || '09:00');
+            return {
+              ...ev,
+              duration: newDuration,
+              startMinutes: startMins,
+              endMinutes: startMins + newDuration
+            };
+          }
+          return ev;
+        });
+      }
+      return next;
+    });
+
     try {
       if (eventItem.type === 'task') {
         const userTaskStorageKey = taskService.resolveUserStorageKey(user);
@@ -1074,22 +1097,19 @@ const Chronicle = () => {
           duration: newDuration
         });
         showToast(`Duration updated to ${newDuration} mins`);
-        loadCalendarData();
-        setSelectedDetailsEvent(prev => ({
-          ...prev,
-          duration: newDuration
-        }));
+        await loadCalendarData(false);
       } else if (eventItem.type === 'revision') {
         await apiService.updateTopic(eventItem.topicId, {
           estimatedMinutes: newDuration
         });
         showToast(`Revision duration updated to ${newDuration} mins`);
-        loadCalendarData();
-        setSelectedDetailsEvent(prev => ({
-          ...prev,
-          duration: newDuration
-        }));
+        await loadCalendarData(false);
       }
+
+      setSelectedDetailsEvent(prev => ({
+        ...prev,
+        duration: newDuration
+      }));
     } catch (err) {
       console.error('Failed to adjust duration:', err);
       showToast('Failed to update duration', 'error');

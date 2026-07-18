@@ -73,43 +73,71 @@ const parseTimeAndDurationFromTitle = (title) => {
   let startTime = null;
   let duration = null;
 
-  // 1. Parse duration (e.g. "1.5 hr", "1 hr", "2 hours", "45 mins", "30m", "10 min")
-  const hrRegex = /(\d+(?:\.\d+)?)\s*(?:hr|hour|hrs|hours)\b/;
-  const minRegex = /(\d+)\s*(?:min|mins|m|minutes)\b/;
-
-  const hrMatch = text.match(hrRegex);
-  if (hrMatch) {
-    duration = Math.round(parseFloat(hrMatch[1]) * 60);
-  } else {
-    const minMatch = text.match(minRegex);
-    if (minMatch) {
-      duration = parseInt(minMatch[1], 10);
-    }
+  // 1. Scan for all time matches in the title string
+  const matches = [];
+  const timePattern = /\b(\d{1,2})(?:[.:](\d{2}))?\s*(am|pm)?\b/gi;
+  let match;
+  while ((match = timePattern.exec(text)) !== null) {
+    matches.push({
+      hour: parseInt(match[1], 10),
+      min: match[2] ? parseInt(match[2], 10) : 0,
+      ampm: match[3] ? match[3].toLowerCase() : null,
+      index: match.index,
+      raw: match[0]
+    });
   }
 
-  // 2. Parse time (am/pm or 24h)
-  const timePmAmRegex = /\b(?:at\s+|@\s*)?(\d{1,2})(?:[.:](\d{2}))?\s*(am|pm)\b/;
-  const time24hRegex = /\b(?:at\s+|@\s*)?(\d{1,2})[.:](\d{2})\b/;
+  // 2. If we found a time range (2 or more times)
+  if (matches.length >= 2) {
+    const t1 = matches[0];
+    const t2 = matches[1];
 
-  const pmAmMatch = text.match(timePmAmRegex);
-  if (pmAmMatch) {
-    let hour = parseInt(pmAmMatch[1], 10);
-    const min = pmAmMatch[2] ? parseInt(pmAmMatch[2], 10) : 0;
-    const ampm = pmAmMatch[3];
-
-    if (ampm === 'pm' && hour < 12) {
-      hour += 12;
-    } else if (ampm === 'am' && hour === 12) {
-      hour = 0;
+    // Default AM/PM of first if missing but second has it
+    if (!t1.ampm && t2.ampm) {
+      if (t1.hour > t2.hour && t2.ampm === 'pm' && t1.hour !== 12) {
+        t1.ampm = 'am';
+      } else {
+        t1.ampm = t2.ampm;
+      }
     }
-    startTime = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-  } else {
-    const time24Match = text.match(time24hRegex);
-    if (time24Match) {
-      const hour = parseInt(time24Match[1], 10);
-      const min = parseInt(time24Match[2], 10);
-      if (hour >= 0 && hour <= 23 && min >= 0 && min <= 59) {
-        startTime = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+
+    let m1 = t1.hour * 60 + t1.min;
+    if (t1.ampm === 'pm' && t1.hour < 12) m1 += 12 * 60;
+    else if (t1.ampm === 'am' && t1.hour === 12) m1 -= 12 * 60;
+
+    let m2 = t2.hour * 60 + t2.min;
+    if (t2.ampm === 'pm' && t2.hour < 12) m2 += 12 * 60;
+    else if (t2.ampm === 'am' && t2.hour === 12) m2 -= 12 * 60;
+
+    let diff = m2 - m1;
+    if (diff < 0) {
+      diff += 24 * 60; // Crosses midnight (e.g. 10:30 PM to 12:00 AM)
+    }
+
+    startTime = `${String(Math.floor(m1 / 60)).padStart(2, '0')}:${String(m1 % 60).padStart(2, '0')}`;
+    duration = diff;
+  } else if (matches.length === 1) {
+    // Single time match
+    const t1 = matches[0];
+    let m1 = t1.hour * 60 + t1.min;
+    if (t1.ampm === 'pm' && t1.hour < 12) m1 += 12 * 60;
+    else if (t1.ampm === 'am' && t1.hour === 12) m1 -= 12 * 60;
+
+    startTime = `${String(Math.floor(m1 / 60)).padStart(2, '0')}:${String(m1 % 60).padStart(2, '0')}`;
+  }
+
+  // 3. Fallback: Parse duration if not resolved from range (e.g. "45 mins", "1.5 hr")
+  if (duration === null) {
+    const hrRegex = /(\d+(?:\.\d+)?)\s*(?:hr|hour|hrs|hours)\b/;
+    const minRegex = /(\d+)\s*(?:min|mins|m|minutes)\b/;
+
+    const hrMatch = text.match(hrRegex);
+    if (hrMatch) {
+      duration = Math.round(parseFloat(hrMatch[1]) * 60);
+    } else {
+      const minMatch = text.match(minRegex);
+      if (minMatch) {
+        duration = parseInt(minMatch[1], 10);
       }
     }
   }
